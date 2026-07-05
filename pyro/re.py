@@ -64,7 +64,9 @@ def compile(pattern, flags=0):
         classi = _classify.classify(pattern.pattern, pattern.flags)
         return PyroPattern(pattern, classi)
 
-    key = (type(pattern), pattern, int(flags))
+    # R4: cache keyed by (pattern_bytes/str type, pattern, flags, engine_version)
+    # so a bumped engine version never serves a stale compiled program.
+    key = (type(pattern), pattern, int(flags), _classify.ENGINE_VERSION)
     # Lock-free read: dict.get is atomic under the GIL, and a benign miss just
     # recompiles.  This keeps the warm-cache fast path thin (R4/R5).
     cached = _CACHE.get(key)

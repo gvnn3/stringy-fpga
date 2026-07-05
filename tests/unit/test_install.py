@@ -1,5 +1,6 @@
 """Interposition + routing/env tests (R31, R33-R36, R51; AC-0-1/AC-0-5/AC-0-6)."""
 import re
+import threading
 
 import pytest
 
@@ -34,6 +35,33 @@ def test_install_uninstall_roundtrip():
     finally:
         pyro.uninstall()
     assert re.search is orig_search
+
+
+def test_concurrent_install_restores_cleanly():
+    # W2 (best-effort TOCTOU): many threads race into install(); a losing racer
+    # must never capture PYRO's own patched functions as "originals". After a
+    # single uninstall(), every stdlib re function is the genuine stock object.
+    pyro.uninstall()  # ensure clean start
+    stock = {name: getattr(re, name) for name in pyro._PATCHED}
+    barrier = threading.Barrier(8)
+
+    def worker():
+        barrier.wait()
+        pyro.install()
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    try:
+        assert pyro.is_installed()
+        # patched functions are PYRO's, not stock
+        assert re.search is not stock["search"]
+    finally:
+        pyro.uninstall()
+    for name, obj in stock.items():
+        assert getattr(re, name) is obj, name
 
 
 def test_explain_not_on_patched_re():

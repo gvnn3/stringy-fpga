@@ -13,6 +13,7 @@ subset (R16) and delegated otherwise (R29).
 from __future__ import annotations
 
 import re as _stdlib_re
+import threading
 
 # Import the router at package initialization so the env snapshot is sampled at
 # "first import of pyro" (R35a.1).  This is the earliest deterministic sampling
@@ -33,36 +34,42 @@ _PATCHED = (
 )
 
 _ORIGINALS: dict = {}
+# Serializes install()/uninstall() so a racing pair cannot (a) both capture
+# originals -- the loser capturing PYRO's own patched functions as "originals"
+# and corrupting restore -- nor (b) interleave patch/restore (W2, TOCTOU).
+_INSTALL_LOCK = threading.Lock()
 
 
 def install() -> None:
     """Patch the already-imported stdlib ``re`` so calls route through PYRO (R34).
 
-    Idempotent.  ``PYRO_DISABLE=1`` still forces fallback (R35); fallback-only
-    patterns are indistinguishable from stock ``re`` (R3/R29).
+    Idempotent and thread-safe.  ``PYRO_DISABLE=1`` still forces fallback (R35);
+    fallback-only patterns are indistinguishable from stock ``re`` (R3/R29).
     """
     global _ORIGINALS
     _route.sample_env()  # sampling point R35a.2 (always, even if already on)
-    if _ORIGINALS:
-        return  # already installed
-    from . import re as _pyro_re
+    with _INSTALL_LOCK:
+        if _ORIGINALS:
+            return  # already installed (double-checked under the lock)
+        from . import re as _pyro_re
 
-    saved = {}
-    for name in _PATCHED:
-        saved[name] = getattr(_stdlib_re, name)
-        setattr(_stdlib_re, name, getattr(_pyro_re, name))
-    _ORIGINALS = saved
+        saved = {}
+        for name in _PATCHED:
+            saved[name] = getattr(_stdlib_re, name)
+            setattr(_stdlib_re, name, getattr(_pyro_re, name))
+        _ORIGINALS = saved
 
 
 def uninstall() -> None:
     """Fully restore the stdlib ``re`` behavior patched by :func:`install` (R34)."""
     global _ORIGINALS
     _route.sample_env()  # sampling point R35a.2 (always, even if not installed)
-    if not _ORIGINALS:
-        return
-    for name, obj in _ORIGINALS.items():
-        setattr(_stdlib_re, name, obj)
-    _ORIGINALS = {}
+    with _INSTALL_LOCK:
+        if not _ORIGINALS:
+            return
+        for name, obj in _ORIGINALS.items():
+            setattr(_stdlib_re, name, obj)
+        _ORIGINALS = {}
 
 
 def refresh_env() -> None:

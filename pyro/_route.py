@@ -11,10 +11,27 @@ from __future__ import annotations
 
 import os
 import threading
+from bisect import bisect_left
 
 from . import _model
-from ._match import HybridMatch, PyroPattern, byte_to_cp_map, _VerifyError
-from ._model import DeviceError, UnsupportedPattern, ENC_BYTES, ENC_UTF8, FLAG_VERIFIED
+from ._match import HybridMatch, PyroPattern
+from ._model import (
+    DeviceError, UnsupportedPattern, ENC_BYTES, ENC_UTF8, FLAG_VERIFIED,
+    utf8_prefix,
+)
+
+
+class _VerifyError(Exception):
+    """A candidate window failed CPython re-verification (R19) -> fallback.
+
+    Routing control flow (raised by ``_verify_window``, caught by the dispatch
+    entry points), so it lives here rather than in the match wrappers.
+    """
+
+    def __init__(self, span):
+        super().__init__(f"window {span} failed verification")
+        self.span = span
+
 
 # Offload thresholds (R2/R3): reuse count and minimum corpus size.
 S_MIN = 64 * 1024   # 64 KiB
@@ -67,7 +84,12 @@ def _record_error_fallback() -> None:
 # global.  A per-call decision loads that reference once (atomic under the GIL),
 # so a concurrent re-sample can never split a call across old/new values —
 # satisfying R35d's "MUST NOT alter any in-flight call's routing decision".
-_FALSEY_STR = (None, "", "0")
+#
+# Truthiness rule (fail-safe): a variable counts as SET for any value other than
+# unset/empty/"0".  In particular PYRO_DISABLE=false / no / off all count as SET
+# (disabled) — for an opt-out/incident-mitigation switch we bias toward the safe
+# fallback path rather than silently ignoring an operator's non-canonical value.
+_UNSET_VALUES = (None, "", "0")
 _ENV = (False, False)                 # (disabled, force_model) cached snapshot
 _ENV_LOCK = threading.Lock()          # serializes samplers (R35d thread-safety)
 
@@ -81,8 +103,8 @@ def sample_env() -> None:
     """
     global _ENV
     with _ENV_LOCK:
-        disabled = os.environ.get("PYRO_DISABLE") not in _FALSEY_STR
-        force = os.environ.get("PYRO_FORCE_MODEL") not in _FALSEY_STR
+        disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
+        force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
         _ENV = (disabled, force)
 
 
@@ -109,6 +131,10 @@ def _decide(patt: PyroPattern, string, pos, endpos) -> str:
     """Return 'model' or 'fallback' per R51; updates the reuse counter.
 
     Consults only the cached env snapshot (R35a); no os.environ access here.
+    Applies the Phase-0 routing gates of spec v1.2.1: only exact ``str``/``bytes``
+    subjects are HW-eligible, and ``str`` subjects must be strict-UTF-8
+    transportable.  Both gate to *plain* fallback (no device touched, so counted
+    as ``fallback``, not ``fallback_after_error``).
     """
     reuse = patt._calls
     patt._calls = reuse + 1
@@ -118,13 +144,31 @@ def _decide(patt: PyroPattern, string, pos, endpos) -> str:
         return "fallback"
     if not patt._classification.eligible:          # R51.2
         return "fallback"
+    # C2: subclasses of str/bytes and bytearray/memoryview would make group(0)
+    # (subject[s:e]) a different / unhashable / mutable type than stock re's
+    # bytes result -- route them to the genuine re objects (Phase 0).
+    tstr = type(string)
+    if tstr is not str and tstr is not bytes:      # gate (v1.2.1)
+        return "fallback"
     if not _is_full_span(string, pos, endpos):     # anchor-context safety
         return "fallback"
-    if force:                                      # R51.4 override (cached)
-        return "model"
-    if len(string) < S_MIN and reuse < N_REUSE:    # R51.4 loss regime (R3a)
+    if not force and len(string) < S_MIN and reuse < N_REUSE:
+        return "fallback"                          # R51.4 loss regime (R3a)
+    # C1: only strict-UTF-8-encodable str subjects can be transported to the
+    # model; a lone surrogate (which stock re still matches) must fall back.
+    # Checked here -- on the model-bound path only -- to keep the short fallback
+    # fast path free of the O(n) encode probe.
+    if tstr is str and not _utf8_transportable(string):
         return "fallback"
     return "model"                                 # R51.6 (no device in Ph0)
+
+
+def _utf8_transportable(s: str) -> bool:
+    try:
+        s.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
 
 
 # --- encoding helpers (R14/R21) -------------------------------------------
@@ -134,11 +178,17 @@ def _encode(string):
     return bytes(string), ENC_BYTES
 
 
-def _win_to_cp(string, w):
-    """Convert a model byte window to caller-unit (start, end)."""
+def _win_to_cp(string, w, prefix=None):
+    """Convert a model byte window to caller-unit (start, end).
+
+    For str, byte offsets map to code-point indices via ``bisect_left`` on the
+    UTF-8 prefix table (astral-safe, R21).  ``prefix`` may be supplied to reuse
+    one table across many windows.
+    """
     if isinstance(string, str):
-        b2c = byte_to_cp_map(string)
-        return (b2c[w.start], b2c[w.end])
+        if prefix is None:
+            prefix = utf8_prefix(string)
+        return (bisect_left(prefix, w.start), bisect_left(prefix, w.end))
     return (w.start, w.end)
 
 
@@ -174,23 +224,13 @@ def _verify_window(patt, string, w, span0):
 
 
 # --- stdlib fallback delegation (thin; no wrappers) -----------------------
-def _stock_single(patt, op, string, pos, endpos):
+def _stock_op(patt, op, string, pos, endpos):
+    """Delegate a pos/endpos-taking op (search/match/fullmatch/finditer/findall)
+    to the stdlib pattern, defaulting endpos to len(string) in one place."""
     meth = getattr(patt._stock, op)
     if pos == 0 and endpos is None:
         return meth(string)
     return meth(string, pos, len(string) if endpos is None else endpos)
-
-
-def _stock_finditer(patt, string, pos, endpos):
-    if pos == 0 and endpos is None:
-        return patt._stock.finditer(string)
-    return patt._stock.finditer(string, pos, len(string) if endpos is None else endpos)
-
-
-def _stock_findall(patt, string, pos, endpos):
-    if pos == 0 and endpos is None:
-        return patt._stock.findall(string)
-    return patt._stock.findall(string, pos, len(string) if endpos is None else endpos)
 
 
 # --- model execution ------------------------------------------------------
@@ -214,13 +254,16 @@ def _model_finditer(patt, string, pos, endpos):
     buf, _enc = _encode(string)
     windows, _ovf = model.scan(prog, buf, 0, mode="finditer")
     endpos_eff = len(string)
-    # Build the byte->code-point map at most once for the whole result set
-    # (str only); rebuilding it per window is O(matches * len) — a real
-    # pathology on large corpora.
-    b2c = byte_to_cp_map(string) if isinstance(string, str) else None
+    # Build the UTF-8 prefix table at most once for the whole result set (str
+    # only); translating each window per-call would be O(matches * len).
+    # N3 (Phase-1 line item): this eagerly materialises every match into a list,
+    # and the empty-adjacency recovery path (HybridMatch) re-scans via stock
+    # finditer -- both fine for a software model but worth streaming/caching once
+    # a real device engine lands.
+    prefix = utf8_prefix(string) if isinstance(string, str) else None
     out = []
     for w in windows:
-        span0 = (b2c[w.start], b2c[w.end]) if b2c is not None else (w.start, w.end)
+        span0 = _win_to_cp(string, w, prefix)
         _verify_window(patt, string, w, span0)
         out.append(HybridMatch(patt, string, span0, pos, endpos_eff, "finditer"))
     return out
@@ -232,15 +275,15 @@ def run_single(patt, op, string, pos=0, endpos=None):
     path = _decide(patt, string, pos, endpos)
     if path == "fallback":
         _record("fallback")
-        return _stock_single(patt, op, string, pos, endpos)
+        return _stock_op(patt, op, string, pos, endpos)
     try:
         result = _model_single(patt, op, string, pos, endpos)
     except (DeviceError, _VerifyError):
         _record_error_fallback()
-        return _stock_single(patt, op, string, pos, endpos)
+        return _stock_op(patt, op, string, pos, endpos)
     except UnsupportedPattern:
         _record("fallback")
-        return _stock_single(patt, op, string, pos, endpos)
+        return _stock_op(patt, op, string, pos, endpos)
     _record("model")
     return result
 
@@ -249,42 +292,43 @@ def run_finditer(patt, string, pos=0, endpos=None):
     path = _decide(patt, string, pos, endpos)
     if path == "fallback":
         _record("fallback")
-        return _stock_finditer(patt, string, pos, endpos)
+        return _stock_op(patt, "finditer", string, pos, endpos)
     try:
         matches = _model_finditer(patt, string, pos, endpos)
     except (DeviceError, _VerifyError):
         _record_error_fallback()
-        return _stock_finditer(patt, string, pos, endpos)
+        return _stock_op(patt, "finditer", string, pos, endpos)
     except UnsupportedPattern:
         _record("fallback")
-        return _stock_finditer(patt, string, pos, endpos)
+        return _stock_op(patt, "finditer", string, pos, endpos)
     _record("model")
     return iter(matches)
 
 
+# Aggregate ops (findall/sub/subn/split): only the match SCAN is offloadable
+# (§12 -- replacement/assembly is host-side); Phase 0 delegates the whole op to
+# stock re, so they are honestly recorded as ``fallback`` (scan offload for
+# aggregate ops is a Phase-1+ item).  We still run _decide for its reuse-counter
+# side effect and env determinism.
 def run_findall(patt, string, pos=0, endpos=None):
-    # Group extraction / result assembly is a host-side operation (§12); the
-    # scan is conceptually offloaded but the assembled result is byte-identical
-    # to CPython regardless of path (R53), so we compute it via the stdlib
-    # pattern and record the dispatch label for diagnostics.
-    path = _decide(patt, string, pos, endpos)
-    _record(path)
-    return _stock_findall(patt, string, pos, endpos)
+    _decide(patt, string, pos, endpos)
+    _record("fallback")
+    return _stock_op(patt, "findall", string, pos, endpos)
 
 
 def run_sub(patt, repl, string, count=0):
-    path = _decide(patt, string, 0, None)
-    _record(path)
+    _decide(patt, string, 0, None)
+    _record("fallback")
     return patt._stock.sub(repl, string, count)
 
 
 def run_subn(patt, repl, string, count=0):
-    path = _decide(patt, string, 0, None)
-    _record(path)
+    _decide(patt, string, 0, None)
+    _record("fallback")
     return patt._stock.subn(repl, string, count)
 
 
 def run_split(patt, string, maxsplit=0):
-    path = _decide(patt, string, 0, None)
-    _record(path)
+    _decide(patt, string, 0, None)
+    _record("fallback")
     return patt._stock.split(string, maxsplit)

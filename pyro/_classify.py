@@ -85,6 +85,14 @@ def classify(pattern, flags: int = 0) -> Classification:
     callers that need R30 semantics validate via ``re.compile`` first.
     """
     is_bytes = not isinstance(pattern, str)
+    if not is_bytes:
+        # A str pattern must be transportable as UTF-8 to the byte engine; a
+        # lone surrogate (which stock re still compiles/matches) cannot be
+        # encoded, so such a pattern is fallback-only (spec v1.2.1 / R14).
+        try:
+            pattern.encode("utf-8")
+        except UnicodeEncodeError:
+            return Classification(False, "pattern not UTF-8 encodable", None)
     try:
         parsed = _sre.parse(
             bytes(pattern) if is_bytes and not isinstance(pattern, bytes) else pattern,

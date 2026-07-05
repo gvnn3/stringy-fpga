@@ -74,11 +74,14 @@ class ModelProgram:
         self.resident = False
 
 
-def _utf8_cp_to_byte(s: str) -> List[int]:
-    """Prefix table: index i -> UTF-8 byte offset of ``s[:i]`` (len == len(s)+1).
+def utf8_prefix(s: str) -> List[int]:
+    """UTF-8 prefix table: index i -> byte offset of ``s[:i]`` (len == len(s)+1).
 
-    Exact for astral (>= U+10000) code points (R21): each char contributes its
-    own UTF-8 length.
+    Strictly increasing (every code point is >= 1 byte), so it doubles as both
+    the code-point->byte map (index it directly) and the byte->code-point map
+    (``bisect_left``), astral-safe (R21): each char contributes its own UTF-8
+    length.  Shared by the model (cp->byte, producing windows) and the router
+    (byte->cp, translating them back).
     """
     out = [0] * (len(s) + 1)
     acc = 0
@@ -157,7 +160,7 @@ class ModelContext:
             if prog.enc == ENC_UTF8:
                 subject = buf.decode("utf-8")
                 cp_spans = _run(prog._re, subject, mode)
-                cp2b = _utf8_cp_to_byte(subject)
+                cp2b = utf8_prefix(subject)
                 windows = [
                     MatchWindow(cp2b[s], cp2b[e], 0,
                                 vbit | (FLAG_ZERO_WIDTH if s == e else 0))

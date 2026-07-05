@@ -21,20 +21,6 @@ from typing import Tuple
 from . import _route
 
 
-def byte_to_cp_map(s: str) -> dict:
-    """Map every UTF-8 byte boundary offset in ``s`` to its code-point index.
-
-    Astral-safe (R21): a code point contributing k UTF-8 bytes advances the
-    byte offset by k while the code-point index advances by one.
-    """
-    out = {0: 0}
-    acc = 0
-    for i, ch in enumerate(s):
-        acc += len(ch.encode("utf-8"))
-        out[acc] = i + 1
-    return out
-
-
 class HybridMatch:
     """Lazy, capture-group-preserving match object (R28).
 
@@ -103,14 +89,16 @@ class HybridMatch:
             raw = getattr(self._stock, self._op)(subj, pos, endpos)
             if raw is not None and raw.span(0) == (s, e):
                 return raw
-        # Defensive fallbacks (unreachable for a sound window): prefer a match
-        # whose group-0 span equals the window, then the origin op's raw result,
-        # then a full-context anchored match -- whichever is non-None.  A match
-        # always starts at s for any window the model reports, so the final
+        # Defensive fallbacks (unreachable for a sound window), ordered so the
+        # boundary-context-faithful primitives come first: the origin op's raw
+        # result, then a full-context anchored match (real subject end), and
+        # only as an absolute last resort the window-TRUNCATED fullmatch (which
+        # moves end-of-string to e and can flip $/\b at the edge).  A match
+        # always starts at s for any window the model reports, so the middle
         # candidate is non-None; never return None into _run.
-        return (self._stock.fullmatch(subj, s, e)
-                or raw
-                or self._stock.match(subj, s, endpos))
+        return (raw
+                or self._stock.match(subj, s, endpos)
+                or self._stock.fullmatch(subj, s, e))
 
     # --- group-0-only accessors: never re-run (R20) -----------------------
     @property
@@ -193,14 +181,6 @@ class HybridMatch:
 
     def __repr__(self):
         return "<pyro.Match span=%r match=%r>" % (self._span0, self._slice0)
-
-
-class _VerifyError(Exception):
-    """A candidate window failed CPython re-verification (R19) -> fallback."""
-
-    def __init__(self, span):
-        super().__init__(f"window {span} failed verification")
-        self.span = span
 
 
 class PyroPattern:
