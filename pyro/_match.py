@@ -45,18 +45,18 @@ class HybridMatch:
 
     __slots__ = (
         "_patt", "_stock", "_subject", "_span0", "_pos", "_endpos",
-        "_anchor_full", "_ngroups", "_named", "_real",
+        "_op", "_ngroups", "_named", "_real",
     )
 
     def __init__(self, patt, subject, span0: Tuple[int, int],
-                 pos: int, endpos: int, anchor_full: bool):
+                 pos: int, endpos: int, op: str):
         self._patt = patt              # PyroPattern (the .re attribute)
         self._stock = patt._stock      # compiled stdlib re.Pattern for re-run
         self._subject = subject
         self._span0 = span0
         self._pos = pos
         self._endpos = endpos
-        self._anchor_full = anchor_full  # reproduce via fullmatch vs match
+        self._op = op                  # origin op: search/match/fullmatch/finditer
         self._ngroups = patt._stock.groups
         self._named = bool(patt._stock.groupindex)
         self._real = None              # cached CPython re-run result
@@ -65,17 +65,43 @@ class HybridMatch:
     def _run(self):
         real = self._real
         if real is None:
-            start = self._span0[0]
-            # Anchored at the reported start over the window; caller units.
-            if self._anchor_full:
-                real = self._stock.fullmatch(self._subject, start, self._endpos)
-            else:
-                real = self._stock.match(self._subject, start, self._endpos)
-            # Soundness (R19): the anchored re-run must reproduce the window.
+            s, e = self._span0
+            # Re-run anchored to the EXACT reported window via fullmatch over
+            # [s, e): forcing full consumption of the window reproduces the
+            # precise match CPython selected -- including the empty-adjacency
+            # case (R22), where finditer reports a non-empty match at a position
+            # that also carried an earlier zero-width match.  A plain anchored
+            # match() cannot reproduce that (it returns the leftmost/empty
+            # match), which is the root cause of the earlier _VerifyError.
+            real = self._stock.fullmatch(self._subject, s, e)
             if real is None or real.span(0) != self._span0:
-                raise _VerifyError(self._span0)
+                # Faithful reconstruction failed (should not happen for a sound
+                # window).  R52: MUST NOT raise -- recover the exact match from a
+                # stock re pass at the origin and adopt it, counting the event.
+                real = self._recover_via_fallback()
             self._real = real
         return real
+
+    def _recover_via_fallback(self):
+        """R52 safety net: recover this match's groups from stock re.
+
+        Re-runs the origin operation with stock ``re`` (same pos/endpos) and
+        adopts the match whose group-0 span equals the already-observed window,
+        counting the event in ``stats()`` as a fallback-after-error.  Never
+        raises: as a last resort returns a fullmatch pinned to the window.
+        """
+        _route.note_verify_fallback()
+        subj, (s, e), endpos = self._subject, self._span0, self._endpos
+        if self._op == "finditer":
+            for m in self._stock.finditer(subj, self._pos, endpos):
+                if m.span(0) == (s, e):
+                    return m
+        else:
+            m = getattr(self._stock, self._op)(subj, self._pos, endpos)
+            if m is not None and m.span(0) == (s, e):
+                return m
+        # Last resort: a window-pinned fullmatch (group-0 guaranteed correct).
+        return self._stock.fullmatch(subj, s, e)
 
     # --- group-0-only accessors: never re-run (R20) -----------------------
     @property

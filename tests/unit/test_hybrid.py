@@ -148,6 +148,29 @@ def test_unverified_window_reverified():
         _model.get_model().unverify_windows = False
 
 
+# --- R22/R18/R52 regression: empty-adjacency group reconstruction ---------
+
+@pytest.mark.parametrize("pat,subj", [
+    (r"(?P<g>_??)?", "_"),                     # minimized reproducer
+    (r"(?P<g>_??)?", "x_y"),
+    (r"(?P<g200>_??)?|c{2,}1{2,}c{2}", "\ndaxc\n_b_d "),  # original AC-0-2b triple
+])
+def test_empty_adjacency_group_reconstruction(pat, subj):
+    # finditer yields BOTH an empty match and a non-empty match at the SAME
+    # start (CPython empty-adjacency rule, R22).  The non-empty match's lazy
+    # group re-run (R18) must reconstruct via a window-anchored fullmatch, not a
+    # plain anchored match() (which returns the empty match and mismatched the
+    # window, raising _VerifyError to the caller — the fixed defect).
+    # Root-caused from the AC-0-2b property suite, seed 0xC0FFEE.
+    got = [(m.span(0), m.groups(), tuple(sorted(m.groupdict().items())))
+           for m in pre.finditer(pat, subj)]
+    ref = [(m.span(0), m.groups(), tuple(sorted(m.groupdict().items())))
+           for m in re.finditer(pat, subj)]
+    assert got == ref
+    # Reconstruction is faithful: no spurious error-fallback, and nothing raised.
+    assert pre.stats()["fallback_after_error"] == 0
+
+
 # --- R53: determinism model vs fallback -----------------------------------
 
 def test_determinism_model_vs_fallback(monkeypatch):

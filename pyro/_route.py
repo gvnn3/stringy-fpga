@@ -56,6 +56,18 @@ def _record_error_fallback() -> None:
         _STATS["total"] += 1
 
 
+def note_verify_fallback() -> None:
+    """Count a lazy-group-extraction verification recovery (R52).
+
+    Called by ``HybridMatch`` when the anchored re-run of an already-returned
+    match had to recover its groups from stock re.  Bumps the error-fallback
+    counters but not ``total`` (no new top-level dispatch occurred).
+    """
+    with _STATS_LOCK:
+        _STATS["device_errors"] += 1
+        _STATS["fallback_after_error"] += 1
+
+
 # --- environment controls (R35 / R35a-R35d) -------------------------------
 # PYRO_DISABLE / PYRO_FORCE_MODEL are NOT read on the per-call hot path (that
 # would blow the R3a/R5 <=2 us decision budget: os.environ.get costs ~0.85 us
@@ -152,20 +164,20 @@ def _get_prog(patt: PyroPattern, string):
     return patt._prog
 
 
-def _verify_window(patt, string, w, span0, anchor_full):
+def _verify_window(patt, string, w, span0):
     """Re-verify an unverified candidate window (R19).
 
     Verified windows (bit0 set) are trusted so that group-0 access never
     triggers a re-run (R20).  Unverified windows (fault injection) are checked
     against CPython *before returning*; a mismatch raises to force fallback.
+
+    Verification anchors a fullmatch over the exact window [s, e) so the check
+    is faithful even for empty-adjacency windows (R22).
     """
     if w.flags & FLAG_VERIFIED:
         return
-    start = span0[0]
-    if anchor_full:
-        m = patt._stock.fullmatch(string, start)
-    else:
-        m = patt._stock.match(string, start)
+    s, e = span0
+    m = patt._stock.fullmatch(string, s, e)
     if m is None or m.span(0) != span0:
         raise _VerifyError(span0)
 
@@ -201,8 +213,8 @@ def _model_single(patt, op, string, pos, endpos):
     w = windows[0]
     span0 = _win_to_cp(string, w)
     endpos_eff = len(string) if endpos is None else min(endpos, len(string))
-    _verify_window(patt, string, w, span0, op == "fullmatch")
-    return HybridMatch(patt, string, span0, pos, endpos_eff, op == "fullmatch")
+    _verify_window(patt, string, w, span0)
+    return HybridMatch(patt, string, span0, pos, endpos_eff, op)
 
 
 def _model_finditer(patt, string, pos, endpos):
@@ -218,8 +230,8 @@ def _model_finditer(patt, string, pos, endpos):
     out = []
     for w in windows:
         span0 = (b2c[w.start], b2c[w.end]) if b2c is not None else (w.start, w.end)
-        _verify_window(patt, string, w, span0, False)
-        out.append(HybridMatch(patt, string, span0, pos, endpos_eff, False))
+        _verify_window(patt, string, w, span0)
+        out.append(HybridMatch(patt, string, span0, pos, endpos_eff, "finditer"))
     return out
 
 
