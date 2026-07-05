@@ -9,6 +9,7 @@ import re
 
 import pytest
 
+import pyro
 import pyro.re as pre
 from pyro import _route
 
@@ -40,6 +41,7 @@ def test_fuzz_agrees_with_re(seed, monkeypatch):
     else:
         monkeypatch.delenv("PYRO_FORCE_MODEL", raising=False)
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()
     pre.purge()
 
     p = pre.compile(pat)
@@ -58,6 +60,7 @@ def test_large_corpus_crosses_into_model(monkeypatch):
     # forcing, and must remain byte-identical (R51.4/R16).
     monkeypatch.delenv("PYRO_FORCE_MODEL", raising=False)
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()
     pre.purge()
     _route.reset_stats()
     rng = random.Random(1)

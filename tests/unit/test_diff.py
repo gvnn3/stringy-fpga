@@ -8,6 +8,7 @@ import re
 
 import pytest
 
+import pyro
 import pyro.re as pre
 from pyro import _route
 
@@ -63,6 +64,7 @@ def _run_ops(mod, pattern, flags, subject):
 def test_differential_fallback_path(pattern, flags, subject, monkeypatch):
     monkeypatch.delenv("PYRO_FORCE_MODEL", raising=False)
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()
     pre.purge()
     assert _run_ops(pre, pattern, flags, subject) == _run_ops(
         re, pattern, flags, subject)
@@ -72,6 +74,7 @@ def test_differential_fallback_path(pattern, flags, subject, monkeypatch):
 def test_differential_model_path(pattern, flags, subject, monkeypatch):
     monkeypatch.setenv("PYRO_FORCE_MODEL", "1")
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()
     pre.purge()
     _route.reset_stats()
     assert _run_ops(pre, pattern, flags, subject) == _run_ops(

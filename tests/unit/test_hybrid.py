@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+import pyro
 import pyro.re as pre
 from pyro import _model, _route
 
@@ -15,6 +16,7 @@ from pyro import _model, _route
 def _force_model(monkeypatch):
     monkeypatch.setenv("PYRO_FORCE_MODEL", "1")
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()  # apply env to the cached snapshot (R35d)
     pre.purge()
     _route.reset_stats()
     yield
@@ -153,6 +155,7 @@ def test_determinism_model_vs_fallback(monkeypatch):
     model_m = pre.search(pat, subj)
     model_res = (model_m.span(0), model_m.groups())
     monkeypatch.setenv("PYRO_DISABLE", "1")
+    pyro.refresh_env()
     pre.purge()
     fb_m = pre.search(pat, subj)
     fb_res = (fb_m.span(0), fb_m.groups())

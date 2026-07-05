@@ -14,6 +14,12 @@ from __future__ import annotations
 
 import re as _stdlib_re
 
+# Import the router at package initialization so the env snapshot is sampled at
+# "first import of pyro" (R35a.1).  This is the earliest deterministic sampling
+# point; a variable set before process start is therefore honored as if read
+# per-call (R35b).
+from . import _route as _route
+
 __version__ = "0.0.1"
 # Packed C-ABI version this build targets (R37); mirrors pyro_abi_version().
 PYRO_ABI_VERSION = 0x00010000
@@ -36,6 +42,7 @@ def install() -> None:
     patterns are indistinguishable from stock ``re`` (R3/R29).
     """
     global _ORIGINALS
+    _route.sample_env()  # sampling point R35a.2 (always, even if already on)
     if _ORIGINALS:
         return  # already installed
     from . import re as _pyro_re
@@ -50,11 +57,21 @@ def install() -> None:
 def uninstall() -> None:
     """Fully restore the stdlib ``re`` behavior patched by :func:`install` (R34)."""
     global _ORIGINALS
+    _route.sample_env()  # sampling point R35a.2 (always, even if not installed)
     if not _ORIGINALS:
         return
     for name, obj in _ORIGINALS.items():
         setattr(_stdlib_re, name, obj)
     _ORIGINALS = {}
+
+
+def refresh_env() -> None:
+    """Re-sample PYRO_DISABLE / PYRO_FORCE_MODEL from ``os.environ`` (R35d).
+
+    Applies the new values to all subsequent top-level calls.  Thread-safe and
+    idempotent; does not alter any in-flight call's routing decision.
+    """
+    _route.sample_env()
 
 
 def is_installed() -> bool:

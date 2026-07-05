@@ -1,10 +1,10 @@
 """Routing / fallback decision logic (R51), device-error fallback (R52),
 determinism (R53), and diagnostics counters (``stats``).
 
-The decision order is exactly R51.  The fallback fast path (R3/R5, AC-0-6) is
-kept deliberately thin: resolve the cached classification, check two env vars
-and the size/reuse gate, then delegate straight to the stdlib pattern with no
-wrapper allocation.
+The decision order is exactly R51.  The fallback fast path (R3a/R5, AC-0-6) is
+kept deliberately thin: resolve the cached classification, read the *cached*
+env flags (never the process environment — R35a), apply the size/reuse gate,
+then delegate straight to the stdlib pattern with no wrapper allocation.
 """
 
 from __future__ import annotations
@@ -56,20 +56,38 @@ def _record_error_fallback() -> None:
         _STATS["total"] += 1
 
 
-# --- environment controls (R35) -------------------------------------------
-# The router re-reads these every top-level call so that PYRO_DISABLE /
-# PYRO_FORCE_MODEL take effect dynamically (A/B testing, incident mitigation).
-# The R3a absolute bound (<=2 us median added overhead, spec v1.1.0) has ample
-# margin for two plain ``os.environ.get`` calls, so we use the public API only.
+# --- environment controls (R35 / R35a-R35d) -------------------------------
+# PYRO_DISABLE / PYRO_FORCE_MODEL are NOT read on the per-call hot path (that
+# would blow the R3a/R5 <=2 us decision budget: os.environ.get costs ~0.85 us
+# each).  Instead they are *sampled* into a single cached snapshot at the
+# deterministic sampling points of R35a: package import, install()/uninstall(),
+# and refresh_env().  The per-call decision reads only the snapshot.
+#
+# The snapshot is a single (disabled, force_model) tuple held behind one module
+# global.  A per-call decision loads that reference once (atomic under the GIL),
+# so a concurrent re-sample can never split a call across old/new values —
+# satisfying R35d's "MUST NOT alter any in-flight call's routing decision".
 _FALSEY_STR = (None, "", "0")
+_ENV = (False, False)                 # (disabled, force_model) cached snapshot
+_ENV_LOCK = threading.Lock()          # serializes samplers (R35d thread-safety)
 
 
-def _env_disabled() -> bool:
-    return os.environ.get("PYRO_DISABLE") not in _FALSEY_STR
+def sample_env() -> None:
+    """Re-sample PYRO_DISABLE / PYRO_FORCE_MODEL from ``os.environ`` (R35a).
+
+    Called only at sampling points (import, install/uninstall, refresh_env).
+    Thread-safe and idempotent; publishes a new snapshot with a single atomic
+    rebind so in-flight decisions are unaffected (R35d).
+    """
+    global _ENV
+    with _ENV_LOCK:
+        disabled = os.environ.get("PYRO_DISABLE") not in _FALSEY_STR
+        force = os.environ.get("PYRO_FORCE_MODEL") not in _FALSEY_STR
+        _ENV = (disabled, force)
 
 
-def _env_force_model() -> bool:
-    return os.environ.get("PYRO_FORCE_MODEL") not in _FALSEY_STR
+# Sample once at first import of this module (R35a.1: package initialization).
+sample_env()
 
 
 # --- R51 decision ---------------------------------------------------------
@@ -88,19 +106,23 @@ def _is_full_span(string, pos, endpos) -> bool:
 
 
 def _decide(patt: PyroPattern, string, pos, endpos) -> str:
-    """Return 'model' or 'fallback' per R51; updates the reuse counter."""
+    """Return 'model' or 'fallback' per R51; updates the reuse counter.
+
+    Consults only the cached env snapshot (R35a); no os.environ access here.
+    """
     reuse = patt._calls
     patt._calls = reuse + 1
 
-    if _env_disabled():                            # R51.1
+    disabled, force = _ENV                         # atomic snapshot (R35d)
+    if disabled:                                   # R51.1 (cached flag)
         return "fallback"
     if not patt._classification.eligible:          # R51.2
         return "fallback"
     if not _is_full_span(string, pos, endpos):     # anchor-context safety
         return "fallback"
-    if _env_force_model():                         # R51.4 override
+    if force:                                      # R51.4 override (cached)
         return "model"
-    if len(string) < S_MIN and reuse < N_REUSE:    # R51.4 loss regime (R3)
+    if len(string) < S_MIN and reuse < N_REUSE:    # R51.4 loss regime (R3a)
         return "fallback"
     return "model"                                 # R51.6 (no device in Ph0)
 

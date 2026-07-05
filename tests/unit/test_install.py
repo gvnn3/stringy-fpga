@@ -61,6 +61,7 @@ def test_installed_results_identical(monkeypatch):
 def test_pyro_disable_forces_fallback(monkeypatch):
     monkeypatch.setenv("PYRO_DISABLE", "1")
     monkeypatch.setenv("PYRO_FORCE_MODEL", "1")
+    pyro.refresh_env()  # sampling point (R35d)
     pre.purge()
     from pyro import _route
     _route.reset_stats()
@@ -76,10 +77,11 @@ def test_pyro_disable_forces_fallback(monkeypatch):
 def test_short_input_routes_fallback(monkeypatch):
     monkeypatch.delenv("PYRO_FORCE_MODEL", raising=False)
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()
     pre.purge()
     from pyro import _route
     _route.reset_stats()
-    # A short one-shot call must route to fallback (R3/R51.4).
+    # A short one-shot call must route to fallback (R3a/R51.4).
     m = pre.search(r"\d+", "x7y")
     assert m.group(0) == "7"
     assert pre.stats()["fallback"] == 1
@@ -90,6 +92,7 @@ def test_short_input_routes_fallback(monkeypatch):
 def test_force_model_overrides_size_gate(monkeypatch):
     monkeypatch.setenv("PYRO_FORCE_MODEL", "1")
     monkeypatch.delenv("PYRO_DISABLE", raising=False)
+    pyro.refresh_env()
     pre.purge()
     from pyro import _route
     _route.reset_stats()
