@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 1.1.1
+- **Version:** 1.2.0
 - **Status:** Draft (approved for Phase 0 delegation)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-04
@@ -418,6 +418,33 @@ drop-in for the subset of the standard `re` module listed here.
   force all calls to fallback (hardware never touched), for A/B testing and
   incident mitigation. `PYRO_FORCE_MODEL=1` MUST route HW-eligible work to the
   software model instead of the device.
+  - **R35a (cached sampling, not per-call reads).** To keep the per-call
+    decision overhead within R3a/R5 (≤ 2 µs), PYRO MUST NOT read the process
+    environment on the per-call hot path. Instead it MUST **sample**
+    `PYRO_DISABLE` and `PYRO_FORCE_MODEL` from `os.environ` into cached internal
+    flags at these **deterministic sampling points** only:
+    1. first import of the `pyro` package (module initialization);
+    2. every call to `pyro.install()` and `pyro.uninstall()`;
+    3. every call to the explicit API `pyro.refresh_env()`.
+    The per-call decision (R51 step 1) MUST consult only the cached flags.
+  - **R35b (documented mid-process semantics).** A variable set **before process
+    start** (case 1) or **before `pyro.install()`** (case 2) MUST behave exactly
+    as if read per-call — i.e., identical observable behavior to the prior
+    version for the common configure-then-run usage. Mutating `os.environ`
+    mid-process takes effect only **after the next sampling point** (R35a.2/3).
+    This deferred-refresh semantics is intentional and MUST be documented; it
+    mirrors CPython precedents such as `re.purge()` and locale caching, where
+    cached state is refreshed at explicit points rather than on every operation.
+  - **R35c (incident-mitigation guarantee).** If `PYRO_DISABLE=1` is present in
+    `os.environ` at **any** sampling point (R35a), PYRO MUST force all subsequent
+    top-level calls to the fallback path until the flag is re-sampled with the
+    variable absent/unset. Operators mitigating an incident set `PYRO_DISABLE=1`
+    and then reach a sampling point — either by calling `pyro.refresh_env()` /
+    `pyro.uninstall()` in-process, or by restarting the process — to take effect.
+  - **R35d (`refresh_env` API).** `pyro.refresh_env() -> None` MUST re-sample
+    both variables from the current `os.environ` into the cached flags and apply
+    the new values to all subsequent calls. It MUST be thread-safe (R32) and
+    idempotent, and MUST NOT alter any in-flight call's routing decision.
 - **R36 (transparency invariant).** With PYRO installed, any program that passes
   its test suite against stock `re` and uses only documented `re` behavior MUST
   produce identical observable output (return values and raised exceptions).
@@ -592,13 +619,16 @@ by the software model (R7) so that the model and hardware are interchangeable.
 
 - **R51 (decision order).** For each top-level call, PYRO MUST decide as follows,
   in order, and the decision MUST be deterministic:
-  1. If `PYRO_DISABLE` set → fallback.
+  1. If the **cached** `PYRO_DISABLE` flag is set → fallback. This flag is read
+     from the cached value sampled at the last sampling point (R35a); the process
+     environment MUST NOT be read on this per-call path.
   2. Compile-classify the pattern (cached, R4/R8). If not HW-eligible →
      fallback.
   3. If the pattern observes capture groups AND the caller will need them, mark
      for **hybrid** (still HW-eligible; groups via R18).
   4. Estimate work: if `len(subject) < S_min` AND estimated reuse `< N_reuse`
-     (per-pattern call counter) → fallback (R3), unless `PYRO_FORCE_MODEL`.
+     (per-pattern call counter) → fallback (R3), unless the **cached**
+     `PYRO_FORCE_MODEL` flag (R35a) is set.
   5. If no device and no model available → fallback.
   6. Otherwise → hardware/model path.
 - **R52 (correctness on any device error).** If the hardware path raises
@@ -686,13 +716,18 @@ be Python for Phase 0; the C ABI is stubbed but shape-frozen).
 - **AC-0-4.** Capture-group access triggers the hybrid re-run and returns
   byte-identical groups/spans; accessing only group 0 does not re-run. (R18, R20)
 - **AC-0-5.** `pyro.install()`/`uninstall()` patch and restore stock `re` with
-  identical observable behavior; `PYRO_DISABLE` forces fallback. (R33–R36, R60)
+  identical observable behavior; `PYRO_DISABLE` set at a sampling point forces
+  fallback. Env flags are sampled only at import, `install()`/`uninstall()`, and
+  `pyro.refresh_env()`; a variable mutated mid-process takes effect only after
+  the next sampling point, and `PYRO_DISABLE=1` present before process start or
+  before `install()` behaves as if read per-call. (R33–R36, R35a–R35d, R60)
 - **AC-0-6.** Routing is deterministic and cheap in absolute terms: short-input/
   one-shot calls route to the fallback path per the §8 decision order, and the
-  added routing/decision overhead is ≤ 2 µs median per call. Phase 0 asserts the
-  **absolute** loss-regime bound (R3a/R5), not the 1.15× relative ratio (R3b),
-  which is scoped to Phase 1+ and is verified by AC-2-5/AC-3-3. (R3a, R5, R51,
-  R59)
+  added routing/decision overhead is ≤ 2 µs median per call. The per-call path
+  MUST consult only cached env flags (no per-call `os.environ` read), per R35a.
+  Phase 0 asserts the **absolute** loss-regime bound (R3a/R5), not the 1.15×
+  relative ratio (R3b), which is scoped to Phase 1+ and is verified by
+  AC-2-5/AC-3-3. (R3a, R5, R35a, R51, R59)
 - **AC-0-7.** Empty-match, multiline/anchor, IGNORECASE-folding, and astral-
   codepoint offset cases are byte-identical to stock `re`. (R21–R24)
 - **AC-0-8.** The frozen `pyro_rt.h` compiles and `pyro_abi_version()` returns
@@ -850,6 +885,19 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **1.2.0** (2026-07-05) — *Requirement change (MINOR).* Surfaced by the Task 1
+  fix round: on the target host a public `os.environ.get` costs ~0.86 µs, so
+  reading both `PYRO_DISABLE` and `PYRO_FORCE_MODEL` per call (~1.74 µs, measured
+  total 2.79 µs) cannot meet R3a/R5's ≤ 2 µs budget, and the previous private-
+  dict workaround was removed at review as fragile. Amended R35 (added R35a–R35d)
+  so env flags are sampled into cached internal flags only at deterministic
+  points — package import, `pyro.install()`/`uninstall()`, and a new explicit
+  `pyro.refresh_env()` API — and the per-call decision (R51 step 1/4) consults
+  only the cached flags. Documented the deferred mid-process refresh semantics
+  (mirrors `re.purge()`/locale caching) and preserved the incident-mitigation
+  guarantee (`PYRO_DISABLE=1` at any sampling point forces fallback thereafter).
+  R3a/R5 numeric bounds unchanged (2 µs); the amendment makes them achievable.
+  Updated AC-0-5 and AC-0-6 accordingly.
 - **1.1.1** (2026-07-05) — *Clarification (PATCH).* Surfaced by the Task 1 code
   review: CPython's `re.Pattern`/`re.Match` are concrete, non-subclassable,
   non-ABC C types, so an accelerated wrapper cannot satisfy
