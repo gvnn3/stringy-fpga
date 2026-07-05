@@ -1,8 +1,8 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.0.0
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+)
+- **Version:** 2.0.1
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1a in progress)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-05
 
@@ -110,8 +110,8 @@ them; implementers MUST NOT assume different hardware.
   generated RTL circuit into a PR bitstream (Vivado synth + P&R + PR bitstream
   generation) and populates the bitstream cache.
 - **Bitstream cache:** persistent cache of synthesized PR artifacts and their
-  manifests, keyed by `(pattern_bytes, flags, generator_version,
-  toolchain_version, shell/PR-region_version)` (R4).
+  manifests, keyed by `(pattern_bytes, encoding, effective_flags,
+  generator_version, toolchain_version, shell/PR-region_version)` (R4/R47a).
 - **Circuit lifecycle tiers:** **cold** — no cached artifact; synthesis needed
   (minutes, async, never blocks callers); **warm** — artifact cached; PR-load
   needed (~O(100 ms)); **resident** — loaded in the PR region; dispatch
@@ -193,13 +193,18 @@ proves them wrong, but they MUST NOT be silently ignored.
 - **R4 (compile amortization and cache tiers).** PYRO SHALL maintain two distinct
   caches with three service tiers:
   - **Host classification cache (warm, µs-scale).** Keyed by `(pattern_bytes,
-    flags, generator_version)`, holds the eligibility decision (R8) and the
-    generated automaton/RTL descriptor. A repeated `compile()` of the same
-    pattern MUST be served from this cache in ≤ **50 µs** on the host side. This
-    tier is unchanged from pre-2.0.0 and governs `re.compile()` latency.
-  - **Bitstream cache (persistent).** Keyed by `(pattern_bytes, flags,
-    generator_version, toolchain_version, shell/PR-region_version)`, holds
-    synthesized PR bitstream artifacts and their manifests (R47b). Its three
+    encoding, effective_flags, generator_version)`, holds the eligibility
+    decision (R8) and the generated automaton/RTL descriptor. `encoding` is the
+    `PYRO_ENC_BYTES`/`PYRO_ENC_UTF8` tag and `effective_flags` are the
+    canonicalized post-inline-extraction flags — both per R47a; the host MUST
+    canonicalize before lookup. A repeated `compile()` of the same pattern MUST
+    be served from this cache in ≤ **50 µs** on the host side. This tier's shape
+    matches pre-2.0.0 except for the now-explicit encoding tag and effective-flag
+    canonicalization, and governs `re.compile()` latency.
+  - **Bitstream cache (persistent).** Keyed by `(pattern_bytes, encoding,
+    effective_flags, generator_version, toolchain_version,
+    shell/PR-region_version)`, holds synthesized PR bitstream artifacts and their
+    manifests (R47b); `encoding` and `effective_flags` are as in R47a. Its three
     tiers are:
     - **cold** — no artifact for the key: synthesis is required (minutes),
       performed asynchronously by the synthesis service (R63); the caller is
@@ -416,13 +421,40 @@ CPython `re`**. When in doubt, fall back.
 
   This "FPGA finds candidate windows, CPU re-runs for groups" design guarantees
   R16 for capture groups while keeping the per-byte scan on the fabric.
-- **R19 (candidate soundness/completeness).** The FPGA engine, for HW-eligible
-  patterns, MUST be **sound and complete for group 0**: it MUST report a
-  candidate window covering every position where CPython would find a match, and
-  MUST NOT omit any match. False positives are permitted **only** if PYRO
-  re-verifies every reported window with CPython (or the software model) before
-  returning it to the caller; unverified false positives are a defect. False
-  negatives are never permitted for HW-eligible patterns.
+- **R19 (candidate soundness/completeness).** The generated circuit (or software
+  model), for HW-eligible patterns, MUST be **complete for group 0**: it MUST
+  report a candidate window covering every position where CPython would find a
+  match, and MUST NOT omit any match. **Completeness (no false negatives) is
+  mandatory and absolute.**
+  - **R19a (deliberate over-approximation is sanctioned).** The generated
+    automaton MAY intentionally **over-approximate** — recognize a *superset* of
+    the true match starts and thereby emit **false positives** — as a legitimate
+    generator strategy for constructs that are expensive to encode exactly in
+    RTL (e.g. full Unicode general categories, cross-length / multi-byte case
+    folds, `\b` at UTF-8 code-point boundaries). This is **not a defect**,
+    provided:
+    1. completeness (R19) still holds — over-approximation never drops a true
+       match; and
+    2. PYRO **re-verifies every reported window** with CPython (or the software
+       model) before returning it to the caller, so caller-visible results remain
+       byte-identical (R16). Unverified false positives are a defect; a false
+       positive that survives re-verification into a returned result is a defect.
+  - **R19b (bounded false-positive rate).** Over-approximation MUST be bounded
+    tightly enough not to destroy the win regime (R1/R2): the added
+    re-verification cost is CPU work proportional to the false-positive rate, and
+    an over-approximation that makes the hardware path slower than plain fallback
+    defeats its purpose. The generator SHOULD prefer the tightest encoding that
+    fits the PR-region budget (R11/R12); a pattern whose only feasible circuit has
+    a ruinous false-positive rate SHOULD be classified fallback-only rather than
+    synthesized.
+  - **R19c (manifest declares over-approximation classes).** When a generated
+    circuit over-approximates, its manifest (R47b) MUST declare the
+    **over-approximation classes** it uses (e.g. `unicode_category`,
+    `cross_length_casefold`, `word_boundary_utf8`) and, where feasible, an
+    estimated false-positive rate, so the benchmark suite (R59) can **attribute
+    re-verification cost** and so R19b can be checked. An exact (non-over-
+    approximating) circuit declares an empty set.
+  - False negatives are never permitted for HW-eligible patterns.
 - **R20 (lazy group extraction).** For match objects returned by `search`/`match`
   /`fullmatch`/`finditer`, PYRO MAY defer the CPython group re-run until the
   caller first accesses a group > 0; accessing only `group(0)`/`span(0)`/`start`/
@@ -765,10 +797,32 @@ synthesis time and identified via the identity block (R47a).
 
 - **R47a (circuit-identity register block — trust boundary).** Before dispatching
   any scan, the host runtime MUST read the identity block (`CIRC_ID0..3`,
-  `CIRC_FLAGS`) and verify that the resident circuit's baked **pattern hash**
-  (a cryptographic hash, ≥ 128-bit, of `(pattern_bytes, flags, generator_version,
-  harness_version)`) and flags **exactly match** the pattern it is about to
-  dispatch. If they do not match (wrong circuit resident, or PR load not
+  `CIRC_FLAGS`) and verify that the resident circuit's baked **pattern hash** and
+  flags **exactly match** the pattern it is about to dispatch. The pattern hash
+  is a cryptographic hash, ≥ 128-bit, over the following **normative** inputs, in
+  this exact set:
+  - `pattern_bytes` — the pattern source (bytes, or the `str` pattern's UTF-8
+    encoding);
+  - **encoding tag** — a 1-byte discriminator distinguishing `PYRO_ENC_BYTES`
+    from `PYRO_ENC_UTF8` (§7.3 R38). This input is **required** because the same
+    pattern text generates a **different automaton/circuit** in bytes mode vs.
+    str/UTF-8 mode (R14); omitting it would let a bytes-mode circuit be
+    mis-identified as satisfying a str-mode call, or vice versa;
+  - **effective (canonicalized) flags** — the flags **after** inline-flag
+    extraction and canonicalization (see below), **not** the caller's raw `flags`
+    argument;
+  - `generator_version`;
+  - `harness_version`.
+
+  **Flag canonicalization (normative).** The host MUST canonicalize flags before
+  computing the identity hash and before any cache lookup (R4): inline flags
+  (e.g. `(?i)`, `(?ms)`, and scoped `(?i:...)` where applicable) MUST be folded
+  into the effective flag set exactly as CPython `re` would apply them, `re.U`
+  MUST be normalized to its no-op form for `str`, and the result MUST be a stable
+  canonical integer. Two patterns that are semantically identical after inline-
+  flag extraction MUST produce the **same** effective flags and therefore the
+  **same** identity hash. The `CIRC_FLAGS` register holds these effective flags.
+  If they do not match (wrong circuit resident, or PR load not
   complete), the host MUST NOT dispatch and MUST fall back (`PYRO_E_NOT_RESIDENT`,
   R51). This is a **trust boundary**: a circuit proves *which* pattern it
   implements via its baked identity, but the host **still re-verifies every
@@ -778,16 +832,20 @@ synthesis time and identified via the identity block (R47a).
   bit0 (`verified`) set by a circuit is advisory only and does NOT relieve the
   host of R19 re-verification.
 - **R47b (PR bitstream artifact + manifest contract).** The synthesis service
-  (R63) produces, for each key `(pattern_bytes, flags, generator_version,
-  toolchain_version, shell/PR-region_version)`, a **PR bitstream artifact**
-  accompanied by a **manifest** (a self-describing sidecar, e.g. JSON + a binary
-  bitstream). The manifest MUST contain at least:
+  (R63) produces, for each key `(pattern_bytes, encoding, effective_flags,
+  generator_version, toolchain_version, shell/PR-region_version)` (encoding and
+  effective_flags per R47a), a **PR bitstream artifact** accompanied by a
+  **manifest** (a self-describing sidecar, e.g. JSON + a binary bitstream). The
+  manifest MUST contain at least:
   - the **pattern hash** (same value baked into `CIRC_ID*`, R47a);
-  - the pattern flags and `generator_version`, `toolchain_version`,
+  - the encoding tag, the effective (canonicalized) pattern flags, and
+    `generator_version`, `toolchain_version`,
     `harness_version`, and target **shell / PR-region identifier** (the artifact
     is only loadable into a compatible region);
   - **resource utilization** (LUTs, FFs, BRAM, DSP) and achieved timing (Fmax /
     met-timing boolean) from P&R;
+  - the **over-approximation classes** the circuit uses and, where feasible, an
+    estimated false-positive rate (R19c; empty set for an exact circuit);
   - a **CRC-32/hash of the bitstream payload** for integrity.
   Before a PR load (R40 `pyro_circuit_load`), the host MUST verify the manifest's
   shell/PR-region identifier matches the live device and the bitstream integrity
@@ -1006,10 +1064,15 @@ MUST NOT read the implementation; they exercise the Python API (§7.1), the C AB
   corpus set, the metrics in R1–R5 and emit machine-readable results. The corpus
   set MUST include: (a) a ≥ 1 MiB log-file corpus with a reused pattern set of
   ≥ 32 patterns; (b) many-short-strings workload for the loss regime (R3);
-  (c) a streaming corpus exceeding one `OUT_CAP` to exercise resumption. On a
-  host without hardware, benchmarks run against the model and assert only the
-  *routing* thresholds (R3–R5), skipping absolute-throughput assertions (R1/R2)
-  with a recorded SKIP, never a PASS.
+  (c) a streaming corpus exceeding one `OUT_CAP` to exercise resumption;
+  (d) an **over-approximation corpus** — patterns using the over-approximation
+  classes declared in manifests (R19c: full Unicode categories, cross-length
+  case folds, `\b` at UTF-8 boundaries) — so the harness can measure and
+  **attribute the re-verification (CPU) cost** of false positives and check that
+  it does not violate R19b's win-regime bound. On a host without hardware,
+  benchmarks run against the model and assert only the *routing* thresholds
+  (R3–R5), skipping absolute-throughput assertions (R1/R2) with a recorded SKIP,
+  never a PASS.
 - **R60 (transparency regression).** A test MUST take a corpus of real-world
   Python snippets using stock `re`, run them under `pyro.install()` and under
   stock `re`, and assert identical outputs and exceptions (R33–R36).
@@ -1282,6 +1345,24 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.0.1** (2026-07-05) — *Clarifications (PATCH), Phase 1a implementation.* No
+  interface/AC break. (1) **R47a identity hash inputs** made explicit: the hash
+  now enumerates the **encoding tag** (`PYRO_ENC_BYTES` vs `PYRO_ENC_UTF8`) —
+  required because the same pattern text generates a different automaton in bytes
+  vs. str/UTF-8 mode (R14) — and **effective (canonicalized) flags** after
+  inline-flag extraction, not the caller's raw flags; added a normative flag-
+  canonicalization rule and required the host to canonicalize before lookup. The
+  same two inputs were mirrored into both R4 cache keys, the R47b manifest key,
+  and the §2 bitstream-cache definition (closing the identical gap there).
+  (2) **R19 over-approximation** codified: added R19a sanctioning deliberate
+  over-approximation (recognizing a superset of true match starts, emitting
+  re-verified false positives) as a legitimate generator strategy for constructs
+  expensive to encode exactly in RTL — **not a defect** provided completeness
+  holds (no false negatives, ever) and every window is re-verified to keep
+  results byte-identical; R19b bounds the false-positive rate so it does not
+  destroy the win regime; R19c requires the manifest (R47b) to declare the
+  over-approximation classes + estimated FP rate; and R59(d) adds an
+  over-approximation benchmark corpus to attribute re-verification cost.
 - **2.0.0** (2026-07-05) — *Architecture inversion (MAJOR), project-owner
   decision.* Owner intent, verbatim: "each new regex compilation creates a new
   circuit/block for the FPGA dynamic region." The programmable/loadable-program
