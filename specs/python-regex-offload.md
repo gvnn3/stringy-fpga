@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.0.1
+- **Version:** 2.0.2
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1a in progress)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-05
@@ -201,6 +201,18 @@ proves them wrong, but they MUST NOT be silently ignored.
     be served from this cache in ≤ **50 µs** on the host side. This tier's shape
     matches pre-2.0.0 except for the now-explicit encoding tag and effective-flag
     canonicalization, and governs `re.compile()` latency.
+  - **R4b (canonicalization scope).** The R4/R47a **canonicalization** requirement
+    (stripped leading global inline flags + effective flags + encoding tag)
+    applies to every cache/key where **circuit reuse** is decided: the host
+    **classification/descriptor** cache above, and the **circuit-identity** and
+    **bitstream** keys (R47a/R47b). It does **not** apply to the L1
+    compiled-`Pattern` object cache (§7.1): that cache MAY key on the **raw**
+    `(pattern, flags)` as supplied by the caller, because collapsing e.g.
+    `(?i)abc` and `("abc", re.I)` — which canonicalize identically — into one
+    `Pattern` object would break `Pattern.pattern` fidelity (R27: stock `re`
+    reports different `.pattern` strings for those two). Thus two raw-distinct
+    patterns MAY share one generated circuit (canonical key) while remaining two
+    distinct `Pattern` objects (raw key); this is correct and required.
   - **Bitstream cache (persistent).** Keyed by `(pattern_bytes, encoding,
     effective_flags, generator_version, toolchain_version,
     shell/PR-region_version)`, holds synthesized PR bitstream artifacts and their
@@ -1345,6 +1357,16 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.0.2** (2026-07-05) — *Clarification (PATCH), Task 5 fix round.* No
+  interface/AC break. Added **R4b (canonicalization scope)**: the R4/R47a
+  canonicalization (stripped leading global inline flags + effective flags +
+  encoding tag) applies wherever **circuit reuse** is decided — the host
+  classification/descriptor cache and the R47a/R47b circuit-identity and
+  bitstream keys — but the **L1 compiled-`Pattern` object cache MAY key on raw
+  `(pattern, flags)`** to preserve `Pattern.pattern` fidelity (R27: stock `re`
+  reports different `.pattern` for `(?i)abc` vs `("abc", re.I)`). Two raw-distinct
+  patterns may therefore share one generated circuit while remaining two distinct
+  `Pattern` objects.
 - **2.0.1** (2026-07-05) — *Clarifications (PATCH), Phase 1a implementation.* No
   interface/AC break. (1) **R47a identity hash inputs** made explicit: the hash
   now enumerates the **encoding tag** (`PYRO_ENC_BYTES` vs `PYRO_ENC_UTF8`) —
