@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '\"## \" + (now | strflocaltime(\"%Y-%m-%d %H:%M:%S\")) + \"\\n\\n\" + .prompt + \"\\n\"' >> \"$CLAUDE_PROJECT_DIR/docs/prompts.md\" 2>/dev/null || true"
+            "command": "jq -r 'select((.prompt | test(\"^<(task-notification|local-command-caveat|command-name|system-reminder)\")) | not) | \"## \" + (now | strflocaltime(\"%Y-%m-%d %H:%M:%S\")) + \"\\n\\n\" + .prompt + \"\\n\"' >> \"$CLAUDE_PROJECT_DIR/docs/prompts.md\" 2>/dev/null || true"
           }
         ]
       }
