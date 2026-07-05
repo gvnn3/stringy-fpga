@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.0.3
+- **Version:** 2.0.4
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1a in progress)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-05
@@ -645,7 +645,11 @@ ABI is versioned.
 - **R37 (ABI version).** Symbol `uint32_t pyro_abi_version(void)` returns a
   packed `MAJOR<<16 | MINOR<<8 | PATCH`. This v2.0.0 spec defines ABI **2.0.0**
   (the circuit-oriented ABI below). A caller MUST refuse a library whose MAJOR
-  differs from the ABI it expects.
+  differs from the ABI it expects. **ABI enum stability (normative):** from ABI
+  2.0.0 onward, all ABI enums (`pyro_status`, `pyro_encoding`, `pyro_circ_status`,
+  R38) are **additive-only** within a MAJOR — existing enumerator values and
+  meanings are frozen; new cases MUST take new values and MUST NOT renumber or
+  repurpose existing ones. Removing or renumbering a value is a MAJOR break.
   - *Version-history note (does not amend any AC).* The Phase-0 deliverable froze
     a shape-only **stub** header at ABI **1.0.0**; **AC-0-8** validated that stub
     on branch `phase0-pyro` and remains valid there unchanged. Phase 1 supersedes
@@ -703,8 +707,13 @@ ABI is versioned.
 - **R40 (generate / synthesize / load).** The former single-step "compile+load"
   becomes an explicit lifecycle across the cache tiers (R4):
   ```c
-  /* L2 generate: parse, classify, and emit the pattern's RTL descriptor.
-     Returns PYRO_E_UNSUPPORTED/PYRO_E_CAPACITY for non-HW-eligible patterns. */
+  /* Create a circuit handle from an already-eligible circuit DESCRIPTOR.
+     Precondition (R40a): eligibility/classification is decided in the Python L2
+     layer BEFORE this call; `pattern` carries the L2-produced descriptor
+     (canonical identity + artifact locator), not raw regex requiring parsing.
+     A binding that performs its own on-device resource estimation MAY return
+     PYRO_E_UNSUPPORTED/PYRO_E_CAPACITY; device-free/model bindings trust the
+     descriptor and do not (that decision stays in L2). */
   pyro_status pyro_generate(pyro_ctx *ctx, const uint8_t *pattern, size_t len,
                             uint32_t flags, pyro_encoding enc,
                             pyro_circuit **out);
@@ -727,6 +736,20 @@ ABI is versioned.
   `flags` mirrors the Python flag bits (§7.1). A caller MUST NOT scan a circuit
   that is not `PYRO_CIRC_RESIDENT`; doing so returns `PYRO_E_NOT_RESIDENT` and
   the caller MUST fall back.
+- **R40a (classification is an L2 responsibility; `pyro_generate` precondition).**
+  Pattern **classification/eligibility** (the supported-subset gate and resource
+  estimate, R8/R11/R12) is owned by the **Python L2 layer** and MUST be performed
+  **before** entering the C ABI. The C `pyro_generate` is a **handle-creation**
+  step: it trusts its input per the ABI contract and assumes the caller supplies
+  an **already-eligible circuit descriptor** (the L2-produced canonical identity +
+  artifact locator, per R40's comment), not raw regex text to be parsed in C.
+  Consequently, in the **device-free / `model://` binding** `pyro_generate` does
+  **not** run a classifier and does **not** return `PYRO_E_UNSUPPORTED`/
+  `PYRO_E_CAPACITY`; those results arise only in the Python L2 path (surfaced to
+  callers as fallback routing, R8/R51) or in a future binding that performs its
+  own on-device estimation. This scoping does not weaken correctness: an
+  ineligible pattern never reaches `pyro_generate` because L2 has already routed
+  it to fallback.
 - **R41 (scan).**
   ```c
   pyro_status pyro_scan(pyro_ctx *ctx, pyro_circuit *c,
@@ -862,9 +885,22 @@ synthesis time and identified via the identity block (R47a).
     estimated false-positive rate (R19c; empty set for an exact circuit);
   - a **CRC-32/hash of the bitstream payload** for integrity.
   Before a PR load (R40 `pyro_circuit_load`), the host MUST verify the manifest's
-  shell/PR-region identifier matches the live device and the bitstream integrity
-  hash; on mismatch it MUST refuse the load and treat the pattern as fallback
-  (not a device error). The obsolete R46 32-byte `"PROG"` blob header is removed.
+  shell/PR-region identifier matches the live device, the bitstream integrity
+  hash, and the R47a identity; on any of these failing it MUST refuse the load
+  and treat the pattern as fallback (not a device error). The obsolete R46
+  32-byte `"PROG"` blob header is removed.
+  - **R47c (refusal status — normative).** A refused `pyro_circuit_load`
+    (shell/PR-region incompatibility, integrity-hash failure, or R47a identity
+    mismatch) MUST return **`PYRO_E_NOT_RESIDENT`**: the load did not happen and
+    the circuit is not resident, so the caller falls back exactly as for any
+    not-resident tier (R40/R51). This is deliberately distinct from
+    `PYRO_E_SYNTH` (which means synthesis failed → *permanent* fallback, R65): a
+    refusal is transient with respect to a corrected/compatible artifact and does
+    **not** mark the pattern permanently fallback-only. Neither is a device error
+    for R52 purposes; both are routing (R44). **ABI stability:** the `pyro_status`
+    enum (R38) is **additive-only** from ABI 2.0.0 onward — existing values and
+    meanings are frozen; a future need for a finer refusal code MUST add a new
+    enumerator (never renumber or repurpose `PYRO_E_NOT_RESIDENT`/`PYRO_E_SYNTH`).
 - **R47 (result ring entry).** Each result entry is 24 bytes, little-endian:
   `start(8) end(8) pattern_id(4) flags(4)` — matching `pyro_match` (R38). The
   circuit writes entries densely from ring base; on overflow (`OUT_COUNT ==
@@ -882,7 +918,15 @@ synthesis time and identified via the identity block (R47a).
   of the scan sequence.
 - **R49 (endianness/alignment).** All DMA buffers MUST be 64-byte aligned. All
   multi-byte fields are little-endian. The input buffer needs no alignment beyond
-  64-byte start. The model MUST assert these to catch host bugs.
+  64-byte start. The model/runtime MUST **check** these to catch host bugs.
+  - **R49a (check realized as a defined error).** "Check" (formerly "assert") is
+    satisfied — and preferably realized — by returning the defined error
+    `PYRO_E_INVALID` with the R44 state guarantees (`*out_count == 0`, `out`
+    handles `NULL`), rather than `abort()`/`assert()` that would kill the process.
+    A defined-error rejection is the production-safe form and is what the
+    conformance suite MUST observe; a debug build MAY additionally `assert`, but
+    the **normative** contract is the `PYRO_E_INVALID` return. The check MUST
+    reject a misaligned or otherwise malformed DMA request before any transfer.
 - **R50 (transport-agnostic contract).** The register/DMA semantics above are
   identical regardless of whether L4 reaches the circuit over the QDMA char-dev
   binding or the raw-Ethernet binding; only the mechanism of MMIO/DMA differs.
@@ -1370,6 +1414,24 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.0.4** (2026-07-05) — *Rulings (PATCH), Task 7 (C ABI 2.0.0 native runtime).*
+  No interface/AC break; blesses the native runtime. (1) **R40a (classification is
+  an L2 responsibility).** Pattern eligibility/classification is owned by Python
+  L2 and performed before the C ABI; `pyro_generate` is a handle-creation step
+  whose `pattern` argument is an already-eligible **descriptor**, not raw regex.
+  The device-free/`model://` binding therefore does not classify and does not
+  return `PYRO_E_UNSUPPORTED`/`PYRO_E_CAPACITY` (those stay in L2); updated R40's
+  code comment accordingly. Correctness is preserved — ineligible patterns never
+  reach `pyro_generate`. (2) **R49a (alignment check as a defined error).**
+  R49's "assert" is satisfied — and preferably realized — by returning
+  `PYRO_E_INVALID` with R44 state guarantees rather than `abort()`/`assert()`;
+  the defined-error form is the normative, production-safe contract (debug builds
+  MAY additionally assert). (3) **R47c (refusal status) + R37 ABI-enum
+  stability.** A refused `pyro_circuit_load` (shell/PR incompatibility, integrity
+  failure, or R47a identity mismatch) MUST return **`PYRO_E_NOT_RESIDENT`** —
+  blessed as distinct from `PYRO_E_SYNTH` (transient refusal vs. permanent
+  synthesis failure); both are routing, not device errors. Codified that the ABI
+  enums are **additive-only** within a MAJOR from ABI 2.0.0 onward (R37).
 - **2.0.3** (2026-07-05) — *Ratification (PATCH), Task 6 review.* No interface/AC
   break; blesses the implemented router. Added **R51b (device-free precedence of
   R7)** and a mirroring sentence in R7: when **no physical device is present**,
