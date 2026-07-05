@@ -53,6 +53,14 @@ E_BYTE = 0    # payload: frozenset[int] of matching byte values
 E_EPS = 1     # payload: None
 E_ASSERT = 2  # payload: int (an AT_* opcode, evaluated by position at run time)
 
+# Over-approximation class names (R19c).  A generated circuit that recognizes a
+# *superset* of the true language (relying on host re-verification, R19a) MUST
+# declare which of these strategies it used so the manifest (R47b) can attribute
+# re-verification cost.  An exact circuit declares the empty set.
+OA_UNICODE_CATEGORY = "unicode_category"          # \d \w \s etc. over full Unicode
+OA_CROSS_LENGTH_CASEFOLD = "cross_length_casefold"  # simple fold across UTF-8 lengths
+OA_WORD_BOUNDARY_UTF8 = "word_boundary_utf8"       # \b/\B at UTF-8 code-point edges
+
 
 class Edge(NamedTuple):
     kind: int
@@ -72,15 +80,20 @@ class Automaton:
         flags:     effective ``re`` flags baked into the automaton.
     """
 
-    __slots__ = ("n_states", "start", "accept", "edges", "enc", "flags")
+    __slots__ = ("n_states", "start", "accept", "edges", "enc", "flags",
+                 "over_approx")
 
-    def __init__(self, n_states, start, accept, edges, enc, flags):
+    def __init__(self, n_states, start, accept, edges, enc, flags,
+                 over_approx=frozenset()):
         self.n_states = n_states
         self.start = start
         self.accept = accept
         self.edges = edges
         self.enc = enc
         self.flags = flags
+        # frozenset[str] of OA_* class names actually used by this automaton
+        # (R19c); empty for an exact (non-over-approximating) recognizer.
+        self.over_approx = frozenset(over_approx)
 
     # -- deterministic serialization helpers (used by the RTL generator) ----
     def sorted_edges(self, s: int) -> List[Edge]:
@@ -167,6 +180,8 @@ class _Builder:
         self.flags = flags
         self.is_bytes = enc == ENC_BYTES
         self.edges: List[List[Edge]] = []
+        # OA_* class names hit during lowering (R19c); surfaced on the Automaton.
+        self.over_approx: set = set()
 
     # -- state / edge primitives -------------------------------------------
     def new_state(self) -> int:
@@ -219,12 +234,14 @@ class _Builder:
             # A fixed-length byte encoding would miss a cross-length fold and
             # break completeness, so we accept any code point here and let R19
             # re-verification remove the false positives.
+            self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
             return None
         if ignorecase and ascii_flag and cp < 0x80:
             # ASCII-flag IGNORECASE folds within ASCII only (single byte, exact).
             fold = _ascii_fold(cp)
             if all(x < 0x80 for x in fold):
                 return [fold]  # all single-byte
+            self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
             return None
         # Exact UTF-8 byte chain for the literal code point.
         return [frozenset({b}) for b in chr(cp).encode("utf-8")]
@@ -246,10 +263,15 @@ class _Builder:
             return exit_
         # str mode: any code point except cp (and, under IGNORECASE, its folds).
         excl_ascii = set()
+        if cp >= 0x80:
+            # A multibyte literal negation admits *all* multibyte code points,
+            # wrongly re-admitting cp itself (removed by R19 re-verify).
+            self.over_approx.add(OA_UNICODE_CATEGORY)
         if cp < 0x80:
             excl_ascii = set(_ascii_fold(cp)) if (ignorecase and ascii_flag) else {cp}
             if ignorecase and not ascii_flag:
                 excl_ascii = {cp}  # OVER-APPROX: ignore cross-length folds here
+                self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
         # length-1 code points except the excluded ASCII ones (exact for the
         # common ASCII case); all multi-byte code points (OVER-APPROX: at most a
         # single multibyte code point 'cp' is wrongly admitted, R19 removes it).
@@ -331,6 +353,7 @@ class _Builder:
                 cp = av
                 if ignorecase and not ascii_flag and cp < 0x80:
                     anycp = True  # cross-length fold risk (OVER-APPROX)
+                    self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
                 elif cp < 0x80:
                     if ignorecase and ascii_flag:
                         ascii_acc |= set(_ascii_fold(cp))
@@ -339,12 +362,15 @@ class _Builder:
                 else:
                     if ignorecase:
                         anycp = True  # OVER-APPROX
+                        self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
                     else:
                         multibyte_lengths.add(_utf8_len(cp))
+                        self.over_approx.add(OA_UNICODE_CATEGORY)
             elif op is _c.RANGE:
                 lo, hi = av
                 if ignorecase and not ascii_flag:
                     anycp = True  # OVER-APPROX (folds across the range)
+                    self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
                     continue
                 if lo < 0x80:
                     hi_a = min(hi, 0x7F)
@@ -356,6 +382,7 @@ class _Builder:
                 if hi >= 0x80:
                     lo_m = max(lo, 0x80)
                     multibyte_lengths |= {_utf8_len(lo_m), _utf8_len(hi)}
+                    self.over_approx.add(OA_UNICODE_CATEGORY)
             elif op is _c.CATEGORY:
                 ascii_acc |= set(self._category_ascii_set(av))
                 if not ascii_flag:
@@ -365,8 +392,14 @@ class _Builder:
                     # essentially all non-ASCII code points).  OVER-APPROX: admit
                     # any non-ASCII code point of length 2..4; R19 re-verifies.
                     multibyte_lengths |= {2, 3, 4}
+                    self.over_approx.add(OA_UNICODE_CATEGORY)
 
         if negate:
+            # A negated str class admits *all* non-ASCII code points; that is
+            # exact for a purely-ASCII class ([^a]) but over-approximates when
+            # the class names any multibyte/category member (removed by R19).
+            if multibyte_lengths:
+                self.over_approx.add(OA_UNICODE_CATEGORY)
             # Negated class in str mode.  ASCII portion is exact; all non-ASCII
             # code points are admitted (OVER-APPROX only when the class itself
             # names a multibyte member, which is then wrongly re-admitted and
@@ -447,6 +480,13 @@ class _Builder:
             return self._lower_in(entry, av, ignorecase, ascii_flag)
         if op is _c.AT:
             exit_ = self.new_state()
+            if not self.is_bytes and av in (
+                    _c.AT_BOUNDARY, _c.AT_NON_BOUNDARY,
+                    _c.AT_UNI_BOUNDARY, _c.AT_UNI_NON_BOUNDARY):
+                # OVER-APPROX: \b/\B at UTF-8 code-point boundaries is not encoded
+                # exactly in the byte datapath (the constraint is dropped to a
+                # superset); R19 re-verification restores exactness.
+                self.over_approx.add(OA_WORD_BOUNDARY_UTF8)
             self.assertion(entry, exit_, self._resolve_at(av, multiline))
             return exit_
         if op is _c.BRANCH:
@@ -533,4 +573,5 @@ def build(pattern, flags: int = 0, enc: int = None) -> Automaton:
     start = b.new_state()
     accept = b.lower_seq(
         list(parsed), start, ignorecase, ascii_flag, dotall, multiline)
-    return Automaton(len(b.edges), start, accept, b.edges, enc, eff)
+    return Automaton(len(b.edges), start, accept, b.edges, enc, eff,
+                     frozenset(b.over_approx))

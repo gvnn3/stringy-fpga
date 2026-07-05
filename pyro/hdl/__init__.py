@@ -18,6 +18,9 @@ from .automaton import (
     Automaton,
     ENC_BYTES,
     ENC_UTF8,
+    OA_CROSS_LENGTH_CASEFOLD,
+    OA_UNICODE_CATEGORY,
+    OA_WORD_BOUNDARY_UTF8,
     build as build_automaton,
     byteset_to_ranges,
 )
@@ -32,6 +35,7 @@ from .generator import (
     GeneratedCircuit,
     HARNESS_VERSION,
     ID_MAGIC,
+    estimate_fp_rate,
     generate,
 )
 from . import identity
@@ -40,6 +44,9 @@ __all__ = [
     "Automaton",
     "ENC_BYTES",
     "ENC_UTF8",
+    "OA_CROSS_LENGTH_CASEFOLD",
+    "OA_UNICODE_CATEGORY",
+    "OA_WORD_BOUNDARY_UTF8",
     "build_automaton",
     "byteset_to_ranges",
     "ResourceEstimate",
@@ -50,6 +57,7 @@ __all__ = [
     "HARNESS_VERSION",
     "ID_MAGIC",
     "GeneratedCircuit",
+    "estimate_fp_rate",
     "generate",
     "identity",
 ]

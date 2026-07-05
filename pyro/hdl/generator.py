@@ -66,6 +66,8 @@ class GeneratedCircuit(NamedTuple):
     num_patterns: int
     resources: dict
     rtl: str                            # synthesizable Verilog-2001 text
+    over_approx: Tuple[str, ...]        # R19c over-approximation classes (sorted)
+    estimated_fp_rate: float           # R19c coarse false-positive-rate estimate
 
     # -- convenience accessors for the harness identity block (R47a) --------
     @property
@@ -343,6 +345,7 @@ def generate(pattern, flags: int = 0, enc: int = None) -> GeneratedCircuit:
     circ_flags = _identity.circ_flags_word(au.flags, num_patterns)
 
     rtl = _emit_rtl(au, circ_id, circ_flags, num_patterns)
+    over_approx = tuple(sorted(au.over_approx))
     return GeneratedCircuit(
         pattern=pattern,
         flags=int(flags),
@@ -356,4 +359,29 @@ def generate(pattern, flags: int = 0, enc: int = None) -> GeneratedCircuit:
         num_patterns=num_patterns,
         resources=est.resources,
         rtl=rtl,
+        over_approx=over_approx,
+        estimated_fp_rate=estimate_fp_rate(over_approx),
     )
+
+
+# Coarse per-class false-positive-rate contributions (R19c/R19b).  These are
+# deliberately conservative order-of-magnitude estimates used only to (a) let the
+# benchmark suite attribute re-verification cost and (b) let R19b flag a ruinous
+# over-approximation; they are NOT measured rates.  An exact circuit reports 0.0.
+_FP_CONTRIB = {
+    _auto.OA_UNICODE_CATEGORY: 0.05,
+    _auto.OA_CROSS_LENGTH_CASEFOLD: 0.02,
+    _auto.OA_WORD_BOUNDARY_UTF8: 0.01,
+}
+
+
+def estimate_fp_rate(over_approx) -> float:
+    """A coarse estimated false-positive rate for a set of OA_* classes (R19c).
+
+    Combined as independent probabilities (1 - prod(1 - p_i)); 0.0 for an exact
+    circuit.  Deterministic, so it is stable in the manifest across runs.
+    """
+    keep = 1.0
+    for cls in over_approx:
+        keep *= (1.0 - _FP_CONTRIB.get(cls, 0.0))
+    return round(1.0 - keep, 6)
