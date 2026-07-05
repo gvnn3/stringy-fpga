@@ -148,16 +148,40 @@ def explain(pattern, flags=0) -> dict:
     eligible = classi.eligible and est.eligible
     reason = classi.reason if not classi.eligible else est.reason
     engine = "model" if eligible else "fallback"
+    # circuit_status reflects the live bitstream-cache tier for an eligible
+    # pattern (cold / synthesizing / warm / resident / fallback_only, R31/R4);
+    # a fallback-only pattern is always "fallback_only".  Consulting the
+    # residency manager is best-effort (explain() must stay total).
+    circuit_status = "fallback_only"
+    if eligible:
+        circuit_status = "cold"
+        try:
+            from .synth import residency as _res
+            circuit_status = _res.get_manager().tier(pattern, flags)
+        except Exception:
+            pass
     return {
         "eligible": eligible,
         "reason": reason,
         "engine": engine,
         "states": classi.states,
-        "circuit_status": "cold" if eligible else "fallback_only",
+        "circuit_status": circuit_status,
         "est_resources": est.resources,
     }
 
 
 def stats() -> dict:
-    """Dispatch counters: hardware / model / fallback / fallback_after_error."""
-    return _route.stats()
+    """Dispatch + circuit-lifecycle counters (R52/R66).
+
+    Merges the per-dispatch counters (hardware / model / fallback /
+    fallback_after_error / device_errors / total) with the synthesis-lifecycle
+    counters (synth_launched/succeeded/failed, circuits_synthesizing/resident/
+    evicted, pr_loads).  Observing stats MUST NOT perturb routing (R66).
+    """
+    s = _route.stats()
+    try:
+        from .synth import residency as _res
+        s.update(_res.get_manager().stats())
+    except Exception:
+        pass
+    return s

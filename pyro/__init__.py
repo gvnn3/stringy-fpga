@@ -83,3 +83,39 @@ def refresh_env() -> None:
 
 def is_installed() -> bool:
     return bool(_ORIGINALS)
+
+
+def prewarm(patterns, flags=0) -> None:
+    """Request background synthesis of one or more HW-eligible patterns (R62).
+
+    Accepts a single pattern (``str``/``bytes``/compiled ``Pattern``) or an
+    iterable of them.  For each **HW-eligible** pattern it enqueues synthesis
+    (R4a/R63) regardless of call count; fallback-only patterns are silently
+    ignored.  Returns promptly (non-blocking) and MUST NOT raise for a
+    fallback-only pattern or one whose synthesis later fails (R62/R65).
+
+    ``pyro.prewarm`` is PYRO-specific and is NOT patched onto the standard ``re``
+    namespace by :func:`install` (R62/§7.2).
+    """
+    from .synth import residency as _res
+
+    if isinstance(patterns, (str, bytes, bytearray)) or hasattr(patterns, "pattern"):
+        items = [patterns]
+    else:
+        try:
+            items = list(patterns)
+        except TypeError:
+            items = [patterns]
+
+    mgr = _res.get_manager()
+    for item in items:
+        try:
+            if hasattr(item, "pattern") and not isinstance(
+                    item, (str, bytes, bytearray)):
+                pat, f = item.pattern, getattr(item, "flags", flags)
+            else:
+                pat, f = item, flags
+            mgr.prewarm(pat, f)
+        except Exception:
+            # R62: never raise for a fallback-only / un-synthesizable pattern.
+            continue

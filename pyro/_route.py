@@ -171,6 +171,39 @@ def _utf8_transportable(s: str) -> bool:
         return False
 
 
+# --- residency-aware routing (R51 step 5 amended, R4a/R65) -----------------
+# The residency subsystem (pyro.synth) is imported lazily and cached so the
+# per-call *fallback* fast path (AC-0-6) never touches it — only the model path
+# (large/reused/forced, not the perf-measured path) consults it.  Because on this
+# host there is no device (F5, R7), the software model stands in for the resident
+# tier, so this consultation drives the launch policy (R4a) and lifecycle stats
+# (R66) as a side effect and forces fallback only for a *permanently-fallback*
+# pattern (R65).  It never raises into a caller (R52/R65).
+_residency = None
+
+
+def _consult_residency(patt, string) -> bool:
+    """Register a HW-eligible dispatch and return ``True`` to force fallback.
+
+    Returns ``True`` only when the pattern's circuit is **permanently
+    fallback-only** (synthesis failed, R65) — ordinary routing, counted as a
+    normal ``fallback`` (not ``fallback_after_error``, AC-1-6).  Otherwise ticks
+    the launch policy / lifecycle and returns ``False`` (proceed via the model).
+    """
+    global _residency
+    try:
+        res = _residency
+        if res is None:
+            from .synth import residency as res  # cached in sys.modules
+            _residency = res
+        enc = ENC_UTF8 if isinstance(string, str) else ENC_BYTES
+        outcome = res.get_manager().note_eligible_dispatch(
+            patt._stock.pattern, patt._stock.flags, enc)
+        return outcome == res.ROUTE_PERMANENT_FALLBACK
+    except Exception:
+        return False
+
+
 # --- encoding helpers (R14/R21) -------------------------------------------
 def _encode(string):
     if isinstance(string, str):
@@ -276,6 +309,9 @@ def run_single(patt, op, string, pos=0, endpos=None):
     if path == "fallback":
         _record("fallback")
         return _stock_op(patt, op, string, pos, endpos)
+    if _consult_residency(patt, string):       # R65 permanent fallback -> routing
+        _record("fallback")
+        return _stock_op(patt, op, string, pos, endpos)
     try:
         result = _model_single(patt, op, string, pos, endpos)
     except (DeviceError, _VerifyError):
@@ -291,6 +327,9 @@ def run_single(patt, op, string, pos=0, endpos=None):
 def run_finditer(patt, string, pos=0, endpos=None):
     path = _decide(patt, string, pos, endpos)
     if path == "fallback":
+        _record("fallback")
+        return _stock_op(patt, "finditer", string, pos, endpos)
+    if _consult_residency(patt, string):       # R65 permanent fallback -> routing
         _record("fallback")
         return _stock_op(patt, "finditer", string, pos, endpos)
     try:

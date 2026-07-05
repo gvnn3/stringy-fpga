@@ -16,3 +16,11 @@ def _reset_env_cache():
     pyro.refresh_env()
     yield
     pyro.refresh_env()
+    # Reset the process-wide residency manager (shuts down any spawned synthesis
+    # service, clears launch counters / resident state) so no process or counter
+    # residue leaks between tests (Task-6 brief hard rule).
+    try:
+        from pyro.synth import residency as _res
+        _res.reset_manager()
+    except Exception:
+        pass
