@@ -17,10 +17,94 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-2. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+2. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+3. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 
 ---
+
+# EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI :complete:
+
+## 1. Hypothesis
+
+After the project owner inverted the architecture (spec v2.0.0: every
+HW-eligible regex compiles to its own synthesized circuit for the OpenNIC
+dynamic region, loaded by partial reconfiguration, with async background
+synthesis), can Phase 1 deliver the full software stack — HDL generator,
+circuit model, synthesis service, and native C ABI — with byte-identical
+results and no hardware?
+
+## 2. How
+
+- **Equipment:** Intel C620 x86_64 server, Ubuntu (Linux 6.8.0-124-generic);
+  Xilinx OpenNIC card present but unused (mock toolchain stands in for Vivado)
+- **Software:** CPython 3.12.3, pytest 9.1.1, GCC 13.3 (C11), iverilog,
+  valgrind; spec evolved v2.0.0 → v2.0.5 via §13 change control
+- **Benchmarks:** 506-test spec-only acceptance suite; 519 unit tests;
+  4000–6000-case lazy-quantifier fuzz; valgrind on the native runtime
+
+### Key commands
+
+```bash
+python3 -m pytest tests/unit/          # 519 passed
+python3 -m pytest tests/acceptance/    # 506 passed, 0 skipped
+/usr/bin/make abi-check                # pyro_abi_version = 0x00020000
+/usr/bin/make valgrind                 # 0 errors, 0 leaks
+```
+
+## 3. Observations
+
+| Gate | Result |
+|------|--------|
+| Unit suite | **519 passed** |
+| Acceptance suite | **506 passed, 0 skipped** |
+| C ABI | **2.0.0** (0x00020000), valgrind clean |
+| Generated RTL | deterministic; iverilog-lints; §7.4 harness CSR map exact |
+| Final review verdict | Ready to merge: **Yes** |
+
+Delivered: `pyro/hdl/` (automaton IR, resource estimator, Verilog
+generator with R47a identity block and R19c over-approximation metadata);
+`pyro/_circuit_model.py` (executes the generated automaton); `pyro/synth/`
+(R47b manifests, persistent bitstream cache, mock toolchain, out-of-process
+synthesis service, residency manager with LRU eviction); `pyro.prewarm` +
+lifecycle stats; `include/pyro_rt.h` + `src/pyro_rt.c` (ABI 2.0.0 model
+binding, hardened artifact parser); `pyro.testing` fault-injection seams.
+
+Defects found and fixed by the review loop (regression-tested):
+- Circuit-model finditer dropped zero-width matches, then (round 2) missed
+  CPython's **must_advance** retry — `'a??'` on `"aa"` dropped real matches
+  (R19 false negatives). Fixed by delegating span enumeration to stock
+  `re` while the generated automaton remains an unconditional completeness
+  oracle (`CompletenessError` on any missed start).
+- Scoped `(?m:...)` multiline was not threaded into anchor lowering.
+- Per-call `os.environ` reads and debug mutators in the frozen ABI header
+  (now `#ifdef PYRO_TESTING`; production build exports zero test symbols).
+
+## 4. Data analysis
+
+The hybrid trust model carried the phase: the automaton only ever needs to
+be **complete** (superset of match starts); stock `re` makes results exact.
+Both finditer bugs lived in hand-reimplemented CPython iteration semantics
+— the lesson (twice) is to delegate enumeration to the oracle and keep the
+automaton as a cross-check, not to transcribe CPython's scanner by hand.
+Spec §13 change control absorbed six amendments (R19a–c over-approximation
+sanction, R47a hash inputs, R51b device-free ruling, R67–R69 public test
+seams) without ever breaking Phase 0's ACs. **Important integration note:
+production dispatch still runs the Phase-0 model** — the circuit model and
+native binding are delivered and validated out-of-band but intentionally
+not yet on the dispatch path.
+
+## 5. Ideas for future experiments
+
+- Phase 2 entry criteria (from final review): circuit finditer stays
+  must_advance-correct AND RTL anchors (`at_eol`/`at_eob`, `res_start`)
+  made real before any generated circuit serves user results
+- Wire `_circuit_model`/`_native` into dispatch behind R51b; measure
+  cross-tier equivalence on hardware
+- Vivado + open-nic-shell PR flow bring-up; replace mock toolchain
+- Result-ring LE enforcement on real DMA; JSON manifest parser hardening
+- Benchmark suite (R59) on real corpora to validate R1/R2 win regime and
+  R19b false-positive-rate bounds
 
 # EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model :complete:
 
