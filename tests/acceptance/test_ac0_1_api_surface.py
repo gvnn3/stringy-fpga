@@ -4,10 +4,20 @@ matching stock re; pyro.re.error is re.error.  (R26, R30)
 
 import inspect
 import re as stdre
+import sys
 
 import pytest
 
 import pyro.re as pre
+
+
+def test_supported_runtime_is_cpython_3_11_plus():
+    """AC-0-1/R26/P7 (v1.2.1): the supported host runtime is CPython >= 3.11.
+    Signature/behaviour comparisons in this suite are made against stock re on a
+    conforming interpreter; document the precondition."""
+    assert sys.version_info[:2] >= (3, 11), (
+        f"PYRO requires CPython >= 3.11 (R26/P7); running {sys.version_info[:3]}"
+    )
 
 MODULE_FUNCS = [
     "compile", "search", "match", "fullmatch", "findall", "finditer",
