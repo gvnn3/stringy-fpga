@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 1.1.0
+- **Version:** 1.1.1
 - **Status:** Draft (approved for Phase 0 delegation)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-04
@@ -86,6 +86,16 @@ them; implementers MUST NOT assume different hardware.
 - **Byte-identical:** for the same inputs, PYRO returns the same match/no-match
   decision and the same integer offsets and captured substrings that CPython
   `re` would return, per §6.
+- **Drop-in (duck-typed compatibility):** a PYRO object is a "drop-in" for a
+  CPython `re` type when it provides every documented method and attribute of
+  that type (§7.1 R27/R28) with byte-identical behavior (R16), such that code
+  invoking those methods/attributes cannot observe a difference. Drop-in
+  compatibility is **duck-typed**, not nominal: because CPython's `re.Pattern`
+  and `re.Match` are concrete, non-subclassable, non-ABC C types, a PYRO wrapper
+  on the hardware/model path **cannot** and is **not required to** satisfy
+  `isinstance(obj, re.Pattern)` / `isinstance(obj, re.Match)`. Identity-based
+  type checks against these concrete types are a documented, permanent
+  limitation (see R36 and §12), not a correctness defect.
 
 ---
 
@@ -362,15 +372,23 @@ drop-in for the subset of the standard `re` module listed here.
     (and `U UNICODE` accepted as no-op for str) as aliases of `re`'s values.
   - `error` MUST be `re.error` (same exception type) so callers' `except`
     clauses are unaffected.
-- **R27 (Pattern object).** The compiled `Pattern` MUST expose
+- **R27 (Pattern object).** The compiled `Pattern` MUST be a **drop-in**
+  (duck-typed compatibility, §2) for `re.Pattern`: it MUST expose
   `search/match/fullmatch/findall/finditer/sub/subn/split` methods with the same
   `pos`/`endpos` parameters and semantics as `re.Pattern`, plus the attributes
-  `pattern`, `flags`, `groups`, `groupindex`.
-- **R28 (Match object).** Returned match objects MUST support
+  `pattern`, `flags`, `groups`, `groupindex`. Because `re.Pattern` is a concrete,
+  non-subclassable C type, `isinstance(p, re.Pattern)` MUST NOT be relied upon on
+  the hardware/model path and is a documented limitation (§2, R36, §12); on the
+  fallback path the object IS a genuine `re.Pattern` (R29).
+- **R28 (Match object).** Returned match objects MUST be a **drop-in**
+  (duck-typed compatibility, §2) for `re.Match`: they MUST support
   `group([n...])`, `groups(default=None)`, `groupdict(default=None)`, `start([n])`,
   `end([n])`, `span([n])`, `__getitem__`, `expand(template)`, and the attributes
   `pos`, `endpos`, `lastindex`, `lastgroup`, `re`, `string`. Behavior MUST match
-  `re.Match`.
+  `re.Match`. Because `re.Match` is a concrete, non-subclassable C type,
+  `isinstance(m, re.Match)` MUST NOT be relied upon on the hardware/model path
+  and is a documented limitation (§2, R36, §12); on the fallback path the object
+  IS a genuine `re.Match` (R29).
 - **R29 (semantic equivalence).** For HW-eligible patterns, every method in
   R26–R28 MUST satisfy R16 (byte-identical). For fallback-only patterns, the
   method MUST delegate to CPython `re` and return its result unchanged.
@@ -405,6 +423,18 @@ drop-in for the subset of the standard `re` module listed here.
   produce identical observable output (return values and raised exceptions).
   Differences in timing and in PYRO-private attributes are permitted; differences
   in results are defects.
+  - **R36a (isinstance carve-out — permanent limitation).** The transparency
+    invariant explicitly **excludes** identity-based type checks against the
+    concrete CPython types `re.Pattern` and `re.Match`. On the hardware/model
+    path, `isinstance(p, re.Pattern)` and `isinstance(m, re.Match)` MAY be
+    `False` because those types are non-subclassable, non-ABC C types (§2, R27,
+    R28). This is a **documented, permanent limitation**, not a defect. It is
+    **not** a fallback trigger: the wrapper cannot detect that a caller intends
+    an `isinstance` check, so PYRO MUST NOT attempt to route around it. Programs
+    that must preserve nominal type identity MUST use `PYRO_DISABLE=1` or the
+    fallback path (on which the objects are genuine `re` objects, R29).
+    Type checks that use duck typing, `hasattr`, or protocol/structural checks
+    are unaffected and remain covered by R36.
 
 ### 7.3 Host-runtime C ABI (L3)
 
@@ -794,6 +824,12 @@ selection.
   serialization only in this version).
 - Automatic partial-reconfiguration bitstream generation (only listed as an
   optional alternative, AC-2-6).
+- **Nominal type identity of match/pattern objects on the accelerated path.**
+  `isinstance(obj, re.Pattern)` / `isinstance(obj, re.Match)` are not guaranteed
+  on the hardware/model path because those CPython types are concrete and
+  non-subclassable; "drop-in" means duck-typed compatibility only (§2, R27, R28,
+  R36a). Callers requiring nominal identity must use the fallback path
+  (`PYRO_DISABLE=1`). This is a permanent limitation, not a roadmap item.
 
 ---
 
@@ -806,3 +842,33 @@ their work from this file, not from each other. A failing differential test
 against an HW-eligible pattern is a coder/engine defect; a test that contradicts
 §5/§6 is a test-developer defect; a genuinely underspecified behavior is a spec
 defect and returns here.
+
+---
+
+## 14. Changelog
+
+All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
+interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
+
+- **1.1.1** (2026-07-05) — *Clarification (PATCH).* Surfaced by the Task 1 code
+  review: CPython's `re.Pattern`/`re.Match` are concrete, non-subclassable,
+  non-ABC C types, so an accelerated wrapper cannot satisfy
+  `isinstance(obj, re.Pattern)` / `isinstance(obj, re.Match)`. Defined "drop-in"
+  in §2 as duck-typed method/attribute compatibility (not nominal identity);
+  amended R27 and R28 to reference it; added R36a carving `isinstance` checks
+  against these concrete types out of the R36 transparency invariant as a
+  documented, permanent limitation (explicitly not a fallback trigger, since the
+  intent cannot be detected); added the corresponding §12 out-of-scope note. No
+  interface or AC break.
+- **1.1.0** (2026-07-04) — *Requirement change (MINOR).* Surfaced by the Phase-0
+  coder: R3's 1.15× relative loss-regime bound is unachievable for the pure-
+  Python shim, where stock `re.search` on a short subject is sub-microsecond C
+  code. Split R3 into R3a (absolute ≤ 2 µs median added overhead, all phases,
+  aligned with R5) and R3b (1.15× relative, scoped to Phase 1+ native runtime).
+  Updated AC-0-6 to assert the absolute bound (R3a/R5) and deterministic routing
+  (R51) rather than the relative ratio.
+- **1.0.0** (2026-07-04) — Initial specification: feasibility thresholds,
+  L0–L5 architecture, RE2-like supported subset, hybrid capture-group
+  correctness model, Python API / C ABI / register+DMA interface contracts,
+  routing/fallback logic, test strategy, four-phase delivery plan, prerequisites
+  and risks.
