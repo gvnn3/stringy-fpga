@@ -92,7 +92,13 @@ def estimate(pattern, flags: int = 0, enc: int = None) -> ResourceEstimate:
     if n_patterns > _classify.MAX_PATTERNS:
         return ResourceEstimate(False, "exceeds MAX_PATTERNS", None, None)
 
-    au = _auto.build(pattern, flags, enc)
+    # Defensive: the classifier judged this pattern eligible, but if the HDL
+    # lowering hits a construct it cannot yet represent, report fallback-only
+    # (with a reason) rather than raising — keeps explain()/callers total (R8).
+    try:
+        au = _auto.build(pattern, flags, enc)
+    except ValueError as exc:
+        return ResourceEstimate(False, f"generator lowering gap: {exc}", None, None)
     n_states = au.n_states
     n_byte_edges = sum(
         1 for s in range(au.n_states) for e in au.edges[s]

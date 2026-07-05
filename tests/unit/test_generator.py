@@ -79,6 +79,26 @@ def test_identity_depends_on_pattern_flags_and_versions():
     assert a.circ_id != c.circ_id      # different flags
 
 
+@pytest.mark.parametrize("a,fa,b,fb", [
+    ("(?i)abc", 0, "abc", __import__("re").I),
+    ("(?ms)x.y", 0, "x.y", __import__("re").M | __import__("re").S),
+    (b"(?i)ab", 0, b"ab", __import__("re").I),
+])
+def test_global_inline_flags_canonicalize_to_same_identity(a, fa, b, fb):
+    # (?i)abc and abc+re.I are semantically identical after inline-flag
+    # extraction -> identical identity hash and cache key (R47a v2.0.1 / R4).
+    ca, cb = hdl.generate(a, fa), hdl.generate(b, fb)
+    assert ca.circ_id == cb.circ_id
+    assert ca.circ_flags == cb.circ_flags
+    assert (hdl.identity.descriptor_key(a, fa, hdl.GENERATOR_VERSION)
+            == hdl.identity.descriptor_key(b, fb, hdl.GENERATOR_VERSION))
+
+
+def test_scoped_inline_flags_are_not_canonicalized_away():
+    # Scoped (?i:...) is semantic and must NOT collapse to the flagless form.
+    assert hdl.generate("(?i:abc)", 0).circ_id != hdl.generate("abc", 0).circ_id
+
+
 def test_circ_flags_packs_num_patterns_high16():
     import re as _re
     c = hdl.generate("abc", _re.I)

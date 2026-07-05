@@ -155,6 +155,56 @@ def test_group0_complete_and_byte_identical(ctx, i):
     assert got == ref
 
 
+# --- R22/AC-1-3: empty-capable patterns yield EVERY empty match -----------
+
+_EMPTY_CORPUS = [
+    ("a*", "bbb"),
+    ("a*", "baab"),
+    (r"\d*", "x12y3"),
+    (r"\d*", "a1b"),
+    ("x?", "xyxx"),
+    ("", "ab"),
+    ("", ""),
+    (r"\b", "a b cd"),
+    ("(ab)?", "abxab"),
+    ("a|", "cab"),
+    ("(?:)", "xy"),
+    (r"^", "a\nb"),
+]
+
+
+@pytest.mark.parametrize("i", range(len(_EMPTY_CORPUS)))
+def test_empty_matches_are_byte_identical(ctx, i):
+    pat, subj = _EMPTY_CORPUS[i]
+    circ = _load(ctx, pat)
+    got = cm.group0_finditer(circ.circuit, subj)
+    ref = [m.span() for m in re.finditer(pat, subj)]
+    assert got == ref            # includes every zero-width match (no suppression)
+
+
+# --- R24/§6.5: scoped inline multiline threaded per-anchor ----------------
+
+_SCOPED_ML = [
+    ("(?m:^)abc", "x\nabc"),
+    ("(?m:^abc)", "x\nabc"),
+    ("(?m:abc$)", "abc\ny"),
+    ("(?-m:^)a", "x\na"),
+    ("pre(?m:^)x", "pre\nx"),
+]
+
+
+@pytest.mark.parametrize("i", range(len(_SCOPED_ML)))
+def test_scoped_multiline_complete_and_identical(ctx, i):
+    pat, subj = _SCOPED_ML[i]
+    circ = _load(ctx, pat)
+    model_starts = set(cm.candidate_starts(circ.circuit, subj))
+    stock_starts = {m.start() for m in re.finditer(pat, subj)}
+    assert stock_starts <= model_starts              # completeness (R19)
+    got = cm.group0_finditer(circ.circuit, subj)
+    ref = [m.span() for m in re.finditer(pat, subj)]
+    assert got == ref
+
+
 # --- R23/R17: greedy vs lazy still byte-identical after reconciliation ----
 
 @pytest.mark.parametrize("pat", [r"a+", r"a+?", r"<.*>", r"<.*?>"])

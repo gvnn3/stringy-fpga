@@ -61,32 +61,29 @@ class IdentityMismatch(Exception):
 # --------------------------------------------------------------------------
 # Automaton simulation (executes the *generated* recognizer)
 # --------------------------------------------------------------------------
-def _assert_ok(at: int, buf: bytes, pos: int, is_bytes: bool,
-               multiline: bool) -> bool:
+def _assert_ok(at: int, buf: bytes, pos: int, is_bytes: bool) -> bool:
     """Evaluate a zero-width assertion at absolute byte offset ``pos``.
 
     ``^ $ \\A \\Z`` are evaluated exactly in both modes (``\\n`` is byte 0x0A,
-    never a UTF-8 lead/continuation byte).  The parser emits ``AT_BEGINNING`` /
-    ``AT_END`` for ``^`` / ``$`` regardless of ``re.MULTILINE`` and defers the
-    line-vs-string semantics to the flag (as it does for ``re.DOTALL`` and
-    ``.``); we apply ``multiline`` here.  Word boundaries ``\\b``/``\\B`` are
-    exact in bytes mode; in str mode they are OVER-APPROX'd to always-satisfiable
-    (the constraint is dropped — a superset — and R19 re-verification restores
-    exactness).
+    never a UTF-8 lead/continuation byte).  The (scoped) MULTILINE flag has
+    already been baked into each ``^``/``$`` edge at lowering time
+    (``AT_BEGINNING``/``AT_END`` vs. their ``*_LINE`` variants, see
+    ``automaton._resolve_at``), so this evaluator needs no ambient flag.  Word
+    boundaries ``\\b``/``\\B`` are exact in bytes mode; in str mode they are
+    OVER-APPROX'd to always-satisfiable (the constraint is dropped — a superset —
+    and R19 re-verification restores exactness).
     """
     n = len(buf)
-    if at == _c.AT_BEGINNING_STRING:  # \A — absolute
+    if at in (_c.AT_BEGINNING, _c.AT_BEGINNING_STRING):  # ^ (non-M) / \A
         return pos == 0
-    if at in (_c.AT_BEGINNING, _c.AT_BEGINNING_LINE):  # ^
-        if multiline or at == _c.AT_BEGINNING_LINE:
-            return pos == 0 or buf[pos - 1] == 0x0A
-        return pos == 0
+    if at == _c.AT_BEGINNING_LINE:  # ^ under MULTILINE
+        return pos == 0 or buf[pos - 1] == 0x0A
     if at == _c.AT_END_STRING:  # \Z — absolute
         return pos == n
-    if at in (_c.AT_END, _c.AT_END_LINE):  # $
-        if multiline or at == _c.AT_END_LINE:
-            return pos == n or buf[pos] == 0x0A
+    if at == _c.AT_END:  # $ (non-M): end, or just before a final '\n'
         return pos == n or (pos == n - 1 and buf[pos] == 0x0A)
+    if at == _c.AT_END_LINE:  # $ under MULTILINE
+        return pos == n or buf[pos] == 0x0A
     if at in (_c.AT_BOUNDARY, _c.AT_NON_BOUNDARY,
               _c.AT_UNI_BOUNDARY, _c.AT_UNI_NON_BOUNDARY):
         if not is_bytes:
@@ -102,7 +99,7 @@ def _assert_ok(at: int, buf: bytes, pos: int, is_bytes: bool,
 
 
 def _closure(au: _auto.Automaton, states, buf: bytes, pos: int,
-             is_bytes: bool, multiline: bool) -> frozenset:
+             is_bytes: bool) -> frozenset:
     """Epsilon + assertion closure of ``states`` at offset ``pos``."""
     stack = list(states)
     seen = set(states)
@@ -115,7 +112,7 @@ def _closure(au: _auto.Automaton, states, buf: bytes, pos: int,
                     stack.append(e.target)
             elif e.kind == _auto.E_ASSERT:
                 if e.target not in seen and _assert_ok(
-                        e.payload, buf, pos, is_bytes, multiline):
+                        e.payload, buf, pos, is_bytes):
                     seen.add(e.target)
                     stack.append(e.target)
     return frozenset(seen)
@@ -132,14 +129,13 @@ def _scan_windows(au: _auto.Automaton, buf: bytes, start_off: int
     superset recognizer and the host re-verifies each window (R19).
     """
     is_bytes = au.enc == ENC_BYTES
-    multiline = bool(au.flags & _re.MULTILINE)
     n = len(buf)
     accept = au.accept
     out: List[MatchWindow] = []
     edges = au.edges
     s = start_off
     while s <= n:
-        cur = _closure(au, (au.start,), buf, s, is_bytes, multiline)
+        cur = _closure(au, (au.start,), buf, s, is_bytes)
         last_accept = s if accept in cur else None
         pos = s
         while pos < n and cur:
@@ -152,7 +148,7 @@ def _scan_windows(au: _auto.Automaton, buf: bytes, start_off: int
             if not moved:
                 cur = frozenset()
                 break
-            cur = _closure(au, moved, buf, pos + 1, is_bytes, multiline)
+            cur = _closure(au, moved, buf, pos + 1, is_bytes)
             pos += 1
             if accept in cur:
                 last_accept = pos
@@ -349,18 +345,27 @@ def group0_finditer(circuit: hdl.GeneratedCircuit, subject
     stock = _stock_compile(circuit.pattern, circuit.flags)
     starts = sorted(set(candidate_starts(circuit, subject)))
     out: List[Tuple[int, int]] = []
-    next_allowed = 0
-    for s in starts:
-        if s < next_allowed:
+    # Reproduce CPython's finditer exactly (R22): walk left to right; at each
+    # position take the leftmost real match starting at or after ``pos`` (found
+    # by trying stock.match at successive candidate starts — the automaton is
+    # complete, so every real match start is among ``starts``), append EVERY
+    # match span including empties, and advance ``pos`` to the match end, or one
+    # past it when the match was empty (to make progress).  There is NO empty-
+    # match adjacency suppression: CPython's finditer yields the empty matches.
+    pos = 0
+    i = 0
+    n_starts = len(starts)
+    while i < n_starts:
+        s = starts[i]
+        if s < pos:
+            i += 1
             continue
         m = stock.match(subject, s)
         if m is None:
+            i += 1            # candidate false positive (R19) — skip permanently
             continue
         span = m.span()
-        # Suppress an empty match adjacent to the previous match (CPython R22).
-        if span[0] == span[1] and span[0] == next_allowed and out:
-            next_allowed = span[1] + 1
-            continue
         out.append(span)
-        next_allowed = span[1] if span[1] > span[0] else span[1] + 1
+        pos = span[1] if span[1] > span[0] else span[1] + 1
+        i += 1
     return out

@@ -409,13 +409,32 @@ class _Builder:
         return base
 
     # -- recursive sequence / node lowering --------------------------------
-    def lower_seq(self, seq, entry, ignorecase, ascii_flag, dotall) -> int:
+    def lower_seq(self, seq, entry, ignorecase, ascii_flag, dotall,
+                  multiline) -> int:
         cur = entry
         for op, av in seq:
-            cur = self._lower_node(op, av, cur, ignorecase, ascii_flag, dotall)
+            cur = self._lower_node(
+                op, av, cur, ignorecase, ascii_flag, dotall, multiline)
         return cur
 
-    def _lower_node(self, op, av, entry, ignorecase, ascii_flag, dotall) -> int:
+    def _resolve_at(self, at, multiline):
+        """Bake the (scoped) MULTILINE flag into a ``^``/``$`` assertion.
+
+        The parser emits ``AT_BEGINNING``/``AT_END`` for ``^``/``$`` regardless
+        of MULTILINE (it defers line-vs-string semantics to the flag, as it does
+        for ``re.DOTALL`` and ``.``).  We resolve them to the LINE variants here,
+        per-edge, so a *scoped* ``(?m:^)`` is honored independently of the global
+        flag (R24/§6.5) in both the model and the emitted RTL.
+        """
+        if multiline:
+            if at == _c.AT_BEGINNING:
+                return _c.AT_BEGINNING_LINE
+            if at == _c.AT_END:
+                return _c.AT_END_LINE
+        return at
+
+    def _lower_node(self, op, av, entry, ignorecase, ascii_flag, dotall,
+                    multiline) -> int:
         if op is _c.LITERAL:
             return self._lower_literal(entry, av, ignorecase, ascii_flag)
         if op is _c.NOT_LITERAL:
@@ -428,7 +447,7 @@ class _Builder:
             return self._lower_in(entry, av, ignorecase, ascii_flag)
         if op is _c.AT:
             exit_ = self.new_state()
-            self.assertion(entry, exit_, av)
+            self.assertion(entry, exit_, self._resolve_at(av, multiline))
             return exit_
         if op is _c.BRANCH:
             _none, branches = av
@@ -436,7 +455,8 @@ class _Builder:
             for b in branches:
                 bstart = self.new_state()
                 self.eps(entry, bstart)
-                bend = self.lower_seq(b, bstart, ignorecase, ascii_flag, dotall)
+                bend = self.lower_seq(
+                    b, bstart, ignorecase, ascii_flag, dotall, multiline)
                 self.eps(bend, exit_)
             return exit_
         if op is _c.SUBPATTERN:
@@ -447,12 +467,17 @@ class _Builder:
                 del_flags & re.ASCII)
             sub_dotall = (dotall or bool(add_flags & re.DOTALL)) and not (
                 del_flags & re.DOTALL)
-            return self.lower_seq(sub, entry, sub_ic, sub_ascii, sub_dotall)
+            sub_ml = (multiline or bool(add_flags & re.MULTILINE)) and not (
+                del_flags & re.MULTILINE)
+            return self.lower_seq(
+                sub, entry, sub_ic, sub_ascii, sub_dotall, sub_ml)
         if op in (_c.MAX_REPEAT, _c.MIN_REPEAT):
-            return self._lower_repeat(av, entry, ignorecase, ascii_flag, dotall)
+            return self._lower_repeat(
+                av, entry, ignorecase, ascii_flag, dotall, multiline)
         raise ValueError(f"cannot lower unsupported construct: {op}")
 
-    def _lower_repeat(self, av, entry, ignorecase, ascii_flag, dotall) -> int:
+    def _lower_repeat(self, av, entry, ignorecase, ascii_flag, dotall,
+                      multiline) -> int:
         mn, mx, sub = av
         # Greedy vs lazy (MAX_REPEAT vs MIN_REPEAT) do not change the *language*,
         # only span selection, which R17/R18 reconcile via CPython.  We lower
@@ -461,12 +486,14 @@ class _Builder:
         # mandatory copies (m of them)
         m = 0 if mn is MAXREPEAT else int(mn)
         for _ in range(m):
-            cur = self.lower_seq(sub, cur, ignorecase, ascii_flag, dotall)
+            cur = self.lower_seq(
+                sub, cur, ignorecase, ascii_flag, dotall, multiline)
         if mx is MAXREPEAT:
             # unbounded tail: a Kleene star over the sub-pattern.
             loop = self.new_state()
             self.eps(cur, loop)
-            body = self.lower_seq(sub, loop, ignorecase, ascii_flag, dotall)
+            body = self.lower_seq(
+                sub, loop, ignorecase, ascii_flag, dotall, multiline)
             self.eps(body, loop)
             return loop
         n = int(mx)
@@ -474,7 +501,8 @@ class _Builder:
         exit_ = self.new_state()
         self.eps(cur, exit_)
         for _ in range(n - m):
-            cur = self.lower_seq(sub, cur, ignorecase, ascii_flag, dotall)
+            cur = self.lower_seq(
+                sub, cur, ignorecase, ascii_flag, dotall, multiline)
             self.eps(cur, exit_)
         return exit_
 
@@ -499,8 +527,10 @@ def build(pattern, flags: int = 0, enc: int = None) -> Automaton:
     ignorecase = bool(eff & re.IGNORECASE)
     ascii_flag = bool(eff & re.ASCII)
     dotall = bool(eff & re.DOTALL)
+    multiline = bool(eff & re.MULTILINE)
 
     b = _Builder(enc, eff)
     start = b.new_state()
-    accept = b.lower_seq(list(parsed), start, ignorecase, ascii_flag, dotall)
+    accept = b.lower_seq(
+        list(parsed), start, ignorecase, ascii_flag, dotall, multiline)
     return Automaton(len(b.edges), start, accept, b.edges, enc, eff)

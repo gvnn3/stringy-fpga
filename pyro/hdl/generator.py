@@ -34,12 +34,14 @@ DATAPATH_BYTES = 1  # one byte/cycle (R42 datapath_bytes); multi-byte is future.
 ID_MAGIC = 0x5059524F  # "PYRO" (R45 offset 0x0000)
 
 # Zero-width assertion -> Verilog condition wire (see the emitted anchor block).
-# The parser emits AT_BEGINNING / AT_END for ^ / $ regardless of re.MULTILINE
-# (line-vs-string semantics are flag-deferred, like re.DOTALL for '.'), so those
-# two are resolved against the baked MULTILINE flag in :func:`_at_expr`.
+# The (scoped) MULTILINE flag has already been baked into each ^/$ edge at
+# lowering time (AT_BEGINNING/AT_END vs. their *_LINE variants, see
+# automaton._resolve_at), so this map is a straight, flag-independent lookup.
 _AT_EXPR = {
+    _c.AT_BEGINNING: "at_sob",
     _c.AT_BEGINNING_STRING: "at_sob",
     _c.AT_BEGINNING_LINE: "at_bol",
+    _c.AT_END: "at_eob",
     _c.AT_END_STRING: "at_eob",
     _c.AT_END_LINE: "at_eol",
     _c.AT_BOUNDARY: "word_boundary",
@@ -47,15 +49,6 @@ _AT_EXPR = {
     _c.AT_NON_BOUNDARY: "(~word_boundary)",
     _c.AT_UNI_NON_BOUNDARY: "(~word_boundary)",
 }
-
-
-def _at_expr(at: int, multiline: bool):
-    """Verilog condition for an AT_* assertion (None => always-true)."""
-    if at == _c.AT_BEGINNING:
-        return "at_bol" if multiline else "at_sob"
-    if at == _c.AT_END:
-        return "at_eol" if multiline else "at_eob"
-    return _AT_EXPR.get(int(at))
 
 
 class GeneratedCircuit(NamedTuple):
@@ -158,10 +151,15 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("    integer     it;")
     add("")
     add("    // --- anchor/position condition wires (§6.5) ---")
+    add("    // NOTE (Phase-2 synthesis TODO): the end-of-buffer anchors are")
+    add("    // structural placeholders — at_eol/at_eob are driven by in_last")
+    add("    // (last cycle) rather than by exact '$'/\\Z lookahead, so the")
+    add("    // model (pyro._circuit_model) is authoritative for end-anchor")
+    add("    // semantics until a streaming end-lookahead datapath is built.")
     add("    wire at_sob = (byte_index == 64'd0);")
     add("    wire at_bol = at_sob || (have_prev && prev_byte == 8'h0A);")
     add("    wire at_eob = in_last;")
-    add("    wire at_eol = in_last;  // structural; exact $ handled by the model")
+    add("    wire at_eol = in_last;  // Phase-2: exact $ handled by the model")
     add("    wire cur_word  = (in_data >= 8'd48 && in_data <= 8'd57) ||")
     add("                     (in_data >= 8'd65 && in_data <= 8'd90) ||")
     add("                     (in_data >= 8'd97 && in_data <= 8'd122) ||")
@@ -177,8 +175,7 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("        active = state_reg;")
     add("        for (it = 0; it < NSTATES; it = it + 1) begin")
     # emit eps/assert relaxation body (repeated NSTATES times by the for loop)
-    multiline = bool(au.flags & 0x08)  # re.MULTILINE
-    eps_lines = _emit_closure_body(au, multiline)
+    eps_lines = _emit_closure_body(au)
     for ln in eps_lines:
         add("            " + ln)
     add("        end")
@@ -241,7 +238,10 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("                if (accept_hit) begin")
     add("                    if (out_count < out_cap) begin")
     add("                        res_wr <= 1'b1;")
-    add("                        res_start <= 64'd0;  // start tracked host-side")
+    add("                        // Phase-2 synthesis TODO: bake per-thread start-offset")
+    add("                        // tracking; res_start=0 here and the host/model recovers")
+    add("                        // the exact start via the R18/R19 hybrid re-run.")
+    add("                        res_start <= 64'd0;")
     add("                        res_end <= byte_index + 64'd1;")
     add("                        res_pattern_id <= 32'd0;")
     add("                        res_flags <= 32'd1;  // bit0 verified (advisory)")
@@ -291,7 +291,7 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     return "\n".join(L)
 
 
-def _emit_closure_body(au: _auto.Automaton, multiline: bool) -> List[str]:
+def _emit_closure_body(au: _auto.Automaton) -> List[str]:
     """Relaxation body: propagate eps/assert edges into ``active`` once."""
     lines: List[str] = []
     for s in range(au.n_states):
@@ -300,7 +300,7 @@ def _emit_closure_body(au: _auto.Automaton, multiline: bool) -> List[str]:
                 lines.append(
                     f"if (active[{s}]) active[{e.target}] = 1'b1;")
             elif e.kind == _auto.E_ASSERT:
-                cond = _at_expr(int(e.payload), multiline)
+                cond = _AT_EXPR.get(int(e.payload))
                 if cond is None:
                     # OVER-APPROX: unknown assertion treated as always-true.
                     lines.append(

@@ -141,14 +141,19 @@ def explain(pattern, flags=0) -> dict:
     from .hdl import estimate as _estimate  # local import: explain is not hot
     _stock_compile(pattern, flags)  # R30: reject what CPython rejects
     classi = _classify.classify(pattern, flags)
-    engine = "model" if classi.eligible else "fallback"
+    # The estimator is total (it never raises — a HDL lowering gap is reported as
+    # fallback-only with a reason, not an exception) and is the authority on
+    # whether a circuit can actually be built/fit, so explain() reflects it.
     est = _estimate(pattern, flags)
+    eligible = classi.eligible and est.eligible
+    reason = classi.reason if not classi.eligible else est.reason
+    engine = "model" if eligible else "fallback"
     return {
-        "eligible": classi.eligible,
-        "reason": classi.reason,
+        "eligible": eligible,
+        "reason": reason,
         "engine": engine,
         "states": classi.states,
-        "circuit_status": "cold" if classi.eligible else "fallback_only",
+        "circuit_status": "cold" if eligible else "fallback_only",
         "est_resources": est.resources,
     }
 
