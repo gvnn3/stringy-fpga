@@ -1,39 +1,42 @@
-"""R61 fault injection — Phase 0 scope.
+"""R61 fault injection via the public v2.0.5 seam (R67).
 
 R61 (simulate device errors / timeouts / false-positive windows and assert the
-fallback-retry path R52) targets the C-ABI host runtime and software model that
-are delivered in Phase 1 (AC-1-6).  Phase 0 exposes NO public hook on the
-`pyro` / `pyro.re` surface to inject a PYRO_E_DEVICE / PYRO_E_TIMEOUT or a
-false-positive window, and there is no physical/model device error to trigger in
-the pure-Python shim.  Per the task brief, the missing Phase 0 hook is recorded
-as a skip.  The routing controls that Phase 0 DOES expose (PYRO_DISABLE /
-PYRO_FORCE_MODEL) are covered by test_ac0_5_install_env.py.
-
-The public diagnostics surface that R52/R61 build on (pyro.re.stats()) is
-sanity-checked below without hard-coding implementation-specific key names.
+fallback-retry path, R52) is driven through the normative `pyro.testing` seam
+(R67), gated behind PYRO_ENABLE_TEST_HOOKS=1 sampled at an R35a point.  The
+comprehensive fault-injection coverage lives in test_ac1_6_fault_routing.py
+(AC-1-6); this module keeps a minimal live R61 check plus the public stats
+diagnostics-surface sanity check that R52/R61 build on (R66).
 """
+
+import os
 
 import pytest
 
+import pyro
 import pyro.re as pre
 
 
-def test_r61_device_error_injection_not_a_phase0_public_hook():
-    """R61/R52: device-error/false-positive injection is Phase 1 (AC-1-6);
-    no public Phase 0 hook exists to drive it from the pyro public surface."""
-    pytest.skip(
-        "R61 device-error/timeout/false-positive injection is a Phase 1 model "
-        "capability (R52, AC-1-6); Phase 0 exposes no public injection hook on "
-        "pyro/pyro.re. Phase 0 routing controls (PYRO_DISABLE/PYRO_FORCE_MODEL) "
-        "are covered in test_ac0_5_install_env.py."
-    )
+def test_r61_device_error_injection_fallback_retry(request):
+    """R61/R52/R67: an injected device error routes the affected dispatch to
+    fallback with a CPython-identical result and increments fallback_after_error
+    (the seam makes R61 driveable from the public surface)."""
+    import re as stdre
+    os.environ["PYRO_ENABLE_TEST_HOOKS"] = "1"
+    os.environ["PYRO_FORCE_MODEL"] = "1"
+    pyro.refresh_env()
+    request.addfinalizer(pyro.testing.reset)
+
+    fae0 = pre.stats()["fallback_after_error"]
+    pyro.testing.inject_device_error("device", 1)
+    subj = "z r61pat z"
+    m = pre.search("r61pat", subj)
+    assert m.span() == stdre.search("r61pat", subj).span()  # result unchanged (R52)
+    assert pre.stats()["fallback_after_error"] - fae0 == 1  # counted (R66)
 
 
 def test_stats_public_surface_is_counter_dict():
-    """AC-3-4/R52 (public surface): pyro.re.stats() reports integer dispatch
-    counters.  Exact key names are not pinned by the spec (only the categories
-    hardware/model/fallback/fallback-after-error are named), so this asserts the
-    shape without hard-coding key strings."""
+    """AC-3-4/R52/R66 (public surface): pyro.re.stats() reports integer dispatch
+    counters (exact key names per R66)."""
     if not hasattr(pre, "stats") or not callable(pre.stats):
         pytest.skip("pyro.re.stats() not present on the public surface")
     s = pre.stats()

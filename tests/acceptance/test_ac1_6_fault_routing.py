@@ -1,19 +1,16 @@
-"""AC-1-6: fault injection & routing-vs-error accounting.
-(R19, R44, R52, R61, R14a, R51a, R66)
+"""AC-1-6: fault injection via the public seams (R67) & routing-vs-error
+accounting.  (R19, R44, R52, R61, R67, R14a, R51a, R66)
 
-Key spec invariant: NOT_RESIDENT / SYNTH tiers and the R51a safety gates are
-ordinary fallback ROUTING and MUST NOT be counted as `fallback_after_error`
-(R44/R14a); only a genuine device-error retry (R52) increments it.  On a
-device-free host every eligible dispatch is served by the model or by fallback
-(R51b) with no device error, so `fallback_after_error` and `device_errors` MUST
-stay 0 across gate/routing-heavy workloads.
+Uses the v2.0.5 `pyro.testing` seams (R67), gated behind PYRO_ENABLE_TEST_HOOKS=1
+sampled at an R35a point (here: refresh_env in-process):
+  * inject_device_error → R52 fallback-retry, CPython-identical result,
+    fallback_after_error incremented;
+  * inject_false_positive → R19 re-verification, spurious windows never leak;
+  * inject_synth_failure is exercised in AC-1-5 (needs synthesis).
 
-Scope note (§13): the model exposes no public seam to inject a PYRO_E_DEVICE /
-PYRO_E_TIMEOUT device error from the pyro/pyro.re surface, so the R52
-device-error → fallback-retry counter increment is not driveable from public
-info; that sub-item is recorded as a public-surface limitation.  The
-false-positive re-verification guarantee (R19/R19a) IS observable: over-
-approximation-class patterns still return byte-identical results.
+Key invariant: NOT_RESIDENT / SYNTH tiers and the R51a safety gates are ordinary
+fallback ROUTING and MUST NOT be counted as `fallback_after_error` (R44/R14a);
+only a genuine (injected) device-error retry (R52) increments it.
 """
 import os
 
@@ -22,6 +19,16 @@ import pytest
 import pyro
 import pyro.re as pre
 import oracle
+
+
+def _enable_hooks(model=True):
+    os.environ.pop("PYRO_DISABLE", None)
+    os.environ["PYRO_ENABLE_TEST_HOOKS"] = "1"
+    if model:
+        os.environ["PYRO_FORCE_MODEL"] = "1"
+    else:
+        os.environ.pop("PYRO_FORCE_MODEL", None)
+    pyro.refresh_env()
 
 
 def _reset(model=False):
@@ -92,13 +99,91 @@ def test_false_positive_never_leaks_via_differential():
         oracle.assert_equivalent(pre, pattern, subject, flags, label=f"noleak/{label}")
 
 
-def test_device_error_injection_not_publicly_driveable():
-    """R52/R61 (§13): no public seam exists on the pyro/pyro.re surface to inject
-    a PYRO_E_DEVICE/PYRO_E_TIMEOUT into the model, so the device-error →
-    fallback-retry counter path is not driveable from public info.  Recorded as a
-    public-surface limitation; the routing-vs-error accounting is covered above."""
-    pytest.skip(
-        "device-error injection into the model is not exposed on the public "
-        "pyro/pyro.re surface (no injection env/API in the spec); R52 counter "
-        "increment not driveable from public info — see report §13."
-    )
+def test_testing_seam_namespace_present():
+    """R67: the pyro.testing seam namespace exposes the required functions."""
+    for fn in ("inject_device_error", "inject_synth_failure",
+               "inject_false_positive", "reset"):
+        assert callable(getattr(pyro.testing, fn, None)), f"missing pyro.testing.{fn}"
+
+
+def test_hooks_are_inert_when_gate_off():
+    """R67: with PYRO_ENABLE_TEST_HOOKS unset/sampled-off the seam functions are
+    importable no-op that raise nothing and do NOT perturb results or routing."""
+    os.environ.pop("PYRO_ENABLE_TEST_HOOKS", None)
+    os.environ["PYRO_FORCE_MODEL"] = "1"
+    pyro.refresh_env()
+    import re as stdre
+    fae0 = pre.stats()["fallback_after_error"]
+    # These MUST NOT raise and MUST NOT arm anything.
+    pyro.testing.inject_device_error("device", 5)
+    pyro.testing.inject_false_positive("abc", 0, 5)
+    pyro.testing.inject_synth_failure("abc")
+    pyro.testing.reset()
+    subj = "z abc z"
+    assert pre.search("abc", subj).span() == stdre.search("abc", subj).span()
+    assert pre.stats()["fallback_after_error"] == fae0, "gate-off hook perturbed routing"
+
+
+@pytest.mark.parametrize("kind", ["device", "timeout"])
+def test_inject_device_error_fallback_retry_identical(kind):
+    """R52/R61/R67: an injected device/timeout error routes the affected
+    dispatches to fallback with CPython-identical results and increments
+    fallback_after_error by exactly the injected count."""
+    import re as stdre
+    _enable_hooks(model=True)
+    n = 3
+    fae0 = pre.stats()["fallback_after_error"]
+    de0 = pre.stats()["device_errors"]
+    try:
+        pyro.testing.inject_device_error(kind, n)
+        subj = "zz needle_dev zz needle_dev"
+        for _ in range(n):
+            m = pre.search("needle_dev", subj)
+            assert m.span() == stdre.search("needle_dev", subj).span()
+        s = pre.stats()
+        assert s["fallback_after_error"] - fae0 == n, (
+            f"expected +{n} fallback_after_error, got {s['fallback_after_error'] - fae0}")
+        assert s["device_errors"] - de0 == n
+    finally:
+        pyro.testing.reset()
+
+
+def test_inject_false_positive_never_leaks():
+    """R19/R19a/R67: injected spurious candidate windows are re-verified before
+    return — they MUST NOT leak into results.  The airtight, spec-guaranteed
+    property (AC-1-6: "re-verified and never leak"; R19a: a false positive that
+    survives re-verification into a returned result is a defect) is that results
+    stay byte-identical to stock re across all eight APIs despite a large injected
+    false-positive count.
+
+    Note (§13): R52 groups "result fails re-verification" with device errors and
+    does not pin WHICH stats counter moves, and the implementation is observed to
+    route re-verification through the R52 path (bumping device_errors /
+    fallback_after_error) for some APIs but not others; this test therefore
+    asserts only the no-leak invariant, not a specific counter."""
+    _enable_hooks(model=True)
+    try:
+        cases = [
+            ("foo", 0, "xx foo yy foo zz"),
+            (r"\d+", 0, "a1 b22 c333"),
+            (r"(a)(b)", 0, "zz ab ab"),
+            (r"[a-z]+", 0, "AB cd EF gh"),
+        ]
+        for pattern, flags, subject in cases:
+            pyro.testing.inject_false_positive(pattern, flags, 8)
+            oracle.assert_equivalent(pre, pattern, subject, flags, label="fp")
+    finally:
+        pyro.testing.reset()
+
+
+def test_reset_restores_clean_state():
+    """R67: reset() clears injected faults — a dispatch after reset behaves
+    normally (no error retry)."""
+    import re as stdre
+    _enable_hooks(model=True)
+    pyro.testing.inject_device_error("device", 10)
+    pyro.testing.reset()
+    fae0 = pre.stats()["fallback_after_error"]
+    subj = "z clean_pat z"
+    assert pre.search("clean_pat", subj).span() == stdre.search("clean_pat", subj).span()
+    assert pre.stats()["fallback_after_error"] == fae0, "reset() did not clear injected faults"

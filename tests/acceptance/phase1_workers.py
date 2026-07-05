@@ -205,8 +205,41 @@ def cmd_tier_equiv(pattern, subject):
             "circuit_status": pre.explain(pattern)["circuit_status"]}
 
 
+def cmd_synth_failure(pattern):
+    """R67/R65: inject a synthesis failure for `pattern`, prewarm it, and confirm
+    the permanent-fallback transition (synth_failed counted, no exception, result
+    still byte-identical to stock re)."""
+    import re as stdre
+    import pyro
+    import pyro.re as pre
+    errors = []
+    reached, last, eq = False, None, False
+    try:
+        pyro.testing.inject_synth_failure(pattern)
+        pyro.prewarm(pattern)
+        reached, last = _poll_until(
+            pre, pattern,
+            lambda e, s: s["synth_failed"] > 0 or e["circuit_status"] == "fallback_only")
+        subj = "z " + pattern + " z"
+        m = pre.search(pattern, subj)
+        exp = stdre.search(pattern, subj)
+        eq = (m.span() == exp.span()) if (m and exp) else (m is None and exp is None)
+        # prewarm/search a second time to prove no retry-storm and still no raise
+        pyro.prewarm(pattern)
+        pre.search(pattern, subj)
+    except BaseException as e:  # noqa
+        errors.append(repr(e))
+    s = pre.stats()
+    return {"no_exception": not errors, "errors": errors, "reached": reached,
+            "last": last, "synth_failed": s["synth_failed"],
+            "circuit_status": pre.explain(pattern)["circuit_status"],
+            "result_eq_stock": eq,
+            "fallback_after_error": s["fallback_after_error"]}
+
+
 _COMMANDS = {
     "prewarm_lifecycle": cmd_prewarm_lifecycle,
+    "synth_failure": cmd_synth_failure,
     "launch_policy": cmd_launch_policy,
     "dedup": cmd_dedup,
     "prewarm_types": cmd_prewarm_types,

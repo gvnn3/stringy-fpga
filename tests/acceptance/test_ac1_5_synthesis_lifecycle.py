@@ -8,16 +8,14 @@ fallback with no exception and correct stats.  All synthesis-triggering work run
 in file-based subprocesses (phase1_workers.py) so the synthesis service's
 spawn/forkserver workers (R63) stay bounded to short-lived children (no residue).
 """
+import os
 import tempfile
-
-import pytest
+import time
 
 import pyro.re as pre
 import phase1_support
 
-# Spec default (R4a): N_synth = 1000.  Bracket the threshold well clear of it.
-N_LOW = 50
-N_HIGH = 1100
+HOOKS = {"PYRO_ENABLE_TEST_HOOKS": "1"}
 
 
 def test_prewarm_accepts_and_never_raises():
@@ -47,22 +45,29 @@ def test_prewarm_is_nonblocking_and_synthesizes_async():
     assert res["device_errors"] == 0
 
 
-def test_launch_policy_does_not_fire_below_threshold():
-    """R4a: synthesis is NOT launched for every pattern — a modest number of
-    eligible dispatches (< N_synth) launches nothing."""
-    with tempfile.TemporaryDirectory(prefix="pyro_lp_") as cache:
-        res, _o, _e = phase1_support.run_worker(
-            "launch_policy", "coldpat_low", N_LOW, cache_dir=cache)
-    assert res["delta"] == 0, f"launch fired at {N_LOW} dispatches (< N_synth): {res}"
+def test_launch_boundary_pinned_by_pyro_n_synth():
+    """R4a/R68: PYRO_N_SYNTH pins the launch threshold deterministically. With
+    N_synth = 3: the 2nd eligible dispatch launches nothing; the 3rd launches
+    exactly once."""
+    knob = {"PYRO_N_SYNTH": "3"}
+    with tempfile.TemporaryDirectory(prefix="pyro_n2_") as cache:
+        below, _o, _e = phase1_support.run_worker(
+            "launch_policy", "knobpat_below", 2, cache_dir=cache, extra_env=knob)
+    assert below["delta"] == 0, f"launch fired before N_synth=3: {below}"
+
+    with tempfile.TemporaryDirectory(prefix="pyro_n3_") as cache:
+        at, _o2, _e2 = phase1_support.run_worker(
+            "launch_policy", "knobpat_at", 3, cache_dir=cache, extra_env=knob)
+    assert at["delta"] == 1, f"launch did not fire exactly at N_synth=3: {at}"
 
 
-def test_launch_policy_fires_at_threshold():
-    """R4a: once a pattern is hot (≥ N_synth eligible dispatches) synthesis is
-    launched exactly once."""
+def test_launch_policy_not_per_call_default_threshold():
+    """R4a: with the default N_synth (1000), a modest number of eligible
+    dispatches launches nothing — synthesis is not attempted for every call."""
     with tempfile.TemporaryDirectory(prefix="pyro_lp_") as cache:
         res, _o, _e = phase1_support.run_worker(
-            "launch_policy", "hotpat_high", N_HIGH, cache_dir=cache)
-    assert res["delta"] >= 1, f"launch did not fire by {N_HIGH} dispatches: {res}"
+            "launch_policy", "coldpat_low", 50, cache_dir=cache)
+    assert res["delta"] == 0, f"launch fired at 50 dispatches (< default N_synth): {res}"
 
 
 def test_synth_jobs_dedup_by_key():
@@ -92,6 +97,43 @@ def test_warm_cache_persists_across_process_restart():
     assert read["cache_files"] == write["cache_files"]
 
 
+def test_cache_dir_isolation_writes_only_into_pyro_cache_dir():
+    """R68: PYRO_CACHE_DIR isolates the bitstream cache — synthesis artifacts land
+    in (and only in) the provided directory."""
+    with tempfile.TemporaryDirectory(prefix="pyro_iso_") as cache:
+        before = set(os.listdir(cache))
+        write, _o, _e = phase1_support.run_worker(
+            "persist_write", "isopat", cache_dir=cache)
+        after = set(os.listdir(cache))
+        assert write["synth_succeeded"] >= 1
+        assert after - before, "no artifact written into the isolated PYRO_CACHE_DIR"
+        assert set(write["cache_files"]) <= after
+
+
+def test_no_residual_synthesis_processes_after_teardown():
+    """R63e: after the process that launched synthesis exits, NO residual service
+    processes remain in its process group (the service tears itself down)."""
+    with tempfile.TemporaryDirectory(prefix="pyro_res_") as cache:
+        result, pgid = phase1_support.run_worker_in_session(
+            "prewarm_lifecycle", "residualpat", cache_dir=cache)
+        assert result["synth_launched"] >= 1  # synthesis really ran
+        # The worker (group leader) has exited; give a short grace for children
+        # to be reaped, then assert the process group is empty.
+        deadline = time.time() + 15
+        empty = False
+        while time.time() < deadline:
+            try:
+                os.killpg(pgid, 0)  # signal 0 => existence check
+            except ProcessLookupError:
+                empty = True
+                break
+            except PermissionError:
+                empty = True  # exists but not ours; treat as no residual of ours
+                break
+            time.sleep(0.1)
+        assert empty, f"residual synthesis process(es) remain in group {pgid} (R63e)"
+
+
 def test_stats_counters_present_and_monotonic_across_lifecycle():
     """R66: lifecycle counters exist and are non-negative ints; synth_launched
     and synth_succeeded advance monotonically once a pattern is synthesized."""
@@ -105,16 +147,17 @@ def test_stats_counters_present_and_monotonic_across_lifecycle():
     assert res["circuits_resident"] >= 0
 
 
-def test_synthesis_failure_permanent_fallback_not_publicly_injectable():
-    """R65 (§13): with the mock toolchain every eligible synthesis SUCCEEDS, and
-    the spec exposes no public seam to force a synthesis FAILURE from the
-    pyro/pyro.re surface.  The permanent-fallback-on-failure path (R65) is
-    therefore only partially observable from public info: prewarm never raises
-    even for fallback-only patterns (asserted in test_prewarm_accepts_and_never
-    _raises) and the synth_failed counter exists (R66).  The failure→permanent-
-    fallback transition itself is recorded as a public-surface limitation."""
-    pytest.skip(
-        "no public seam to force a synthesis failure from the pyro/pyro.re "
-        "surface (mock toolchain always succeeds); R65 permanent-fallback "
-        "transition not driveable from public info — see report §13."
-    )
+def test_synthesis_failure_permanent_fallback_via_seam():
+    """R65/R67: an injected synthesis failure (pyro.testing.inject_synth_failure)
+    drives the pattern to PERMANENT fallback — synth_failed is counted, no
+    exception reaches the caller, and results stay byte-identical to stock re
+    (the failure is routing, not fallback_after_error)."""
+    with tempfile.TemporaryDirectory(prefix="pyro_sf_") as cache:
+        res, _o, _e = phase1_support.run_worker(
+            "synth_failure", "failpat_ac15", cache_dir=cache, extra_env=HOOKS)
+    assert res["no_exception"] is True, res["errors"]
+    assert res["synth_failed"] >= 1, res["last"]
+    assert res["circuit_status"] == "fallback_only", res
+    assert res["result_eq_stock"] is True
+    assert res["fallback_after_error"] == 0, (
+        "synthesis failure is routing (R65), not a device error")

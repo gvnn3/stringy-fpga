@@ -39,7 +39,10 @@ _DEFAULT_CACHE_PREEXISTED = os.path.exists(_DEFAULT_CACHE)
 
 import pytest
 
-_ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL")
+# Env vars sampled at R35a points (import/install/uninstall/refresh_env). All are
+# saved/cleared/restored per test so hook/knob tests are order-independent.
+_ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
+             "PYRO_N_SYNTH")
 
 
 def pytest_configure(config):
@@ -80,10 +83,12 @@ def pyro_isolation():
         os.environ.pop(k, None)
     _safe(pyro.refresh_env)
     _safe(pre.purge)
+    _safe(lambda: pyro.testing.reset())  # clear any injected faults (R67)
 
     try:
         yield
     finally:
+        _safe(lambda: pyro.testing.reset())  # never leak injected faults
         _safe(pyro.uninstall)
         for k, v in saved.items():
             if v is None:

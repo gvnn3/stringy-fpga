@@ -26,17 +26,27 @@ def jsonify(obj):
     return obj
 
 
-def run_worker(command, *args, cache_dir, timeout=150):
-    """Run one worker command in a fresh process bound to `cache_dir`.
-
-    Returns (parsed_json, raw_stdout, raw_stderr).  Raises on non-zero exit.
-    """
+def _worker_env(cache_dir, extra_env):
     env = dict(os.environ)
     env["PYRO_CACHE_DIR"] = str(cache_dir)
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
-    # Start from a clean routing config; the worker sets what it needs.
-    env.pop("PYRO_DISABLE", None)
-    env.pop("PYRO_FORCE_MODEL", None)
+    # Start from a clean routing / test-hook config; caller/worker opt in.
+    for k in ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
+              "PYRO_N_SYNTH"):
+        env.pop(k, None)
+    if extra_env:
+        env.update({k: str(v) for k, v in extra_env.items()})
+    return env
+
+
+def run_worker(command, *args, cache_dir, extra_env=None, timeout=150):
+    """Run one worker command in a fresh process bound to `cache_dir`.
+
+    `extra_env` sets spec-named knobs sampled at the worker's import (R35a):
+    PYRO_ENABLE_TEST_HOOKS, PYRO_N_SYNTH, PYRO_FORCE_MODEL, etc.
+    Returns (parsed_json, raw_stdout, raw_stderr).  Raises on non-zero exit.
+    """
+    env = _worker_env(cache_dir, extra_env)
     proc = subprocess.run(
         [sys.executable, WORKER, command, *[str(a) for a in args]],
         capture_output=True, text=True, env=env, cwd=REPO_ROOT, timeout=timeout,
@@ -50,3 +60,28 @@ def run_worker(command, *args, cache_dir, timeout=150):
         return json.loads(proc.stdout), proc.stdout, proc.stderr
     except json.JSONDecodeError:
         raise AssertionError(f"worker {command} did not emit JSON:\n{proc.stdout}\n{proc.stderr}")
+
+
+def run_worker_in_session(command, *args, cache_dir, extra_env=None, timeout=150):
+    """Run a worker command in its OWN process group/session (start_new_session)
+    so a test can prove R63e — after the worker exits, NO residual synthesis
+    service processes remain in its group.
+
+    Returns (parsed_json, pgid).  The caller checks the group is empty.
+    """
+    import os as _os
+    env = _worker_env(cache_dir, extra_env)
+    proc = subprocess.Popen(
+        [sys.executable, WORKER, command, *[str(a) for a in args]],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env=env, cwd=REPO_ROOT, start_new_session=True,
+    )
+    pgid = _os.getpgid(proc.pid)
+    out, err = proc.communicate(timeout=timeout)
+    if proc.returncode != 0:
+        raise AssertionError(
+            f"worker {command} failed rc={proc.returncode}\nSTDOUT:\n{out}\nSTDERR:\n{err}")
+    try:
+        return json.loads(out), pgid
+    except json.JSONDecodeError:
+        raise AssertionError(f"worker {command} did not emit JSON:\n{out}\n{err}")
