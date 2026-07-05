@@ -41,6 +41,7 @@ from typing import Dict, Optional, Set, Tuple
 
 from .. import hdl
 from ..hdl import identity as _identity
+from . import artifact as _artifact
 from .cache import BitstreamCache, BitstreamKey, make_key, key_digest
 from .service import SynthesisService, STATUS_OK, STATUS_FAILED
 from .toolchain import (
@@ -359,6 +360,9 @@ def _job_from_circuit(circuit: hdl.GeneratedCircuit) -> SynthJob:
         dsps=int(r.get("dsps", 0)),
         over_approx_classes=tuple(circuit.over_approx),
         estimated_fp_rate=float(circuit.estimated_fp_rate),
+        # Serialized automaton the native C model executes (Task-7 artifact
+        # extension); coordinates with src/pyro_rt.c only through this file.
+        automaton_table=_artifact.serialize_automaton_body(circuit.automaton),
     )
 
 

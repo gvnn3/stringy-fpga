@@ -20,11 +20,11 @@ minutes-long real flow without actually waiting.
 
 from __future__ import annotations
 
-import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
+from . import artifact as _artifact
 from .manifest import Manifest, payload_crc32
 
 # Pinned tool/shell versions — part of the R4/R47b cache key precisely because
@@ -32,9 +32,6 @@ from .manifest import Manifest, payload_crc32
 # flow substitutes the true Vivado + open-nic-shell versions here.
 TOOLCHAIN_VERSION = 0x00000100   # mock toolchain v0.1.0 (packed)
 SHELL_VERSION = 0x0A000001       # OpenNIC target shell / PR-region id (opaque)
-
-# Magic prefix of a stub PR bitstream payload (so a real loader can reject it).
-_STUB_MAGIC = b"PYROSTUB"
 
 
 class SynthesisFailed(Exception):
@@ -67,6 +64,11 @@ class SynthJob:
     # R19c over-approximation declaration
     over_approx_classes: Tuple[str, ...] = ()
     estimated_fp_rate: float = 0.0
+    # Serialized automaton body (Task-7 extension) — the state/edge tables the
+    # native C model (src/pyro_rt.c) executes, from
+    # :func:`pyro.synth.artifact.serialize_automaton_body`.  Empty for a job
+    # built without a live automaton (the artifact then carries only its header).
+    automaton_table: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -125,16 +127,21 @@ class MockToolchain:
 
 
 def _stub_payload(job: SynthJob) -> bytes:
-    """A deterministic stub PR bitstream payload derived from the RTL + identity.
+    """The deterministic PR bitstream artifact payload (``artifact.bin``).
 
-    Not a real bitstream — a real flow (Phase 2) replaces this — but stable and
-    integrity-checkable so the harness contract (R47b) is exercised end to end.
+    Not a real Xilinx bitstream — a real Phase-2 flow replaces this — but a
+    **self-describing binary artifact** (:mod:`pyro.synth.artifact`) that carries
+    the R47a/R47b header (baked identity, target shell/harness, CRC-32 integrity
+    trailer) plus the serialized automaton the native C model executes.  Stable
+    for a fixed job, so the mock toolchain stays deterministic (R63b).
     """
-    h = hashlib.sha256()
-    h.update(job.rtl.encode("utf-8"))
-    h.update(bytes.fromhex(job.pattern_hash))
-    h.update(int(job.circ_flags).to_bytes(4, "little"))
-    h.update(int(job.generator_version).to_bytes(4, "little"))
-    h.update(int(TOOLCHAIN_VERSION).to_bytes(4, "little"))
-    h.update(int(SHELL_VERSION).to_bytes(4, "little"))
-    return _STUB_MAGIC + h.digest()
+    return _artifact.build_artifact(
+        pattern_hash16=bytes.fromhex(job.pattern_hash),
+        circ_flags=job.circ_flags,
+        encoding=job.encoding,
+        effective_flags=job.effective_flags,
+        generator_version=job.generator_version,
+        harness_version=job.harness_version,
+        shell_version=SHELL_VERSION,
+        body=job.automaton_table,
+    )

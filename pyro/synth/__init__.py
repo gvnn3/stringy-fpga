@@ -12,6 +12,7 @@ except the light residency check consulted by :mod:`pyro._route`.
 
 from __future__ import annotations
 
+from . import artifact
 from .manifest import Manifest, payload_crc32
 from .cache import (
     BitstreamCache,
@@ -47,6 +48,7 @@ from .residency import (
 )
 
 __all__ = [
+    "artifact",
     "Manifest", "payload_crc32",
     "BitstreamCache", "BitstreamKey", "CacheEntry", "default_root",
     "key_digest", "make_key",
