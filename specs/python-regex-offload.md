@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 1.0.0
+- **Version:** 1.1.0
 - **Status:** Draft (approved for Phase 0 delegation)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-04
@@ -110,8 +110,25 @@ proves them wrong, but they MUST NOT be silently ignored.
   reference benchmark set (§9).
 - **R3 (loss regime — routing, not slowdown).** For inputs below the offload
   threshold (corpus < `S_min` **and** effective reuse < `N_reuse`), PYRO SHALL
-  route to the fallback path so that its wall-clock time is within **1.15×** of
-  calling CPython `re` directly (i.e., the routing/decision overhead is ≤ 15%).
+  route to the fallback path with bounded added overhead, measured relative to
+  calling CPython `re` directly. The bound applies in two forms:
+  - **R3a (absolute, all phases).** The added routing/decision overhead SHALL be
+    ≤ **2 µs** median per top-level call (this is the same quantity bounded by
+    R5). This form is the governing bound whenever the hot path is not native
+    code — in particular for the **Phase-0 pure-Python shim**, where stock
+    `re.search` on a short subject is sub-microsecond C code and no Python-level
+    wrapper can meet a small *relative* ratio even though its *absolute* added
+    cost (~1 µs) is well under this bound.
+  - **R3b (relative, native-runtime phases).** From **Phase 1 onward** (i.e.,
+    once the loss-regime hot path is served by the native host runtime, L3, or by
+    interposition at a level where the delegation cost is native-code cheap),
+    PYRO SHALL additionally keep below-threshold wall-clock time within **1.15×**
+    of calling CPython `re` directly (routing/decision overhead ≤ 15%).
+
+  Rationale: the 1.15× relative bound is only physically meaningful once the
+  decision path is native; expressing it as an absolute bound for Phase 0 (R3a)
+  preserves the intent — negligible routing tax — without demanding a ratio that
+  is unachievable for a Python wrapper around sub-microsecond C code.
 - **R4 (compile amortization).** Compiling a pattern to an automaton program and
   loading it into the fabric (cold) is a one-time cost. PYRO SHALL cache compiled
   automaton programs keyed by `(pattern_bytes, flags, engine_version)` so that a
@@ -640,9 +657,12 @@ be Python for Phase 0; the C ABI is stubbed but shape-frozen).
   byte-identical groups/spans; accessing only group 0 does not re-run. (R18, R20)
 - **AC-0-5.** `pyro.install()`/`uninstall()` patch and restore stock `re` with
   identical observable behavior; `PYRO_DISABLE` forces fallback. (R33–R36, R60)
-- **AC-0-6.** Routing thresholds hold: short-input/one-shot calls route to
-  fallback within 1.15× of stock `re`; decision overhead ≤ 2 µs median. (R3, R5,
-  R51, R59)
+- **AC-0-6.** Routing is deterministic and cheap in absolute terms: short-input/
+  one-shot calls route to the fallback path per the §8 decision order, and the
+  added routing/decision overhead is ≤ 2 µs median per call. Phase 0 asserts the
+  **absolute** loss-regime bound (R3a/R5), not the 1.15× relative ratio (R3b),
+  which is scoped to Phase 1+ and is verified by AC-2-5/AC-3-3. (R3a, R5, R51,
+  R59)
 - **AC-0-7.** Empty-match, multiline/anchor, IGNORECASE-folding, and astral-
   codepoint offset cases are byte-identical to stock `re`. (R21–R24)
 - **AC-0-8.** The frozen `pyro_rt.h` compiles and `pyro_abi_version()` returns
