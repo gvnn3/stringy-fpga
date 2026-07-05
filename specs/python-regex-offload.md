@@ -1,10 +1,10 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 1.2.0
+- **Version:** 1.2.1
 - **Status:** Draft (approved for Phase 0 delegation)
 - **Owner:** Spec Writer
-- **Date:** 2026-07-04
+- **Date:** 2026-07-05
 
 ---
 
@@ -261,6 +261,19 @@ compiler's acceptance decision is unambiguous.
     compiler MUST translate Unicode code-point classes/literals to equivalent
     UTF-8 byte automata. All reported offsets MUST be converted back to Python
     `str` code-point indices (§6.2) before returning to the caller.
+  - **R14a (surrogate / non-UTF-8-encodable gate).** A Python `str` may contain
+    **unpaired surrogates** (e.g., data decoded with `errors="surrogateescape"`
+    from files or OS interfaces — a common case in the large-log-corpus regime).
+    Such a subject **or** pattern cannot be strictly UTF-8-encoded, yet stock
+    CPython `re` matches it. In str mode, if the subject or the pattern fails
+    strict UTF-8 encoding (i.e., contains any unpaired surrogate or is otherwise
+    not `str.encode("utf-8")`-able), the call is **fallback-only**: the hardware/
+    model path MUST NOT see it, and PYRO MUST route to CPython `re`. This is
+    ordinary fallback **routing** (R51), not a device error: it MUST NOT raise,
+    MUST NOT be counted as `fallback_after_error` (R52), and MUST be counted as a
+    normal fallback dispatch in stats (R35/§9). The eligibility decision (R8) MAY
+    detect a non-encodable pattern at compile time; a non-encodable subject is
+    detected at call time in the R51 decision order (§8, R51 gate d).
 - **R15.** For `re.IGNORECASE` in str mode, only **ASCII and Unicode simple
   (1:1) case folding** is HW-eligible. Full/multi-character foldings (e.g., `ß`
   ↔ `ss`) are fallback-only. In bytes mode, IGNORECASE applies ASCII folding
@@ -356,8 +369,13 @@ CPython `re`**. When in doubt, fall back.
 The module `pyro.re` MUST provide a surface that is a superset-compatible
 drop-in for the subset of the standard `re` module listed here.
 
-- **R26 (module-level functions).** Provide, with signatures and semantics
-  matching CPython `re` (Python 3.10+):
+- **R26 (module-level functions).** The supported host runtime is **CPython
+  ≥ 3.11** (the target host runs 3.12). Rationale: the classifier/compiler front
+  end (L2) uses the `re._parser` / `re._constants` modules, which exist under
+  those names only on CPython 3.11+; the 3.10 `sre_parse`/`sre_constants` aliases
+  are not supported and buy nothing for the target. PYRO MAY refuse to import on
+  CPython < 3.11 with a clear error. Provide, with signatures and semantics
+  matching CPython `re` (Python 3.11+):
   - `compile(pattern, flags=0) -> Pattern`
   - `search(pattern, string, flags=0) -> Match | None`
   - `match(pattern, string, flags=0) -> Match | None`
@@ -631,6 +649,35 @@ by the software model (R7) so that the model and hardware are interchangeable.
      `PYRO_FORCE_MODEL` flag (R35a) is set.
   5. If no device and no model available → fallback.
   6. Otherwise → hardware/model path.
+- **R51a (Phase-0 safety gates).** Under R16's "when in doubt, fall back"
+  umbrella, the Phase-0 implementation applies the following additional
+  fallback gates. They are evaluated **before** dispatching to the hardware/model
+  path (logically as part of R51 steps 1–2, ahead of step 6). Each is ordinary
+  fallback **routing** (not a device error; counted as a normal fallback
+  dispatch, never `fallback_after_error`). Each gate is a **Phase-0** condition
+  that a later phase MAY lift individually by spec amendment; until then it holds.
+  - **(a) Subject type gate.** If the subject is not **exactly** `str` or `bytes`
+    (e.g., `bytearray`, `memoryview`, or any other buffer-protocol object) →
+    fallback. Rationale: CPython `re` accepts these but preserves subtle
+    return-type and `group(0)` slicing fidelity (e.g., `bytes` vs `bytearray`
+    return types, memoryview slicing) that Phase 0 does not reproduce; delegating
+    to CPython guarantees byte-identical results and return types (R16, R29).
+  - **(b) `pos`/`endpos` gate.** If a `Pattern` method is called with a non-
+    default `pos` or `endpos` (i.e., `pos != 0` or `endpos != len(subject)`) →
+    fallback. Rationale: Phase 0 does not offset-map anchors/`\A`/`\b` under a
+    windowed search; CPython delegation is exact. (Later phases MAY offload with
+    correct anchor semantics under R24/§6.5.)
+  - **(c) Anchor-context / full-span safety gate.** If the hybrid group
+    reconstruction (R18) cannot be performed with the correct anchor context —
+    i.e., the CPython re-run needed for groups or for group-0 confirmation cannot
+    be guaranteed to see the same surrounding context (line boundaries for
+    `^`/`$`/`\b` under `re.MULTILINE`, string edges for `\A`/`\Z`) as a match
+    over the full subject would — → fallback. This gate guarantees R17/R18/R19
+    are never approximated; when the safe full-span/anchored re-run is available,
+    the path proceeds.
+  - **(d) Surrogate / non-UTF-8-encodable gate.** In str mode, if the subject or
+    pattern is not strictly UTF-8-encodable (unpaired surrogates) → fallback, per
+    R14a.
 - **R52 (correctness on any device error).** If the hardware path raises
   `PYRO_E_DEVICE`/`PYRO_E_TIMEOUT` or produces a result that fails re-
   verification (R19), PYRO MUST transparently retry on the fallback path and
@@ -706,10 +753,15 @@ pure Python, and full fallback. No FPGA, no C library required yet (the model ma
 be Python for Phase 0; the C ABI is stubbed but shape-frozen).
 
 - **AC-0-1.** `import pyro.re as re` provides every symbol in R26 with signatures
-  matching stock `re`; `pyro.re.error is re.error`. (R26, R30)
+  matching stock `re` on CPython ≥ 3.11; `pyro.re.error is re.error`. (R26, R30)
 - **AC-0-2.** For a differential corpus covering all §5.1 constructs, every
   `search/match/fullmatch/findall/finditer/sub/subn/split` result is byte-
-  identical to stock `re`. (R16, R29, R54)
+  identical to stock `re`. The corpus MUST include inputs that trigger each
+  Phase-0 safety gate (R51a) — `bytearray`/`memoryview` subjects, non-default
+  `pos`/`endpos`, and `str` subjects/patterns containing unpaired surrogates
+  (R14a) — and assert those route to fallback with byte-identical results and
+  return types (not counted as `fallback_after_error`). (R16, R14a, R29, R51a,
+  R54)
 - **AC-0-3.** Every §5.2 construct and every over-capacity pattern is classified
   fallback-only by `explain()`, and still returns correct results via fallback.
   (R8, R10, R12, R31, R56)
@@ -842,6 +894,11 @@ selection.
   real-world `str` patterns fall back. Mitigation: measure fallback rate in the
   benchmark suite and treat a high rate as a compiler-coverage backlog item, not
   a correctness defect.
+- **P7 (Python runtime version).** PYRO requires **CPython ≥ 3.11** (R26): the
+  L2 classifier depends on the `re._parser`/`re._constants` modules introduced
+  under those names in 3.11. The target host runs CPython 3.12. Importing under
+  an older interpreter is unsupported and PYRO MAY refuse to import with a clear
+  error.
 
 ---
 
@@ -885,6 +942,21 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **1.2.1** (2026-07-05) — *Clarifications (PATCH).* Surfaced by the final
+  whole-branch review; no AC/interface breaks. (1) Added R14a: in str mode a
+  subject or pattern that is not strictly UTF-8-encodable (unpaired surrogates,
+  e.g. `surrogateescape`-decoded log data) is fallback-only — stock `re` matches
+  it but UTF-8 encoding would raise; this is plain fallback routing, not a device
+  error and not `fallback_after_error`. (2) Added R51a enumerating the Phase-0
+  safety gates applied under R16's fall-back-when-in-doubt umbrella: (a) subject
+  not exactly `str`/`bytes` (bytearray/memoryview → fallback, for group(0)
+  return-type fidelity), (b) non-default `pos`/`endpos` → fallback, (c) the
+  anchor-context/full-span safety gate for hybrid reconstruction, (d) the
+  surrogate gate from R14a; framed as Phase-0 conditions later phases may lift
+  individually. (3) Pinned the supported runtime to **CPython ≥ 3.11** in R26
+  (classifier uses `re._parser`/`re._constants`, 3.11+ only; target host runs
+  3.12) and added prerequisite P7; updated AC-0-1/AC-0-2 references. (4) Bumped
+  the header Date to 2026-07-05.
 - **1.2.0** (2026-07-05) — *Requirement change (MINOR).* Surfaced by the Task 1
   fix round: on the target host a public `os.environ.get` costs ~0.86 µs, so
   reading both `PYRO_DISABLE` and `PYRO_FORCE_MODEL` per call (~1.74 µs, measured
