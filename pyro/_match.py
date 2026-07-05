@@ -1,0 +1,229 @@
+"""Hybrid Match/Pattern wrappers (R17-R23, R27, R28).
+
+``HybridMatch`` is a drop-in for ``re.Match`` whose group-0 span comes straight
+from the FPGA/model candidate window (no CPython re-run — R20), and whose
+group>0 / expand / groupdict / lastindex data is filled by *exactly one*
+anchored CPython re-run over the window, computed lazily on first access
+(R18/R20).
+
+``PyroPattern`` is a drop-in for ``re.Pattern`` (R27) that routes each method
+through the decision logic in :mod:`pyro._route`.
+"""
+
+from __future__ import annotations
+
+from typing import Tuple
+
+# Module-level binding (not name import) so the _match <-> _route cycle
+# resolves: at import time _route is only partially initialized, but methods
+# below dereference ``_route.<fn>`` lazily at call time when it is complete.
+# This keeps the hot fallback path free of per-call import machinery (R5).
+from . import _route
+
+
+def byte_to_cp_map(s: str) -> dict:
+    """Map every UTF-8 byte boundary offset in ``s`` to its code-point index.
+
+    Astral-safe (R21): a code point contributing k UTF-8 bytes advances the
+    byte offset by k while the code-point index advances by one.
+    """
+    out = {0: 0}
+    acc = 0
+    for i, ch in enumerate(s):
+        acc += len(ch.encode("utf-8"))
+        out[acc] = i + 1
+    return out
+
+
+class HybridMatch:
+    """Lazy, capture-group-preserving match object (R28).
+
+    Group 0 is served from ``span0`` without any re-run.  Any observation of a
+    subgroup, ``groupdict``, ``expand``, ``lastindex`` or ``lastgroup``
+    triggers a single anchored CPython re-run over the reported window.
+    """
+
+    __slots__ = (
+        "_patt", "_stock", "_subject", "_span0", "_pos", "_endpos",
+        "_anchor_full", "_ngroups", "_named", "_real",
+    )
+
+    def __init__(self, patt, subject, span0: Tuple[int, int],
+                 pos: int, endpos: int, anchor_full: bool):
+        self._patt = patt              # PyroPattern (the .re attribute)
+        self._stock = patt._stock      # compiled stdlib re.Pattern for re-run
+        self._subject = subject
+        self._span0 = span0
+        self._pos = pos
+        self._endpos = endpos
+        self._anchor_full = anchor_full  # reproduce via fullmatch vs match
+        self._ngroups = patt._stock.groups
+        self._named = bool(patt._stock.groupindex)
+        self._real = None              # cached CPython re-run result
+
+    # --- the one lazy re-run (R18/R20) ------------------------------------
+    def _run(self):
+        real = self._real
+        if real is None:
+            start = self._span0[0]
+            # Anchored at the reported start over the window; caller units.
+            if self._anchor_full:
+                real = self._stock.fullmatch(self._subject, start, self._endpos)
+            else:
+                real = self._stock.match(self._subject, start, self._endpos)
+            # Soundness (R19): the anchored re-run must reproduce the window.
+            if real is None or real.span(0) != self._span0:
+                raise _VerifyError(self._span0)
+            self._real = real
+        return real
+
+    # --- group-0-only accessors: never re-run (R20) -----------------------
+    @property
+    def _slice0(self):
+        s, e = self._span0
+        return self._subject[s:e]
+
+    def span(self, group=0):
+        if group == 0:
+            return self._span0
+        return self._run().span(group)
+
+    def start(self, group=0):
+        if group == 0:
+            return self._span0[0]
+        return self._run().start(group)
+
+    def end(self, group=0):
+        if group == 0:
+            return self._span0[1]
+        return self._run().end(group)
+
+    def group(self, *groups):
+        if not groups:
+            return self._slice0
+        if len(groups) == 1:
+            g = groups[0]
+            if g == 0:
+                return self._slice0
+            return self._run().group(g)
+        return tuple(self.group(g) for g in groups)
+
+    def __getitem__(self, group):
+        return self.group(group)
+
+    def groups(self, default=None):
+        if self._ngroups == 0:
+            return ()
+        return self._run().groups(default)
+
+    def groupdict(self, default=None):
+        if not self._named:
+            return {}
+        return self._run().groupdict(default)
+
+    def expand(self, template):
+        return self._run().expand(template)
+
+    @property
+    def lastindex(self):
+        if self._ngroups == 0:
+            return None
+        return self._run().lastindex
+
+    @property
+    def lastgroup(self):
+        if not self._named:
+            return None
+        return self._run().lastgroup
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @property
+    def endpos(self):
+        return self._endpos
+
+    @property
+    def re(self):
+        return self._patt
+
+    @property
+    def string(self):
+        return self._subject
+
+    @property
+    def regs(self):
+        return self._run().regs
+
+    def __repr__(self):
+        return "<pyro.Match span=%r match=%r>" % (self._span0, self._slice0)
+
+
+class _VerifyError(Exception):
+    """A candidate window failed CPython re-verification (R19) -> fallback."""
+
+    def __init__(self, span):
+        super().__init__(f"window {span} failed verification")
+        self.span = span
+
+
+class PyroPattern:
+    """Drop-in for ``re.Pattern`` (R27).
+
+    Wraps a compiled stdlib pattern (used for validation, fallback, and the
+    hybrid re-run) plus the cached HW-eligibility classification (R4/R8).
+    """
+
+    __slots__ = ("_stock", "_classification", "_calls", "_prog", "__weakref__")
+
+    def __init__(self, stock, classification):
+        self._stock = stock
+        self._classification = classification
+        self._calls = 0  # per-pattern reuse counter (R51 step 4)
+        self._prog = None  # lazily-compiled model program (R4 warm cache)
+
+    # --- delegated attributes (R27) ---------------------------------------
+    @property
+    def pattern(self):
+        return self._stock.pattern
+
+    @property
+    def flags(self):
+        return self._stock.flags
+
+    @property
+    def groups(self):
+        return self._stock.groups
+
+    @property
+    def groupindex(self):
+        return self._stock.groupindex
+
+    # --- routed match-producing methods -----------------------------------
+    def search(self, string, pos=0, endpos=None):
+        return _route.run_single(self, "search", string, pos, endpos)
+
+    def match(self, string, pos=0, endpos=None):
+        return _route.run_single(self, "match", string, pos, endpos)
+
+    def fullmatch(self, string, pos=0, endpos=None):
+        return _route.run_single(self, "fullmatch", string, pos, endpos)
+
+    def finditer(self, string, pos=0, endpos=None):
+        return _route.run_finditer(self, string, pos, endpos)
+
+    def findall(self, string, pos=0, endpos=None):
+        return _route.run_findall(self, string, pos, endpos)
+
+    def sub(self, repl, string, count=0):
+        return _route.run_sub(self, repl, string, count)
+
+    def subn(self, repl, string, count=0):
+        return _route.run_subn(self, repl, string, count)
+
+    def split(self, string, maxsplit=0):
+        return _route.run_split(self, string, maxsplit)
+
+    def __repr__(self):
+        return "<pyro.Pattern %r>" % (self._stock.pattern,)
