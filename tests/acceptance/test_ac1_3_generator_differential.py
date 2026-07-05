@@ -44,6 +44,17 @@ def test_construct_byte_identical_on_model(entry):
     oracle.assert_equivalent(pre, pattern, subject, flags, label=f"gen/{label}")
 
 
+@pytest.mark.parametrize("entry", oracle.MUST_ADVANCE, ids=[e[0] for e in oracle.MUST_ADVANCE])
+def test_must_advance_lazy_empty_byte_identical_on_model(entry):
+    """R22/R16: lazy / empty-preferring quantifiers (a??, .*?, a*?, empty-branch
+    alternations, empty-preferring-then-atom) served by the model circuit
+    reproduce CPython's must_advance finditer/findall/sub/split semantics exactly
+    — a post-empty retry demanding a non-empty match at the same start."""
+    label, pattern, flags, subject = entry
+    _force_model()
+    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"mustadv/{label}")
+
+
 def test_eligible_construct_has_resource_estimate():
     """R11/R12/R31: an HW-eligible §5.1 pattern carries an L2 resource estimate
     (est_resources), used to decide PR-region fit."""

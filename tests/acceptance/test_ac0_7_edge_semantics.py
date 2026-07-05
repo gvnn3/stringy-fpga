@@ -34,6 +34,18 @@ def test_empty_matches(entry, mode):
 
 
 @pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("entry", oracle.MUST_ADVANCE, ids=[e[0] for e in oracle.MUST_ADVANCE])
+def test_must_advance_lazy_empty(entry, mode):
+    """R22: lazy/empty-preferring quantifiers (a??, .*?, a*?, empty-branch
+    alternations, empty-preferring-then-atom) reproduce CPython's must_advance
+    retry — an empty match at a position followed by a NON-empty match at the
+    same start — byte-identically across finditer/findall/sub/split."""
+    label, pattern, flags, subject = entry
+    _apply(mode)
+    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"mustadv:{label}/{mode}")
+
+
+@pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("entry", oracle.ANCHORS, ids=[e[0] for e in oracle.ANCHORS])
 def test_multiline_and_anchors(entry, mode):
     """R24: MULTILINE ^/$, non-MULTILINE $ before trailing \\n, and \\Z are

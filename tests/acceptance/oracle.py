@@ -194,6 +194,30 @@ EMPTY = [
     ("empty.alt", r"a|", 0, "xax"),
 ]
 
+# R22 must_advance: lazy / empty-preferring quantifiers that match empty at a
+# position and then, on the finditer/findall/sub/split retry, must advance to a
+# NON-empty match at the SAME start (CPython 3.7+ must_advance semantics).  These
+# stress the post-empty-match retry path that greedy `a*` does not, incl.
+# empty-preferring quantifiers followed by a matchable atom and empty-branch
+# alternations (§5.1-legal).  Oracle facts verified against stock re, e.g.
+# `a??` on 'aa' -> spans [(0,0),(0,1),(1,1),(1,2),(2,2)].
+MUST_ADVANCE = [
+    ("lazy.opt", r"a??", 0, "aa"),
+    ("lazy.opt.gap", r"a??", 0, "aXa"),
+    ("lazy.star.dot", r".*?", 0, "ab"),
+    ("lazy.opt.x", r"x??", 0, "xxx"),
+    ("lazy.opt.d", r"\d??", 0, "12"),
+    ("lazy.star", r"a*?", 0, "aaa"),
+    ("lazy.star.d", r"\d*?", 0, "12a3"),
+    ("lazy.opt.dotany", r".??", 0, ".x"),
+    ("lazy.empty_alt", r"(a|)??", 0, "aa"),
+    ("lazy.empty_alt.noncap", r"(?:a|)??", 0, "aba"),
+    ("lazy.followed_atom", r"a*?b?", 0, "ab"),
+    ("lazy.groups", r"(a??)(b?)", 0, "ab"),
+    ("lazy.opt.then_atom", r"a??b", 0, "aab"),
+    ("lazy.alt", r"a??|b", 0, "ab"),
+]
+
 # §6.5 multiline / anchor cases (R24).
 ANCHORS = [
     ("ml.line", r"^\w+$", _re.MULTILINE, "foo\nbar\nbaz"),

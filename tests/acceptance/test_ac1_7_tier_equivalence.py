@@ -27,6 +27,12 @@ CASES = [
     (r"(a.*b)c", "aXbXbc"),
     (r"^\w+", "alpha\nbeta"),
     (r"[A-Z]+", "abcDEFghiJKL"),
+    # must_advance: lazy/empty-preferring quantifiers (R22) across tiers.
+    (r"a??", "aa"),
+    (r".*?", "ab"),
+    (r"a*?b?", "ab"),
+    (r"(a??)(b?)", "ab"),
+    (r"(a|)??", "aa"),
 ]
 
 
@@ -90,6 +96,8 @@ def test_inprocess_tier_equivalence(pattern, subject):
     (r"(\w+)@(\w+)", "a@b and cd@ef"),
     (r"(?P<a>foo)$|(?P<b>foo)", "foobar foo"),
     (r"\d{2,4}", "1 22 333 4444"),
+    (r"a??", "aa"),                 # must_advance across cold/model/resident
+    (r"(a??)(b?)", "ab"),           # must_advance with capture groups
 ])
 def test_subprocess_cold_model_resident_equivalence(pattern, subject):
     """R58a/R36/R53 keystone: a pattern driven cold→hot→warm/resident is served
