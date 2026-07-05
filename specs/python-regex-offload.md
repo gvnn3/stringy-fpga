@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.0.4
+- **Version:** 2.0.5
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1a in progress)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-05
@@ -216,8 +216,9 @@ proves them wrong, but they MUST NOT be silently ignored.
   - **Bitstream cache (persistent).** Keyed by `(pattern_bytes, encoding,
     effective_flags, generator_version, toolchain_version,
     shell/PR-region_version)`, holds synthesized PR bitstream artifacts and their
-    manifests (R47b); `encoding` and `effective_flags` are as in R47a. Its three
-    tiers are:
+    manifests (R47b); `encoding` and `effective_flags` are as in R47a. Its
+    filesystem location is the spec-named `PYRO_CACHE_DIR` (R68) when set, else a
+    runtime default. Its three tiers are:
     - **cold** — no artifact for the key: synthesis is required (minutes),
       performed asynchronously by the synthesis service (R63); the caller is
       served by fallback meanwhile and is NEVER blocked;
@@ -233,7 +234,8 @@ proves them wrong, but they MUST NOT be silently ignored.
   it for every pattern. A circuit's synthesis SHALL be launched (enqueued to the
   service, R63) only when at least one of the following holds:
   - the pattern has been dispatched HW-eligible at least **N_synth** times
-    (default **N_synth = 1000**, tunable), i.e. reuse proves the pattern hot; or
+    (default **N_synth = 1000**, overridable via the spec-named `PYRO_N_SYNTH`,
+    R68), i.e. reuse proves the pattern hot; or
   - the pattern is explicitly requested via `pyro.prewarm(patterns, flags=0)`
     (R62), which enqueues synthesis regardless of call count.
   The policy MUST be deterministic given the call history and configuration.
@@ -968,7 +970,10 @@ synthesis time and identified via the identity block (R47a).
   - **R63e (isolation).** A crash, hang, or non-termination of a synthesis job
     MUST NOT affect caller correctness or availability; the caller continues on
     fallback. The service MUST enforce a per-job timeout after which the job is
-    abandoned and the pattern treated per R65.
+    abandoned and the pattern treated per R65. The service MUST **clean up its
+    worker processes** on `pyro_ctx_close`/ctx teardown and at interpreter
+    shutdown, so that a test harness can assert no residual service processes
+    survive a completed run.
 - **R64 (PR-region arbitration / eviction).** With a single-tenant PR region,
   the runtime MUST implement an **eviction policy** deciding which resident
   circuit to replace when a different pattern's circuit is chosen for residency.
@@ -986,7 +991,8 @@ synthesis time and identified via the identity block (R47a).
   `pyro.re.stats()`), MUST NOT be retried indefinitely, and MUST **never** raise
   an exception to the caller. The caller continues to receive byte-identical
   results via fallback (R16, R52 distinction: this is routing, not
-  `fallback_after_error`).
+  `fallback_after_error`). The failure transition MUST be drivable from tests via
+  the public seam `pyro.testing.inject_synth_failure` (R67).
 - **R66 (`stats` extensions).** `pyro.re.stats() -> dict` MUST report, in
   addition to the pre-2.0.0 dispatch counters (hardware / model / fallback /
   fallback-after-error, R52), the circuit-lifecycle counters:
@@ -1069,7 +1075,9 @@ synthesis time and identified via the identity block (R47a).
   verification (R19), PYRO MUST transparently retry on the fallback path and
   return the fallback result. Such an event MUST be counted in diagnostics
   (`pyro.re.stats()`), MUST NOT raise to the caller, and MUST NOT change the
-  returned value relative to CPython.
+  returned value relative to CPython. This path MUST be drivable from tests via
+  the public injection seam `pyro.testing.inject_device_error` (R67), so that
+  R52/R61 are verifiable without reading the implementation.
 - **R53 (determinism).** Given identical inputs and configuration, the
   *observable result* MUST be independent of whether the hardware (resident
   generated circuit), model, or fallback path served it, and independent of the
@@ -1082,7 +1090,9 @@ synthesis time and identified via the identity block (R47a).
 
 These define categories of tests the test-developer derives from the ACs. Tests
 MUST NOT read the implementation; they exercise the Python API (§7.1), the C ABI
-(§7.3), and the register/DMA contract via the software model (§7.4).
+(§7.3), the register/DMA contract via the software model (§7.4), and the public
+test/verification seams (§9.1). Any AC whose verification would otherwise require
+reading internals MUST be reachable through a §9.1 seam.
 
 - **R54 (differential oracle).** The primary oracle is CPython's `re`. For a
   large generated corpus of `(pattern, flags, subject)` triples, tests MUST
@@ -1147,7 +1157,67 @@ MUST NOT read the implementation; they exercise the Python API (§7.1), the C AB
   stock `re`, and assert identical outputs and exceptions (R33–R36).
 - **R61 (fault injection).** Tests MUST simulate device errors/timeouts/false-
   positive windows in the model and assert the fallback-retry path (R52) yields
-  CPython-identical results and increments the correct stats counters.
+  CPython-identical results and increments the correct stats counters, driving the
+  injection via the public seam of **R67** (not by reading or patching internals).
+
+### 9.1 Public test/verification seams (normative)
+
+§9's premise is that **tests MUST NOT read the implementation**. Any behavior an
+AC asks a test to verify MUST therefore be reachable from a public surface. The
+following seams are **normative** so the spec-only test author can drive them
+without reading code. They are PYRO-specific and MUST NOT appear on the standard
+`re` namespace when interposing (§7.2), mirroring R31/R62.
+
+- **R67 (fault-injection seam — NEW obligation).** PYRO MUST expose a
+  test-hook namespace `pyro.testing` providing at least:
+  - `pyro.testing.inject_device_error(kind="device"|"timeout", count=1) -> None`
+    — cause the next `count` hardware/model dispatches to raise the corresponding
+    device error (`PYRO_E_DEVICE`/`PYRO_E_TIMEOUT`), exercising the R52 fallback-
+    retry path and its `fallback_after_error` counter (R66);
+  - `pyro.testing.inject_synth_failure(pattern, flags=0) -> None` — cause the
+    named pattern's next synthesis (R65) to fail, exercising the permanent-
+    fallback transition, the diagnostic, and the `synth_failed` counter (R66);
+  - `pyro.testing.inject_false_positive(pattern, flags=0, count=1) -> None` —
+    cause the model to emit `count` spurious candidate windows for the pattern,
+    exercising R19 re-verification (the spurious windows MUST NOT leak into
+    results);
+  - `pyro.testing.reset() -> None` — clear all injected faults.
+  Injection MUST be **deterministic**, MUST NOT alter returned results relative
+  to CPython `re` (R16 — an injected device error routes to fallback, an injected
+  false positive is re-verified away), and MUST be observable via
+  `pyro.re.stats()` (R66). To avoid production foot-guns, injection MUST take
+  effect only when `PYRO_ENABLE_TEST_HOOKS=1` was sampled (R35a sampling
+  discipline); when disabled, the functions are importable but no-ops that raise
+  nothing. This seam is a **new implementation obligation** introduced in v2.0.5.
+- **R68 (spec-named configuration knobs).** The following configuration overrides
+  are **normative** and are sampled at the R35a sampling points (import,
+  `install()`/`uninstall()`, `refresh_env()`):
+  - `PYRO_N_SYNTH` (**NEW obligation**) — integer override of the R4a synthesis-
+    launch threshold `N_synth` (default 1000). Tests MUST be able to set a small
+    value to pin the exact launch boundary deterministically. An invalid value is
+    ignored (default retained) and MAY be surfaced via stats/diagnostics.
+  - `PYRO_CACHE_DIR` (**blessing of existing behavior**) — filesystem path for the
+    persistent **bitstream cache** (R4). If unset, the runtime chooses a default
+    location. Codified here so test harnesses can isolate and assert cache
+    hygiene (cold→warm persistence across process restart, no residue).
+  These knobs MUST NOT be read on the per-call hot path (R35a/R5).
+- **R69 (device-free ABI-conformance scope — blessing/clarification).** The
+  `pyro_generate` descriptor (R40/R40a) is an **L2-private serialized-automaton
+  format that is deliberately NOT frozen** (§7.3 keeps classification in L2). Per
+  the Task 7 ruling (§12 out-of-scope), pure-ctypes conformance drivers therefore
+  cannot construct a *resident* circuit from public information. This is
+  **sanctioned**: for device-free/`model://` bindings, the resident-tier register-
+  level guarantees that require a constructed resident circuit (result-ring
+  `OVF`, single-issue, R47a identity inspection, R49a alignment on a live scan)
+  MAY be verified **behaviorally through the public Python surface** (AC-1-3/
+  AC-1-4/AC-1-7) rather than via pure-ctypes construction. Pure-ctypes tests
+  (R57/R58) cover everything publicly constructible — `pyro_abi_version`, `open`/
+  `close`, `caps`, R44 defined-state on every error path (including
+  `PYRO_E_INVALID` for misaligned/raw-descriptor inputs, R49a), enum/struct
+  layout, `PROG_*`/blob absence, and thread-safety. Both together satisfy
+  AC-1-1/AC-1-2 **without reading the implementation**. The spec does **not**
+  require freezing the descriptor format (option b) nor shipping a test-vector
+  artifact (option c); option (a), behavioral coverage, is the ruling.
 
 ---
 
@@ -1210,12 +1280,18 @@ Every AC below is testable **without hardware**.
 
 - **AC-1-1.** The C ABI (ABI 2.0.0, R39–R44) passes ABI-conformance tests against
   the model, including the async generate → synth-request → status → load
-  lifecycle and the `PYRO_E_NOT_RESIDENT`/`PYRO_E_SYNTH` guards. (R57)
+  lifecycle and the `PYRO_E_NOT_RESIDENT`/`PYRO_E_SYNTH` guards. Per R69, pure-
+  ctypes tests cover all publicly constructible paths; resident-tier guarantees
+  that require constructing a resident circuit from the L2-private descriptor MAY
+  instead be verified behaviorally via the Python surface (AC-1-3/1-4/1-7). (R57,
+  R69)
 - **AC-1-2.** The harness contract (R45–R50) is implemented by the model and
   passes contract tests: identity-block trust boundary and dispatch-only-if-match
   (R47a), PR artifact + manifest compatibility/integrity checks (R47b), result-
   ring layout, overflow `OVF`, single-issue, alignment, and absence of the
-  obsolete `PROG_*`/blob path. (R58)
+  obsolete `PROG_*`/blob path. Register-level guarantees not constructible from
+  public info in the device-free binding are verified behaviorally per R69. (R58,
+  R69)
 - **AC-1-3.** The HDL generator lowers every §5.1 construct to a valid per-pattern
   RTL circuit that the model recognizes; over-budget/over-`MAX_*` patterns are
   rejected by the estimator and route to fallback (R11–R13). For a ≥ 1 MiB
@@ -1224,15 +1300,20 @@ Every AC below is testable **without hardware**.
 - **AC-1-4.** Overflow/resume: a corpus producing more matches than `OUT_CAP`
   returns the complete, correct match list via streaming resumption. (R41, R47)
 - **AC-1-5.** The synthesis-service skeleton with the mock toolchain: launch
-  policy fires only at ≥ N_synth or via `pyro.prewarm` (R4a/R62); jobs run out of
-  process and never block calls; cold→warm→resident transitions and cache-key
-  hits persist across a simulated restart; job dedup by key; deterministic
-  single-tenant eviction without thrashing; synthesis failure → permanent
-  fallback, no exception, correct `stats()` counters. (R62–R66, R58a)
-- **AC-1-6.** Fault-injection: model-reported false-positive windows are re-
-  verified and never leak; device errors trigger fallback-retry with CPython-
-  identical output; `NOT_RESIDENT`/`SYNTH` are counted as routing, not
-  `fallback_after_error`. (R19, R44, R52, R61)
+  policy fires only at ≥ N_synth or via `pyro.prewarm` (R4a/R62), with the exact
+  boundary pinned deterministically by setting `PYRO_N_SYNTH` (R68); jobs run out
+  of process and never block calls; cold→warm→resident transitions and cache-key
+  hits persist across a simulated restart (with an isolated `PYRO_CACHE_DIR`,
+  R68); job dedup by key; deterministic single-tenant eviction without thrashing;
+  synthesis failure (injected via `pyro.testing.inject_synth_failure`, R67) →
+  permanent fallback, no exception, correct `stats()` counters; no residual
+  service processes after teardown (R63e). (R62–R66, R67, R68, R58a)
+- **AC-1-6.** Fault-injection via the public seams (R67): model false-positive
+  windows (`inject_false_positive`) are re-verified and never leak; device errors
+  (`inject_device_error`) trigger fallback-retry with CPython-identical output and
+  increment `fallback_after_error`; `NOT_RESIDENT`/`SYNTH` are counted as routing,
+  not `fallback_after_error`. All drivable without reading the implementation.
+  (R19, R44, R52, R61, R67)
 - **AC-1-7.** Asynchrony correctness keystone: for the same pattern/subject,
   results are byte-identical whether served cold-fallback, via the model, or via
   a "resident" model circuit — proving R36's asynchrony clause and R53 without
@@ -1388,6 +1469,14 @@ automatic tier-based dispatch and prewarming.
 - **Speculative/whole-corpus synthesis.** PYRO does not synthesize circuits for
   patterns that are neither hot (R4a) nor `prewarm`ed; there is no attempt to
   predict or pre-synthesize arbitrary future patterns.
+- **A frozen/public `pyro_generate` descriptor format.** The serialized-automaton
+  descriptor passed across the C ABI (R40/R40a) is an **L2↔L3 private contract,
+  intentionally not frozen or documented for external construction** (freezing it
+  would couple the ABI to the generator internals). Consequently, pure-ABI
+  conformance drivers verify device-free resident-tier guarantees behaviorally
+  through the Python surface (R69), not by hand-building descriptors. Freezing the
+  format, or shipping a public test-vector artifact, is explicitly **not** a
+  v2.0.x deliverable.
 - **Nominal type identity of match/pattern objects on the accelerated path.**
   `isinstance(obj, re.Pattern)` / `isinstance(obj, re.Match)` are not guaranteed
   on the hardware/model path because those CPython types are concrete and
@@ -1414,6 +1503,31 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.0.5** (2026-07-05) — *Testability rulings (PATCH), Phase 1 acceptance-suite
+  author.* Several ACs were only verifiable by reading internals, contradicting
+  §9's "tests MUST NOT read the implementation" premise. Added **§9.1 public
+  test/verification seams** and wired them in:
+  - **R67 (fault-injection seam — NEW obligation).** `pyro.testing` namespace with
+    `inject_device_error` (R52/R61), `inject_synth_failure` (R65),
+    `inject_false_positive` (R19), and `reset`; deterministic, result-preserving,
+    stats-observable, gated behind `PYRO_ENABLE_TEST_HOOKS=1`. Unblocks AC-1-6 and
+    the R52/R61/R65 verification.
+  - **R68 (spec-named config knobs).** `PYRO_N_SYNTH` (**NEW obligation**) pins the
+    R4a launch threshold; `PYRO_CACHE_DIR` (**blessing** of existing behavior)
+    names the persistent bitstream-cache location (R4). Both sampled at R35a
+    points, never on the hot path.
+  - **R69 (device-free ABI-conformance scope — blessing).** Ruled option (a): the
+    `pyro_generate` descriptor is an L2-private, intentionally-unfrozen format
+    (added §12 out-of-scope bullet), so resident-tier register guarantees for the
+    device-free binding MAY be verified **behaviorally via the Python surface**
+    (AC-1-3/1-4/1-7); pure-ctypes tests cover all publicly constructible paths.
+    Did **not** freeze the descriptor (option b) or require a test-vector artifact
+    (option c).
+  - Strengthened R63e (service MUST clean up worker processes on teardown, so
+    tests can assert no residue). Updated AC-1-1/1-2 (R69), AC-1-5 (R67/R68),
+    AC-1-6 (R67), R52/R61/R65 (seam references), and the §9 premise. **New
+    implementation obligations:** R67 and the `PYRO_N_SYNTH` knob of R68; all
+    else blesses/clarifies existing behavior.
 - **2.0.4** (2026-07-05) — *Rulings (PATCH), Task 7 (C ABI 2.0.0 native runtime).*
   No interface/AC break; blesses the native runtime. (1) **R40a (classification is
   an L2 responsibility).** Pattern eligibility/classification is owned by Python
