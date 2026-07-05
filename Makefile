@@ -15,6 +15,12 @@ CFLAGS   ?= -Wall -Werror -std=c11 -Iinclude
 LDLIBS   ?= -lpthread
 BUILD    := build
 
+# Test-only compile flag: exposes the debug seams (pyro_ctx_debug_*) that the
+# conformance / harness-contract tests drive.  It is applied to the test library
+# and the valgrind harness, but NOT to the frozen-ABI `abi-check` build, so the
+# stable/production ABI surface never exports the test mutators (R37/R38).
+TESTFLAGS := -DPYRO_TESTING
+
 LIB      := $(BUILD)/libpyro_rt.so
 SRC      := src/pyro_rt.c
 
@@ -23,10 +29,14 @@ SRC      := src/pyro_rt.c
 all: lib abi-check
 
 # --- shared library (position-independent, C11, warnings-as-errors) --------
+# Built with $(TESTFLAGS) because its only consumers today are the ABI /
+# harness-contract conformance tests, which need the debug seams.  A production
+# build would omit $(TESTFLAGS); `abi-check` compiles the runtime without it to
+# prove the frozen ABI is self-contained and excludes the test mutators.
 lib: $(LIB)
 
 $(LIB): $(SRC) include/pyro_rt.h | $(BUILD)
-	$(CC) $(CFLAGS) -fPIC -shared $(SRC) -o $@ $(LDLIBS)
+	$(CC) $(CFLAGS) $(TESTFLAGS) -fPIC -shared $(SRC) -o $@ $(LDLIBS)
 
 # --- ABI version conformance (AC-0-8 lineage; now asserts 2.0.0) -----------
 # The check program is generated so the only committed C sources are the
@@ -57,7 +67,7 @@ valgrind: $(BUILD)/abi_conformance
 	  $(BUILD)/abi_conformance
 
 $(BUILD)/abi_conformance: tests/c/abi_conformance.c $(SRC) include/pyro_rt.h | $(BUILD)
-	$(CC) $(CFLAGS) tests/c/abi_conformance.c $(SRC) -o $@ $(LDLIBS)
+	$(CC) $(CFLAGS) $(TESTFLAGS) tests/c/abi_conformance.c $(SRC) -o $@ $(LDLIBS)
 
 $(BUILD):
 	@mkdir -p $(BUILD)

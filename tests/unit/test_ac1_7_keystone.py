@@ -26,6 +26,10 @@ CORPUS = [
     (r"\bword\b", "a word wordy word. word"),     # word_boundary over-approx
     (r"(?i)hello", "HELLO hello HeLLo world"),    # cross-length casefold OA
     (r"a*", "baaab aa"),                          # empty + greedy
+    (r"a??", "aa"),                               # lazy-empty (R22 must_advance)
+    (r".*?", "ab"),                               # lazy-empty preferring empty
+    (r"x??", "xxy"),                              # lazy-optional empty
+    (r"\d??", "12"),                              # lazy-optional empty class
     (r"^\w+", "first line only"),
     (r"(\w+)@(\w+)", "u@h and a@b end"),          # capture groups (hybrid R18)
     (r"colou?r", "color colour colouur"),

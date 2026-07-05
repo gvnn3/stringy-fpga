@@ -837,7 +837,11 @@ pyro_status pyro_caps_get(pyro_ctx *ctx, pyro_caps *out)
     return PYRO_OK;
 }
 
-/* --- test-only seams (NOT part of the stable ABI) -------------------------*/
+/* --- test-only seams (NOT part of the stable ABI) -------------------------
+ * Compiled and exported only under PYRO_TESTING so a production build of the
+ * frozen ABI does not expose these mutators (see include/pyro_rt.h + Makefile).
+ */
+#ifdef PYRO_TESTING
 void pyro_ctx_debug_force_misalign(pyro_ctx *ctx, int on)
 {
     if (!ctx) return;
@@ -872,3 +876,4 @@ uint32_t pyro_ctx_debug_csr_read(pyro_ctx *ctx, uint32_t offset)
     pthread_mutex_unlock(&ctx->lock);
     return v;
 }
+#endif /* PYRO_TESTING */

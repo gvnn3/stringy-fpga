@@ -24,8 +24,10 @@ Correctness contract (R19, "sound and complete for group 0"):
 Harness contract (§7.4).  The model exposes the normative CSR block (R45)
 including the baked **circuit-identity** registers (R47a), honors the result-ring
 overflow / ``OVF`` semantics (R47), single-issue serialization (R48), and the
-64-byte DMA-alignment assertion (R49).  It is interchangeable with a real
-circuit behind the L3 harness so later tasks can bind it under the C ABI.
+64-byte DMA-alignment contract (R49) — whose check is realized by the L3 binding
+as a defined ``PYRO_E_INVALID`` error, not an abort (R49a, v2.0.4).  It is
+interchangeable with a real circuit behind the L3 harness so later tasks can
+bind it under the C ABI.
 """
 
 from __future__ import annotations
@@ -34,7 +36,12 @@ import re as _re
 import re._constants as _c
 import threading
 from bisect import bisect_left
+from functools import lru_cache
 from typing import List, Optional, Tuple
+
+# Requires CPython >= 3.11 (P7/R26): this model and the L2 front end depend on
+# the ``re._parser`` / ``re._constants`` modules (present under those names only
+# on 3.11+) via :mod:`pyro.hdl.automaton`.  The target host runs 3.12.
 
 from . import hdl
 from .hdl import automaton as _auto
@@ -240,9 +247,13 @@ class CircuitModel:
         """
         if not self.resident:
             raise NotResident("circuit not resident")
-        # R49: buffers are 64-byte aligned in the DMA contract; bytes objects
-        # produced by the host encoder satisfy this. We assert the ring cap is
-        # sane rather than the (Python-managed) buffer address.
+        # R49/R49a: the DMA contract requires 64-byte-aligned buffers; the
+        # alignment "check" is normatively realized as a *defined error* (not an
+        # abort/assert), i.e. the L3 ABI returns PYRO_E_INVALID for a misaligned
+        # or malformed request (R49a, spec v2.0.4).  This Python model is driven
+        # with host-encoded ``bytes`` (always suitably backed), so the binding
+        # layer (src/pyro_rt.c) owns the misalignment rejection; here we validate
+        # the ring capacity argument as the analogous defined-error guard.
         if out_cap < 0:
             raise ValueError("out_cap must be non-negative")
         with self._lock:  # single-issue per circuit (R48)
@@ -332,40 +343,49 @@ def candidate_starts(circuit: hdl.GeneratedCircuit, subject) -> List[int]:
     return [w.start for w in windows]
 
 
+class CompletenessError(Exception):
+    """The automaton missed a CPython match start — a generator lowering defect.
+
+    R19 forbids false negatives for HW-eligible patterns; surfacing this as an
+    error (rather than silently dropping a match) is the whole point of executing
+    the generated automaton in the model.
+    """
+
+
+@lru_cache(maxsize=512)
+def _cached_stock(ptype, pattern, flags):
+    return _stock_compile(pattern, flags)
+
+
+def _stock_for(circuit: hdl.GeneratedCircuit):
+    """The stock-compiled pattern for a circuit, cached (M3 — no per-call recompile)."""
+    return _cached_stock(type(circuit.pattern), circuit.pattern, circuit.flags)
+
+
 def group0_finditer(circuit: hdl.GeneratedCircuit, subject
                     ) -> List[Tuple[int, int]]:
     """Byte-identical ``finditer`` group-0 spans via the R18/R19 hybrid.
 
-    Candidate starts come from the **automaton** (completeness, R19); exact spans
-    and CPython's leftmost-greedy / non-overlapping advancement come from a stock
-    ``re`` re-run anchored at each candidate start.  Because the automaton is
-    complete, the produced list equals ``stock.finditer`` spans; a generator bug
-    that drops a start makes this list diverge (surfacing the bug).
+    Span *enumeration* is delegated to CPython ``re`` — it is the oracle for
+    R22's ``must_advance`` empty-match iteration (post-3.7 finditer retries at the
+    same position demanding a non-empty match before advancing), which a
+    hand-rolled scanner is error-prone to reproduce and MUST NOT get wrong (a
+    dropped empty match is an R19 false negative).
+
+    The generated **automaton is still executed** and its role is preserved as
+    the R19 completeness oracle: every CPython match start MUST appear in the
+    automaton's candidate-start set, else the automaton is missing a match a
+    generator lowering bug would drop (:class:`CompletenessError`).  This keeps
+    the honesty property — a generator completeness defect still surfaces here —
+    without re-implementing CPython's iteration.
     """
-    stock = _stock_compile(circuit.pattern, circuit.flags)
-    starts = sorted(set(candidate_starts(circuit, subject)))
-    out: List[Tuple[int, int]] = []
-    # Reproduce CPython's finditer exactly (R22): walk left to right; at each
-    # position take the leftmost real match starting at or after ``pos`` (found
-    # by trying stock.match at successive candidate starts — the automaton is
-    # complete, so every real match start is among ``starts``), append EVERY
-    # match span including empties, and advance ``pos`` to the match end, or one
-    # past it when the match was empty (to make progress).  There is NO empty-
-    # match adjacency suppression: CPython's finditer yields the empty matches.
-    pos = 0
-    i = 0
-    n_starts = len(starts)
-    while i < n_starts:
-        s = starts[i]
-        if s < pos:
-            i += 1
-            continue
-        m = stock.match(subject, s)
-        if m is None:
-            i += 1            # candidate false positive (R19) — skip permanently
-            continue
-        span = m.span()
-        out.append(span)
-        pos = span[1] if span[1] > span[0] else span[1] + 1
-        i += 1
-    return out
+    stock = _stock_for(circuit)
+    spans = [m.span() for m in stock.finditer(subject)]
+    # R19 cross-check: the automaton must cover every real match start.
+    cand = set(candidate_starts(circuit, subject))
+    for s, _e in spans:
+        if s not in cand:
+            raise CompletenessError(
+                f"automaton missed match start {s} for {circuit.pattern!r} "
+                f"(R19 completeness / generator lowering defect)")
+    return spans

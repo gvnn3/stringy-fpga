@@ -103,20 +103,27 @@ typedef struct {
 } pyro_caps;
 pyro_status pyro_caps_get(pyro_ctx *ctx, pyro_caps *out);
 
-/* --- test seam (NOT part of the stable ABI contract) ----------------------
- * Force the next scan's internal 64-byte-aligned DMA staging buffer to be
- * deliberately misaligned, so a test can prove the R49 alignment check fires
- * (the model "asserts these to catch host bugs").  Auto-clears after one scan.
+/* --- test-only seams (NOT part of the stable/frozen ABI) ------------------
+ * These mutators exist solely for the conformance/harness-contract tests and
+ * MUST NOT be exported by a production build of the frozen ABI.  They are
+ * compiled in only when PYRO_TESTING is defined; the Makefile defines it for the
+ * test library (`make lib`) and the valgrind harness, and leaves it undefined
+ * for the frozen-ABI `abi-check` build so the stable surface excludes them.
+ */
+#ifdef PYRO_TESTING
+/* Force the next scan's internal 64-byte-aligned DMA staging buffer to be
+ * deliberately misaligned, so a test can prove the R49/R49a alignment check
+ * fires (returns the defined PYRO_E_INVALID).  Auto-clears after one scan.
  */
 void        pyro_ctx_debug_force_misalign(pyro_ctx *ctx, int on);
 
 /* Read a normative R45 CSR register of the ctx's resident circuit by offset
  * (e.g. 0x0000 ID, 0x0018..0x0024 CIRC_ID0..3, 0x0028 CIRC_FLAGS, 0x0014 STATUS,
- * 0x004C OUT_COUNT).  Returns 0 when no circuit is resident.  A test-only seam
- * so the harness-contract tests (R58/AC-1-2) can inspect the identity block and
- * STATUS bits the model maintains; NOT part of the stable ABI contract.
+ * 0x004C OUT_COUNT).  Returns 0 when no circuit is resident.  Lets the harness-
+ * contract tests (R58/AC-1-2) inspect the identity block and STATUS bits.
  */
 uint32_t    pyro_ctx_debug_csr_read(pyro_ctx *ctx, uint32_t offset);
+#endif /* PYRO_TESTING */
 
 #ifdef __cplusplus
 }  /* extern "C" */

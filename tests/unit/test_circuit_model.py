@@ -205,6 +205,71 @@ def test_scoped_multiline_complete_and_identical(ctx, i):
     assert got == ref
 
 
+# --- R22 must_advance: lazy/optional empty-preferring quantifiers ---------
+# CPython finditer (post-3.7) retries at the same position after an empty match,
+# demanding a non-empty match before advancing, so e.g. 'a??' on 'aa' yields BOTH
+# the empty and the non-empty spans at each position.  Dropping any of these is
+# an R19 false negative — the class R19 never permits.
+
+_LAZY_EMPTY = [
+    ("a??", "aa"),
+    ("a??", "aXa"),
+    (".*?", "ab"),
+    (".*?", ""),
+    ("x??", "xxy"),
+    (r"\d??", "12z3"),
+    ("a?", "aa"),
+    ("(ab)??", "abab"),
+    ("a*?", "aaa"),
+]
+
+
+@pytest.mark.parametrize("i", range(len(_LAZY_EMPTY)))
+def test_lazy_empty_quantifiers_byte_identical(ctx, i):
+    pat, subj = _LAZY_EMPTY[i]
+    circ = _load(ctx, pat)
+    got = cm.group0_finditer(circ.circuit, subj)
+    ref = [m.span() for m in re.finditer(pat, subj)]
+    assert got == ref                # every must_advance span, none dropped
+
+
+# Direct group0_finditer differential over a §5.1 grammar sample INCLUDING the
+# lazy-empty patterns — the automaton is executed (completeness cross-check runs
+# inside group0_finditer) and the enumerated spans must equal stock finditer.
+_GRAMMAR_DIFF = [
+    ("abc", "zabcabz"), (r"[a-z]+", "A9bc7de"), (r"[^0-9]+", "a1b22c"),
+    ("a|bc|def", "xdefbcax"), ("(ab|cd)+", "abcdab z"), ("colou?r", "color colour"),
+    (r"\d{2,4}", "1 22 333 4444 55555"), (r"\w+@\w+", "u@h x a@b"),
+    (r"\bcat\b", "cat cats a cat"), (r"a.c", "abc a\nc"), ("^x", "x\nxy"),
+    ("y$", "y\nzy"), ("é+", "café thé"), (r"\w+", "a\U0001D518b \U0001D518"),
+    ("a??", "aa"), (".*?", "abc"), ("x*", "xxyx"), (r"\d*", "1a22"),
+    ("(?:)", "abc"), ("a??b??", "ab"),
+]
+
+
+@pytest.mark.parametrize("i", range(len(_GRAMMAR_DIFF)))
+def test_group0_finditer_grammar_differential(ctx, i):
+    pat, subj = _GRAMMAR_DIFF[i]
+    circ = _load(ctx, pat)
+    got = cm.group0_finditer(circ.circuit, subj)          # runs the automaton
+    ref = [m.span() for m in re.finditer(pat, subj)]
+    assert got == ref
+
+
+def test_group0_finditer_surfaces_a_completeness_defect(ctx):
+    # Honesty property: if the automaton is made to miss a real match start, the
+    # completeness cross-check inside group0_finditer raises (R19), rather than
+    # silently returning a wrong/short result.
+    circ = _load(ctx, r"abc")
+    # Corrupt the circuit's automaton so it can no longer begin a match (drop the
+    # start state's outgoing edges) — a stand-in for a generator lowering bug.
+    import copy
+    broken = copy.deepcopy(circ.circuit)
+    broken.automaton.edges[broken.automaton.start] = []
+    with pytest.raises(cm.CompletenessError):
+        cm.group0_finditer(broken, "abc")
+
+
 # --- R23/R17: greedy vs lazy still byte-identical after reconciliation ----
 
 @pytest.mark.parametrize("pat", [r"a+", r"a+?", r"<.*>", r"<.*?>"])

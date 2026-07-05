@@ -2,10 +2,13 @@
 
 This is a thin loader + wrapper over the C ABI defined in ``include/pyro_rt.h``
 and implemented in ``src/pyro_rt.c``.  It exists so later phases (Phase 2/3
-integration) can route real dispatch through the native library; **Phase 1c does
-NOT wire it into** :mod:`pyro._route` — the Python circuit model
-(:mod:`pyro._circuit_model`) remains the dispatch path.  This module is exercised
-directly by the ABI-conformance / harness-contract unit tests.
+integration) can route real dispatch through the native library.  **Nothing here
+is wired into any dispatch path yet:** :mod:`pyro._route` still serves every
+top-level call, and on the model/HW-eligible path dispatch goes through the
+Phase-0 software model (:mod:`pyro._model`).  The v2.0.0 circuit model
+(:mod:`pyro._circuit_model`) and this native binding are **not** on the dispatch
+path in Phase 1 — both are exercised directly by the ABI-conformance /
+harness-contract unit tests, not by ``re.search``/``finditer`` calls.
 
 The library is not built by importing PYRO; it is produced by ``make lib``
 (``build/libpyro_rt.so``).  :func:`load` raises :class:`NativeUnavailable` with a
