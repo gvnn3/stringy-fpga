@@ -69,9 +69,22 @@ def test_bounded_repeat_within_limits_eligible():
     assert elig("a{255}").eligible is True
 
 
-def test_over_max_states_fallback():
-    # 500 * 3 states = 1500 > MAX_STATES(1024)
+def test_over_max_repeat_fallback():
+    # (abcd){500}: the repeat count 500 > MAX_REPEAT(255) rejects it first.
     assert elig("(abcd){500}").eligible is False
+
+
+def test_over_max_states_fallback():
+    # Repeat count within MAX_REPEAT(255) so the MAX_REPEAT gate passes, but the
+    # expanded state count 5*255 = 1275 > MAX_STATES(1024) forces fallback.
+    r = elig("(abcde){255}")
+    assert r.eligible is False
+    assert r.reason == "exceeds MAX_STATES"
+
+
+def test_under_max_states_eligible():
+    # 5*200 = 1000 <= MAX_STATES(1024): eligible.
+    assert elig("(abcde){200}").eligible is True
 
 
 # --- R15: IGNORECASE full folding ----------------------------------------

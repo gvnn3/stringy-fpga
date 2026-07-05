@@ -59,30 +59,17 @@ def _record_error_fallback() -> None:
 # --- environment controls (R35) -------------------------------------------
 # The router re-reads these every top-level call so that PYRO_DISABLE /
 # PYRO_FORCE_MODEL take effect dynamically (A/B testing, incident mitigation).
-# ``os.environ.get`` costs ~0.85 us each; with two vars per call that alone
-# would blow the R5 <=2 us decision budget.  We therefore read the internal
-# encoded dict ``os.environ._data`` directly (a plain dict mutated in place by
-# assignments to os.environ, including pytest monkeypatch), which is ~10x
-# cheaper, and fall back to the public API if that private attribute is ever
-# unavailable.  ``_data`` is a stable object reference, so caching it is sound.
+# The R3a absolute bound (<=2 us median added overhead, spec v1.1.0) has ample
+# margin for two plain ``os.environ.get`` calls, so we use the public API only.
 _FALSEY_STR = (None, "", "0")
-try:
-    _ENV_DATA = os.environ._data  # {bytes_key: bytes_val} on POSIX
-    _K_DISABLE = os.fsencode("PYRO_DISABLE")
-    _K_FORCE = os.fsencode("PYRO_FORCE_MODEL")
-    _FALSEY_B = (None, b"", b"0")
 
-    def _env_disabled() -> bool:
-        return _ENV_DATA.get(_K_DISABLE) not in _FALSEY_B
 
-    def _env_force_model() -> bool:
-        return _ENV_DATA.get(_K_FORCE) not in _FALSEY_B
-except AttributeError:  # pragma: no cover - non-CPython/Windows fallback
-    def _env_disabled() -> bool:
-        return os.environ.get("PYRO_DISABLE") not in _FALSEY_STR
+def _env_disabled() -> bool:
+    return os.environ.get("PYRO_DISABLE") not in _FALSEY_STR
 
-    def _env_force_model() -> bool:
-        return os.environ.get("PYRO_FORCE_MODEL") not in _FALSEY_STR
+
+def _env_force_model() -> bool:
+    return os.environ.get("PYRO_FORCE_MODEL") not in _FALSEY_STR
 
 
 # --- R51 decision ---------------------------------------------------------

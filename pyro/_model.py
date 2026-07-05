@@ -22,6 +22,7 @@ The offsets are converted back to caller units by the L1 layer (R21).
 
 from __future__ import annotations
 
+import threading
 from typing import List, NamedTuple, Optional, Tuple
 
 import re
@@ -99,7 +100,7 @@ class ModelContext:
         # These are private test seams; production callers never set them.
         self.fail_next_scan = False       # -> raise DeviceError on next scan
         self.unverify_windows = False     # -> emit windows with bit0 clear
-        self._lock = __import__("threading").Lock()
+        self._lock = threading.Lock()
 
     # --- R42 capability query ---------------------------------------------
     def caps(self) -> dict:
