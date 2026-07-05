@@ -95,12 +95,15 @@ def test_subprocess_cold_model_resident_equivalence(pattern, subject):
     """R58a/R36/R53 keystone: a pattern driven cold→hot→warm/resident is served
     byte-identically across the disabled / model / resident configurations, each
     equal to stock re — proving results never depend on the circuit tier."""
-    expected = _canon_stock(pattern, subject)
+    # Canonicalize BOTH sides through the JSON shape (tuples->lists) so the
+    # in-process oracle (stock re, which returns tuples from findall) compares
+    # symmetrically against the worker result that crossed a JSON boundary.
+    expected = phase1_support.jsonify(_canon_stock(pattern, subject))
     with tempfile.TemporaryDirectory(prefix="pyro_tier_") as cache:
         result, _out, _err = phase1_support.run_worker(
             "tier_equiv", pattern, subject, cache_dir=cache)
     for tier in ("disabled", "model", "resident"):
-        assert result[tier] == expected, (
+        assert phase1_support.jsonify(result[tier]) == expected, (
             f"tier {tier!r} (circuit_status={result.get('circuit_status')}) "
             f"differs from stock re"
         )

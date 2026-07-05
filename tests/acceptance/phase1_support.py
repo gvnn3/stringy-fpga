@@ -13,6 +13,19 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phase1_workers.py")
 
 
+def jsonify(obj):
+    """Recursively coerce tuples -> lists so a value computed in-process compares
+    symmetrically against the same value round-tripped through the worker's JSON
+    boundary (JSON has no tuple type; e.g. findall's multi-group tuples arrive as
+    lists).  Applied to BOTH sides of a cross-process comparison keeps the oracle
+    (stock re, tuples) and the worker result (JSON, lists) type-symmetric."""
+    if isinstance(obj, (tuple, list)):
+        return [jsonify(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: jsonify(v) for k, v in obj.items()}
+    return obj
+
+
 def run_worker(command, *args, cache_dir, timeout=150):
     """Run one worker command in a fresh process bound to `cache_dir`.
 
