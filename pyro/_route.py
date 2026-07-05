@@ -10,6 +10,7 @@ then delegate straight to the stdlib pattern with no wrapper allocation.
 from __future__ import annotations
 
 import os
+import sys as _sys
 import threading
 from bisect import bisect_left
 
@@ -93,19 +94,57 @@ _UNSET_VALUES = (None, "", "0")
 _ENV = (False, False)                 # (disabled, force_model) cached snapshot
 _ENV_LOCK = threading.Lock()          # serializes samplers (R35d thread-safety)
 
+# R67/R68 cached snapshots — sampled at the SAME R35a points as _ENV, never on
+# the per-call hot path (R35a/R5).  _TEST_HOOKS gates the pyro.testing seam;
+# _N_SYNTH is the validated PYRO_N_SYNTH launch-threshold override (None=default).
+_TEST_HOOKS = False
+_N_SYNTH = None
+
+
+def _parse_n_synth(raw):
+    """Validate a PYRO_N_SYNTH value: a positive int, else ``None`` (default)."""
+    if raw is None or raw == "":
+        return None
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
 
 def sample_env() -> None:
-    """Re-sample PYRO_DISABLE / PYRO_FORCE_MODEL from ``os.environ`` (R35a).
+    """Re-sample the PYRO_* env knobs from ``os.environ`` (R35a/R67/R68).
 
     Called only at sampling points (import, install/uninstall, refresh_env).
     Thread-safe and idempotent; publishes a new snapshot with a single atomic
     rebind so in-flight decisions are unaffected (R35d).
     """
-    global _ENV
+    global _ENV, _TEST_HOOKS, _N_SYNTH
     with _ENV_LOCK:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
         _ENV = (disabled, force)
+        _TEST_HOOKS = os.environ.get("PYRO_ENABLE_TEST_HOOKS") not in _UNSET_VALUES
+        _N_SYNTH = _parse_n_synth(os.environ.get("PYRO_N_SYNTH"))
+    # Push the freshly-sampled launch threshold onto the live residency manager
+    # (R68).  Done outside the _ENV_LOCK and only if the synth subsystem is
+    # already imported, so package init / the fallback hot path never pull it in.
+    _mod = _sys.modules.get("pyro.synth.residency")
+    if _mod is not None:
+        try:
+            _mod.apply_n_synth()
+        except Exception:
+            pass
+
+
+def test_hooks_enabled() -> bool:
+    """Cached PYRO_ENABLE_TEST_HOOKS gate for the pyro.testing seam (R67)."""
+    return _TEST_HOOKS
+
+
+def n_synth_override():
+    """Cached PYRO_N_SYNTH launch-threshold override, or ``None`` (R68)."""
+    return _N_SYNTH
 
 
 # Sample once at first import of this module (R35a.1: package initialization).

@@ -96,6 +96,8 @@ class ResidencyManager:
         self._synthesizing: Set[str] = set()        # digest set (in flight)
         # digest -> _ResidentInfo, ordered least->most recently dispatched (LRU).
         self._resident: "OrderedDict[str, _ResidentInfo]" = OrderedDict()
+        # R67: digests whose next synthesis is armed to fail (via pyro.testing).
+        self._inject_synth_fail: Set[str] = set()
         # In-memory memo of the *persistent* per-key verdict ("cold"/"warm"/
         # "failed"), so the hot reused-pattern dispatch path (R51 step 5) does not
         # re-stat the filesystem every call.  Populated on the first fs read for a
@@ -161,6 +163,16 @@ class ResidencyManager:
             return
         if dig in self._synthesizing:
             return
+        # R67 injected synthesis failure: this launch fails deterministically —
+        # the pattern becomes permanent fallback-only (R65), recorded in the
+        # negative cache + synth_failed counter, with no worker/exception.
+        if dig in self._inject_synth_fail:
+            self._inject_synth_fail.discard(dig)
+            self._cache.put_failure(key, "injected synthesis failure (R67)")
+            self._stats["synth_launched"] += 1
+            self._stats["synth_failed"] += 1
+            self._verdict[dig] = "failed"
+            return
         try:
             circuit = hdl.generate(pattern, flags, enc)
             job = _job_from_circuit(circuit)
@@ -200,6 +212,22 @@ class ResidencyManager:
                 return True
             self._launch(pattern, flags, enc, key, dig)
             return dig in self._synthesizing or self._cache.has(key)
+
+    # -- R67 injected synthesis failure (via pyro.testing) -----------------
+    def inject_synth_failure(self, pattern, flags: int = 0,
+                             enc: Optional[int] = None) -> None:
+        """Arm the pattern's next synthesis to fail (R65 permanent fallback)."""
+        try:
+            key = self.bitstream_key(pattern, flags, enc)
+        except Exception:
+            return
+        with self._lock:
+            self._inject_synth_fail.add(key_digest(key))
+
+    def clear_injections(self) -> None:
+        """Clear armed synthesis-failure injections (R67 ``pyro.testing.reset``)."""
+        with self._lock:
+            self._inject_synth_fail.clear()
 
     # -- PR-region arbitration (R64) ---------------------------------------
     def _promote_to_resident(self, key: BitstreamKey, dig: str) -> bool:
@@ -339,6 +367,7 @@ class ResidencyManager:
             self._counts.clear()
             self._prewarmed.clear()
             self._verdict.clear()
+            self._inject_synth_fail.clear()
             for k in self._stats:
                 self._stats[k] = 0
 
@@ -371,11 +400,33 @@ _GLOBAL: Optional[ResidencyManager] = None
 _GLOBAL_LOCK = threading.Lock()
 
 
+def _effective_n_synth() -> int:
+    """The launch threshold in force: the sampled ``PYRO_N_SYNTH`` override (R68)
+    if valid, else the spec default.  Read only at sampling points (R35a) — never
+    on the per-call hot path — via :mod:`pyro._route`'s cached snapshot."""
+    try:
+        from .. import _route
+        override = _route.n_synth_override()
+    except Exception:
+        override = None
+    return int(override) if override else N_SYNTH_DEFAULT
+
+
+def apply_n_synth() -> None:
+    """Push the freshly-sampled ``PYRO_N_SYNTH`` (R68) onto the live global
+    manager, if one exists.  Called from an R35a sampling point (``sample_env``).
+    """
+    with _GLOBAL_LOCK:
+        if _GLOBAL is not None:
+            _GLOBAL._n_synth = _effective_n_synth()
+
+
 def get_manager() -> ResidencyManager:
     """The process-wide residency manager (lazily created).
 
     Its persistent cache defaults to the user cache area (``default_root``); a
     test may point it at a temp directory via ``PYRO_CACHE_DIR`` + ``reset_manager``.
+    Its launch threshold honors the sampled ``PYRO_N_SYNTH`` override (R68).
     """
     global _GLOBAL
     mgr = _GLOBAL
@@ -383,7 +434,7 @@ def get_manager() -> ResidencyManager:
         return mgr
     with _GLOBAL_LOCK:
         if _GLOBAL is None:
-            _GLOBAL = ResidencyManager()
+            _GLOBAL = ResidencyManager(n_synth=_effective_n_synth())
         return _GLOBAL
 
 

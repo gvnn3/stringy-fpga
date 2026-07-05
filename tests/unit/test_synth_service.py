@@ -5,9 +5,14 @@ in a fixture teardown, leaving no spawned-process or temp-dir residue.
 """
 
 import os
+import subprocess
+import sys
+import textwrap
 import time
 
 import pytest
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pyro.hdl as hdl
 from pyro.hdl import identity
@@ -149,3 +154,36 @@ def test_shutdown_terminates_workers(tmp_path):
     procs = list(svc._procs)
     svc.shutdown()
     assert all(not p.is_alive() for p in procs)
+
+
+# --- R63e strengthened: no residual worker survives interpreter shutdown ----
+def test_interpreter_shutdown_leaves_no_residual_worker(tmp_path):
+    # A fresh interpreter launches a synthesis (worker forked), then exits with no
+    # explicit shutdown — the atexit hook (R63e) MUST clean up so the test harness
+    # can assert no residual service process survives.
+    prog = textwrap.dedent(
+        """
+        import os
+        os.environ["PYRO_N_SYNTH"] = "1"
+        os.environ["PYRO_CACHE_DIR"] = %r
+        import pyro
+        import pyro.hdl as hdl
+        from pyro.synth import residency as res
+        mgr = res.get_manager()
+        mgr.note_eligible_dispatch("procx[0-9]+", 0, hdl.ENC_UTF8)  # launches
+        mgr.drain(10.0)
+        pids = [p.pid for p in (mgr._service._procs if mgr._service else [])]
+        assert pids, "expected a worker to have been forked"
+        print("PIDS", pids)
+        # exit WITHOUT calling shutdown -> rely on the atexit hook (R63e)
+        """
+    ) % str(tmp_path)
+    out = subprocess.run(
+        [sys.executable, "-c", prog], capture_output=True, text=True, cwd=_ROOT,
+    )
+    assert out.returncode == 0, f"subprocess failed / atexit hung: {out.stderr}"
+    line = next(l for l in out.stdout.splitlines() if l.startswith("PIDS"))
+    pids = eval(line[len("PIDS "):])
+    for pid in pids:
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)     # no such process -> worker was reaped (R63e)

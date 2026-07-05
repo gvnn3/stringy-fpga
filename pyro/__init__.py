@@ -119,3 +119,9 @@ def prewarm(patterns, flags=0) -> None:
         except Exception:
             # R62: never raise for a fallback-only / un-synthesizable pattern.
             continue
+
+
+# Expose the R67 public fault-injection seam as ``pyro.testing`` (importable
+# always; inert unless PYRO_ENABLE_TEST_HOOKS=1 was sampled).  Lightweight: it
+# pulls only _route/_model, no synthesis machinery, until a seam is invoked.
+from . import testing  # noqa: E402

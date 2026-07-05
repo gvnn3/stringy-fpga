@@ -103,7 +103,35 @@ class ModelContext:
         # These are private test seams; production callers never set them.
         self.fail_next_scan = False       # -> raise DeviceError on next scan
         self.unverify_windows = False     # -> emit windows with bit0 clear
+        # Public-seam (R67) injection state, driven by pyro.testing behind the
+        # PYRO_ENABLE_TEST_HOOKS gate.  All inert (0 / empty) until injected, so
+        # the model path pays only a trivial int/dict check.
+        self._inject_device = 0           # next N scans raise DeviceError (R52)
+        self._inject_kind = "device"      # "device" | "timeout" (R67)
+        self._inject_fp = {}              # pattern -> remaining spurious windows
         self._lock = threading.Lock()
+
+    # -- R67 public fault-injection seams (via pyro.testing) ----------------
+    def inject_device_error(self, kind: str = "device", count: int = 1) -> None:
+        """Arm the next ``count`` model dispatches to raise a device error (R52)."""
+        with self._lock:
+            self._inject_kind = "timeout" if kind == "timeout" else "device"
+            self._inject_device = max(0, int(count))
+
+    def inject_false_positive(self, pattern, flags: int = 0, count: int = 1) -> None:
+        """Arm the model to emit ``count`` spurious candidate windows for
+        ``pattern`` (re-verified away by the host, R19); results stay identical."""
+        with self._lock:
+            self._inject_fp[pattern] = max(0, int(count))
+
+    def clear_injections(self) -> None:
+        """Clear all injected faults (R67 ``pyro.testing.reset``)."""
+        with self._lock:
+            self._inject_device = 0
+            self._inject_kind = "device"
+            self._inject_fp = {}
+            self.fail_next_scan = False
+            self.unverify_windows = False
 
     # --- R42 capability query ---------------------------------------------
     def caps(self) -> dict:
@@ -154,6 +182,11 @@ class ModelContext:
             if self.fail_next_scan:
                 self.fail_next_scan = False
                 raise DeviceError("injected device error")
+            # R67 device/timeout injection: raise for the next N dispatches so the
+            # router takes the R52 fallback-retry path (fallback_after_error++).
+            if self._inject_device > 0:
+                self._inject_device -= 1
+                raise DeviceError(f"injected {self._inject_kind} error (R67)")
 
             vbit = 0 if self.unverify_windows else FLAG_VERIFIED
 
@@ -173,6 +206,16 @@ class ModelContext:
                                 vbit | (FLAG_ZERO_WIDTH if s == e else 0))
                     for (s, e) in b_spans
                 ]
+
+            # R67 false-positive injection: prepend a spurious, unverifiable
+            # candidate window for this pattern.  Its end lies one byte past the
+            # buffer, so the host's R19 re-verification (an anchored stock match)
+            # can never confirm it -> the window is dropped (whole-op fallback),
+            # never leaking into results (byte-identical to CPython, R16/R19).
+            fp_left = self._inject_fp.get(prog._re.pattern, 0)
+            if fp_left > 0:
+                self._inject_fp[prog._re.pattern] = fp_left - 1
+                windows = [MatchWindow(0, len(buf) + 1, 0, 0)] + windows
 
             windows = [w for w in windows if w.start >= start_off]
             overflowed = len(windows) > out_cap
