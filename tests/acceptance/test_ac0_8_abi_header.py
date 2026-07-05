@@ -1,90 +1,72 @@
-"""AC-0-8: the frozen pyro_rt.h compiles and pyro_abi_version() returns
-0x00010000.  (R37, R38)
+"""AC-0-8 reconciliation (R37 version-history note).
 
-This test compiles include/pyro_rt.h + src/pyro_rt_stub.c with `cc -Wall -Werror`
-(subprocess), links a tiny main derived from the §7.3 signatures, runs it, and
-asserts the packed ABI version.  It also textually verifies the header declares
-the §7.3 symbols (symbol list derived from the spec, not from reading the impl).
-Skips with a reason if no C compiler is available.
+Phase 0 froze a shape-only ABI **1.0.0** stub and validated it on branch
+`phase0-pyro` (`pyro_abi_version() == 0x00010000`).  The v2.0.0 architecture
+supersedes that stub with the circuit-oriented ABI **2.0.0**; a fresh integrated
+build reports `0x00020000` (R37).  Per R37's version-history note the 1.0.0
+assertion is a **historical Phase-0 checkpoint against the stub, not an invariant
+of the shipped system**, so this module asserts the *current* tree reports ABI
+2.0.0 and records the 1.0.0 checkpoint as historical.  The full §7.3 ABI-2.0.0
+symbol set is checked in test_ac1_2_harness_contract.py.
 """
-
+import ctypes
 import os
 import shutil
 import subprocess
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-HEADER = os.path.join(REPO_ROOT, "include", "pyro_rt.h")
-STUB = os.path.join(REPO_ROOT, "src", "pyro_rt_stub.c")
-INCLUDE_DIR = os.path.join(REPO_ROOT, "include")
+import abi_ctypes as abi
 
-ABI_EXPECTED = 0x00010000  # R37: ABI 1.0.0 == MAJOR<<16 | MINOR<<8 | PATCH
+REPO_ROOT = abi.REPO_ROOT
+STUB_1_0_0 = os.path.join(REPO_ROOT, "src", "pyro_rt_stub.c")
 
-# §7.3 symbols the header MUST declare (R38, R37, R39-R42).
-REQUIRED_SYMBOLS = [
-    # functions
-    "pyro_abi_version", "pyro_ctx_open", "pyro_ctx_close", "pyro_compile",
-    "pyro_prog_free", "pyro_prog_load", "pyro_scan", "pyro_caps_get",
-    # opaque / struct / enum type names
-    "pyro_ctx", "pyro_prog", "pyro_status", "pyro_encoding", "pyro_match",
-    "pyro_caps",
-    # enum constants
-    "PYRO_OK", "PYRO_E_UNSUPPORTED", "PYRO_E_CAPACITY", "PYRO_E_DEVICE",
-    "PYRO_E_INVALID", "PYRO_E_NOMEM", "PYRO_E_TIMEOUT",
-    "PYRO_ENC_BYTES", "PYRO_ENC_UTF8",
-]
+_lib = None
+_load_error = None
+try:
+    _lib = abi.load()
+except OSError as e:
+    _load_error = str(e)
 
 CC = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+MAKE = shutil.which("make")
 
 
-def test_header_present():
-    """R38: the frozen header exists at include/pyro_rt.h."""
-    assert os.path.isfile(HEADER), f"missing header {HEADER}"
+@pytest.mark.skipif(_lib is None, reason=f"libpyro_rt.so unavailable: {_load_error}")
+def test_current_lib_reports_abi_2_0_0():
+    """R37/AC-1-1: the shipped runtime reports ABI 2.0.0 == 0x00020000."""
+    assert _lib.pyro_abi_version() == abi.ABI_2_0_0
 
 
-@pytest.mark.parametrize("symbol", REQUIRED_SYMBOLS)
-def test_header_declares_symbol(symbol):
-    """R38/R37: header text declares each §7.3 symbol (textual presence check)."""
-    with open(HEADER, "r", encoding="utf-8", errors="replace") as f:
+@pytest.mark.skipif(not (CC and MAKE), reason="need make + cc to compile the ABI check")
+def test_make_abi_check_reports_2_0_0():
+    """R37/R38: the Makefile `abi-check` target compiles the frozen header against
+    the real runtime and asserts pyro_abi_version() == 0x00020000."""
+    proc = subprocess.run([MAKE, "abi-check"], cwd=REPO_ROOT,
+                          capture_output=True, text=True, timeout=180)
+    assert proc.returncode == 0, f"make abi-check failed:\n{proc.stdout}\n{proc.stderr}"
+    combined = proc.stdout + proc.stderr
+    assert "0x00020000" in combined or "2.0.0" in combined, combined
+
+
+def test_abi_1_0_0_is_phase0_historical_checkpoint():
+    """R37: the ABI 1.0.0 stub is a Phase-0 historical checkpoint, superseded on
+    this branch — the 1.0.0 value is no longer the shipped ABI, and the old
+    Phase-0 stub source is absent here (its checkpoint lives on `phase0-pyro`)."""
+    assert abi.ABI_1_0_0 != abi.ABI_2_0_0
+    assert (abi.ABI_2_0_0 >> 16) == 2, "shipped ABI MAJOR must be 2 (R37)"
+    # The Phase-0 shape-only stub is not part of the integrated v2.0.0 tree.
+    assert not os.path.isfile(STUB_1_0_0), (
+        "src/pyro_rt_stub.c (the 1.0.0 stub) should not exist on the integrated "
+        "branch; its AC-0-8 checkpoint is preserved on phase0-pyro (R37 note)"
+    )
+
+
+def test_header_declares_2_0_0_and_records_supersession():
+    """R37: the ABI 2.0.0 header self-identifies as 2.0.0 and records that it
+    supersedes the Phase-0 1.0.0 stub."""
+    with open(abi.HEADER_PATH, "r", encoding="utf-8", errors="replace") as f:
         text = f.read()
-    assert symbol in text, f"header does not declare §7.3 symbol {symbol!r}"
-
-
-@pytest.mark.skipif(CC is None, reason="no C compiler (cc/gcc/clang) on PATH")
-def test_header_and_stub_compile_wall_werror(tmp_path):
-    """R37/R38/AC-0-8: header + stub compile clean under -Wall -Werror, link, and
-    the program reports pyro_abi_version() == 0x00010000."""
-    assert os.path.isfile(STUB), f"missing stub {STUB}"
-
-    main_c = tmp_path / "main.c"
-    main_c.write_text(
-        "#include <stdint.h>\n"
-        "#include <stdio.h>\n"
-        '#include "pyro_rt.h"\n'
-        "int main(void) {\n"
-        "    uint32_t v = pyro_abi_version();\n"
-        '    printf("%u\\n", (unsigned)v);\n'
-        "    return v == 0x00010000u ? 0 : 2;\n"
-        "}\n"
-    )
-
-    exe = tmp_path / "pyro_abi_probe"
-    compile_cmd = [
-        CC, "-Wall", "-Werror", "-std=c11",
-        "-I", INCLUDE_DIR,
-        str(STUB), str(main_c),
-        "-o", str(exe),
-    ]
-    cproc = subprocess.run(compile_cmd, capture_output=True, text=True)
-    assert cproc.returncode == 0, (
-        f"compilation failed under -Wall -Werror:\n{cproc.stderr}"
-    )
-
-    rproc = subprocess.run([str(exe)], capture_output=True, text=True)
-    assert rproc.returncode == 0, (
-        f"pyro_abi_version() != 0x00010000 (stdout={rproc.stdout!r})"
-    )
-    assert rproc.stdout.strip() == str(ABI_EXPECTED), (
-        f"expected {ABI_EXPECTED} got {rproc.stdout.strip()!r}"
-    )
+    assert "2.0.0" in text
+    assert "0x00020000" in text
+    assert "1.0.0" in text, "header should record the superseded 1.0.0 checkpoint (R37)"
