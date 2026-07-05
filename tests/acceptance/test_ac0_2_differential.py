@@ -40,6 +40,19 @@ def test_supported_construct_byte_identical(entry, mode):
 
 
 @pytest.mark.parametrize("mode", ["default", "force_model"])
+@pytest.mark.parametrize("entry", oracle.ANCHOR_ALT, ids=[e[0] for e in oracle.ANCHOR_ALT])
+def test_anchored_alternation_group_selection(entry, mode):
+    """R9/R16/R17/R18/R54: group-differentiating alternations with a trailing
+    anchor that fails mid-string select the correct capturing branch — spans,
+    groups, lastindex and lastgroup byte-identical to stock re across
+    search/match/fullmatch/finditer (+findall/sub/subn/split), on both routing
+    paths.  Covers the anchored end-context reconstruction case."""
+    label, pattern, flags, subject = entry
+    _apply_env(mode)
+    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"{label}/{mode}")
+
+
+@pytest.mark.parametrize("mode", ["default", "force_model"])
 def test_greedy_lazy_group_boundaries(mode):
     """R23/R17/R18: greedy vs lazy quantifiers that move captured-group
     boundaries return CPython leftmost-greedy spans byte-identically."""

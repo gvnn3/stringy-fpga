@@ -229,6 +229,32 @@ ASTRAL = [
     ("astral.emoji_between", r"start(.*?)end", _re.DOTALL, "start\U0001F600\U0001F601end"),
 ]
 
+# Group-differentiating alternations with anchors, where the anchored branch
+# fails mid-string so a DIFFERENT capturing branch must win (R9 anchors + R16
+# groups/lastindex/lastgroup + R17/R18 leftmost-greedy reconciliation).  This is
+# the class that exposed an end-context group-reconstruction bug on the model
+# path; each subject is chosen so the trailing anchor fails at the first branch.
+ANCHOR_ALT = [
+    ("altanchor.dollar.mid", r"(?P<a>foo)$|(?P<b>foo)", 0, "foobar"),
+    ("altanchor.dollar.end", r"(?P<a>foo)$|(?P<b>foo)", 0, "foo"),
+    ("altanchor.dollar.nl", r"(?P<a>foo)$|(?P<b>foo)", 0, "foo\nbar"),
+    ("altanchor.dollar.finditer", r"(?P<a>foo)$|(?P<b>foo)", 0, "foobar foo"),
+    ("altanchor.dollar.ml", r"(?P<a>foo)$|(?P<b>foo)", _re.MULTILINE, "foo\nfoobar"),
+    ("altanchor.wordb.mid", r"(?P<a>foo)\b|(?P<b>foo)", 0, "foobar"),
+    ("altanchor.wordb.sep", r"(?P<a>foo)\b|(?P<b>foo)", 0, "foo bar"),
+    ("altanchor.wordb.finditer", r"(?P<a>foo)\b|(?P<b>foo)", 0, "foobar foo"),
+    ("altanchor.nwordb.mid", r"(?P<a>foo)\B|(?P<b>foo)", 0, "foobar foo"),
+    ("altanchor.bigZ.mid", r"(?P<a>foo)\Z|(?P<b>foo)", 0, "foobar"),
+    ("altanchor.bigZ.end", r"(?P<a>foo)\Z|(?P<b>foo)", 0, "foo"),
+    ("altanchor.bigZ.nl", r"(?P<a>foo)\Z|(?P<b>foo)", 0, "foo\n"),
+    ("altanchor.numeric", r"(foo)$|(foo)", 0, "foobar foo"),
+    ("altanchor.caret.lead", r"^(?P<a>foo)|(?P<b>foo)", 0, "xfoo foo"),
+    ("altanchor.caret.lead.hit", r"^(?P<a>foo)|(?P<b>foo)", 0, "foo foo"),
+    ("altanchor.fullmatch.ctx", r"(?P<a>foo)$|(?P<b>foobar)", 0, "foobar"),
+    ("altanchor.three", r"(?P<a>x)$|(?P<b>x)\b|(?P<c>x)", 0, "xxy x"),
+    ("altanchor.bytes", rb"(?P<a>foo)$|(?P<b>foo)", 0, b"foobar foo"),
+]
+
 # Greedy/lazy pairs where captured group boundaries differ (R23).
 GREEDY_LAZY = [
     ("gl.greedy", r"(a.*b)", 0, "axbxb"),
@@ -257,6 +283,13 @@ _ATOMS = [
 _ATOM_QUANTS = ["", "*", "+", "?", "*?", "+?", "??", "{2}", "{1,3}", "{2,}", "{0,2}?"]
 _GROUP_QUANTS = ["", "?", "{2}", "{1,3}", "{0,2}"]
 
+# §5.1 anchors (R9).  Emitted as zero-width leaf atoms and NEVER given a
+# quantifier (quantifying a bare anchor is a stock-re "nothing to repeat"
+# error), so anchored alternation branches such as (?P<a>foo)$|(?P<b>foo) are
+# reachable by the fuzzer (R54/R55).  Anchors are zero-width and add no
+# backtracking blow-up, so ReDoS safety is preserved.
+_ANCHOR_ATOMS = ["^", "$", r"\b", r"\B", r"\A", r"\Z"]
+
 
 def _gen_term(rng, depth, name_ctr):
     if depth > 0 and rng.random() < 0.30:
@@ -271,18 +304,28 @@ def _gen_term(rng, depth, name_ctr):
             name_ctr[0] += 1
             atom = f"(?P<g{name_ctr[0]}>" + inner + ")"
         return atom + rng.choice(_GROUP_QUANTS)
+    if rng.random() < 0.18:
+        # bare anchor, unquantified
+        return rng.choice(_ANCHOR_ATOMS)
     atom = rng.choice(_ATOMS)
     return atom + rng.choice(_ATOM_QUANTS)
 
 
 def gen_supported_pattern(rng, depth=2):
     """Generate a random pattern from the §5.1 grammar (may occasionally be an
-    invalid regex; callers cross-check against stock re.compile)."""
+    invalid regex; callers cross-check against stock re.compile).
+
+    ~30% of generated patterns are biased to end a branch with a trailing anchor
+    so that group-differentiating anchored alternations (the class that exposed
+    an end-context group-reconstruction bug) are exercised."""
     branches = []
     for _ in range(rng.randint(1, 3)):
         nterms = rng.randint(1, 4)
         name_ctr = [rng.randint(0, 1000)]
-        branches.append("".join(_gen_term(rng, depth, name_ctr) for _ in range(nterms)))
+        terms = [_gen_term(rng, depth, name_ctr) for _ in range(nterms)]
+        if rng.random() < 0.30:
+            terms.append(rng.choice(["$", r"\b", r"\B", r"\Z"]))
+        branches.append("".join(terms))
     return "|".join(branches)
 
 
