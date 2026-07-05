@@ -171,6 +171,38 @@ def test_empty_adjacency_group_reconstruction(pat, subj):
     assert pre.stats()["fallback_after_error"] == 0
 
 
+# --- R16/R18 regression: boundary-context-faithful group reconstruction ---
+
+@pytest.mark.parametrize("pat", [
+    r"(?P<a>foo)$|(?P<b>foo)",     # $ at window edge would flip the alternation
+    r"(?P<a>foo)\b|(?P<b>foo)",    # \b variant
+    r"(?P<a>foo)\B|(?P<b>foo)",    # \B variant
+    r"(?P<a>foo)\Z|(?P<b>foo)",    # \Z variant
+])
+def test_anchor_context_group_reconstruction(pat):
+    # The group re-run MUST preserve end-of-string / boundary context.  A
+    # window-truncated fullmatch([s,e)) moves end-of-string to e, flipping
+    # $/\Z/\b/\B evaluated at the window edge -> the SAME span (0,3) with the
+    # WRONG group (branch a instead of b).  Reconstruction must use a
+    # full-context anchored match so branch b is selected, matching stock re.
+    subj = "foobar"
+    m = pre.search(pat, subj)
+    ref = re.search(pat, subj)
+    assert m.span(0) == ref.span(0)
+    assert m.groups() == ref.groups()
+    assert m.groupdict() == ref.groupdict()
+    assert m.lastindex == ref.lastindex
+    assert m.lastgroup == ref.lastgroup
+    # finditer path too (full canonicalisation of every match).
+    got = [(x.span(0), x.groups(), x.lastindex, x.lastgroup)
+           for x in pre.finditer(pat, subj)]
+    exp = [(x.span(0), x.groups(), x.lastindex, x.lastgroup)
+           for x in re.finditer(pat, subj)]
+    assert got == exp
+    # Host-side reconstruction must NOT inflate the R52 device-error counter.
+    assert pre.stats()["fallback_after_error"] == 0
+
+
 # --- R53: determinism model vs fallback -----------------------------------
 
 def test_determinism_model_vs_fallback(monkeypatch):

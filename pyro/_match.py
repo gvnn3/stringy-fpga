@@ -65,43 +65,52 @@ class HybridMatch:
     def _run(self):
         real = self._real
         if real is None:
-            s, e = self._span0
-            # Re-run anchored to the EXACT reported window via fullmatch over
-            # [s, e): forcing full consumption of the window reproduces the
-            # precise match CPython selected -- including the empty-adjacency
-            # case (R22), where finditer reports a non-empty match at a position
-            # that also carried an earlier zero-width match.  A plain anchored
-            # match() cannot reproduce that (it returns the leftmost/empty
-            # match), which is the root cause of the earlier _VerifyError.
-            real = self._stock.fullmatch(self._subject, s, e)
+            s, _e = self._span0
+            # Primary reconstruction: anchor a plain match at the window start
+            # over the FULL subject end (endpos == len on the model path).  This
+            # preserves end-of-string / boundary context, so $, \Z, \b, \B are
+            # evaluated exactly as in the original scan.  A window-TRUNCATED
+            # fullmatch([s, e)) would move end-of-string to e and flip those
+            # assertions at the window edge -- silently returning the same span
+            # with the wrong group in an alternation (the regression this fixes).
+            real = self._stock.match(self._subject, s, self._endpos)
             if real is None or real.span(0) != self._span0:
-                # Faithful reconstruction failed (should not happen for a sound
-                # window).  R52: MUST NOT raise -- recover the exact match from a
-                # stock re pass at the origin and adopt it, counting the event.
+                # The anchored match did not reproduce the reported window.
+                # Legitimate for the empty-adjacency finditer case (R22: match()
+                # returns the empty (s, s)) and for lazy-quantifier fullmatch.
+                # Replay the origin op to adopt the exact (s, e) match.  R52:
+                # MUST NOT raise.
                 real = self._recover_via_fallback()
             self._real = real
         return real
 
     def _recover_via_fallback(self):
-        """R52 safety net: recover this match's groups from stock re.
+        """Recover this match's groups by replaying the origin op with stock re.
 
-        Re-runs the origin operation with stock ``re`` (same pos/endpos) and
-        adopts the match whose group-0 span equals the already-observed window,
-        counting the event in ``stats()`` as a fallback-after-error.  Never
-        raises: as a last resort returns a fullmatch pinned to the window.
+        The model produced the window by running stock ``re``'s own operation,
+        so replaying that same op is guaranteed to contain a match whose
+        group-0 span equals the reported window (R18/R19).  Never returns
+        ``None`` -- the guarded chain always yields a real ``re.Match`` so
+        subsequent accessors can never hit ``AttributeError`` (R52).
         """
-        _route.note_verify_fallback()
-        subj, (s, e), endpos = self._subject, self._span0, self._endpos
+        subj, (s, e), endpos, pos = self._subject, self._span0, self._endpos, self._pos
         if self._op == "finditer":
-            for m in self._stock.finditer(subj, self._pos, endpos):
+            for m in self._stock.finditer(subj, pos, endpos):
                 if m.span(0) == (s, e):
                     return m
+            raw = None
         else:
-            m = getattr(self._stock, self._op)(subj, self._pos, endpos)
-            if m is not None and m.span(0) == (s, e):
-                return m
-        # Last resort: a window-pinned fullmatch (group-0 guaranteed correct).
-        return self._stock.fullmatch(subj, s, e)
+            raw = getattr(self._stock, self._op)(subj, pos, endpos)
+            if raw is not None and raw.span(0) == (s, e):
+                return raw
+        # Defensive fallbacks (unreachable for a sound window): prefer a match
+        # whose group-0 span equals the window, then the origin op's raw result,
+        # then a full-context anchored match -- whichever is non-None.  A match
+        # always starts at s for any window the model reports, so the final
+        # candidate is non-None; never return None into _run.
+        return (self._stock.fullmatch(subj, s, e)
+                or raw
+                or self._stock.match(subj, s, endpos))
 
     # --- group-0-only accessors: never re-run (R20) -----------------------
     @property
