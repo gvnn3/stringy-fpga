@@ -129,15 +129,27 @@ def purge():
 
 # --- PYRO-specific introspection (R31) — NOT patched onto stdlib re --------
 def explain(pattern, flags=0) -> dict:
-    """Return the HW-eligibility verdict for ``(pattern, flags)`` (R31)."""
+    """Return the HW-eligibility verdict for ``(pattern, flags)`` (R31).
+
+    In addition to the pre-2.0.0 keys, reports the v2.0.0 circuit-lifecycle keys
+    ``circuit_status`` and ``est_resources`` (R31).  Without the synthesis
+    service (delivered by a later task), a HW-eligible pattern has no cached
+    bitstream artifact yet, so its status is ``"cold"``; a fallback-only pattern
+    is ``"fallback_only"``.  ``est_resources`` is the L2 resource estimate
+    (R11-R13) or ``None`` when fallback-only.
+    """
+    from .hdl import estimate as _estimate  # local import: explain is not hot
     _stock_compile(pattern, flags)  # R30: reject what CPython rejects
     classi = _classify.classify(pattern, flags)
     engine = "model" if classi.eligible else "fallback"
+    est = _estimate(pattern, flags)
     return {
         "eligible": classi.eligible,
         "reason": classi.reason,
         "engine": engine,
         "states": classi.states,
+        "circuit_status": "cold" if classi.eligible else "fallback_only",
+        "est_resources": est.resources,
     }
 
 
