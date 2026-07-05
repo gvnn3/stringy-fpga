@@ -1,8 +1,8 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 1.2.1
-- **Status:** Draft (approved for Phase 0 delegation)
+- **Version:** 2.0.0
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-05
 
@@ -19,17 +19,31 @@ input the hardware path cannot serve.
 The target device is the Xilinx/AMD PCIe card at `af:00.0`/`af:00.1` running the
 **OpenNIC** shell (QDMA-based) under the in-tree `onic` kernel driver. Custom
 matching logic is placed in the OpenNIC **user plugin / dynamic (250 MHz user
-box) region**. PYRO compiles a supported subset of regular expressions to a
-**programmable finite-automaton** representation that is loaded into the fabric
-at runtime as data (register/DMA configuration), so that adding or changing a
-pattern does **not** require a bitstream rebuild in the common case. Partial
-reconfiguration (PR) of the dynamic region is specified only as an optional
-alternative for capacity overflow.
+box) region**, which is a **partial-reconfiguration (PR) partition**.
+
+**Central design (owner decision, v2.0.0):** PYRO compiles **each** supported
+pattern (or pattern set) into a **bespoke synthesizable hardware circuit** —
+regex → automaton → RTL — which is then **synthesized** (Vivado synthesis +
+place-and-route) into a **PR bitstream** and loaded into the dynamic region.
+There is **no** general-purpose programmable automaton engine and **no**
+per-pattern automaton *program blob*; every HW-eligible pattern gets its own
+generated circuit. Synthesis is **asynchronous background work**: `re.compile()`
+returns immediately and matching is served by the **fallback path** (CPython
+`re`, and the software model in testing) until that pattern's circuit becomes
+**resident** in the PR region, at which point a background **synthesis service**
+hot-swaps it in. A persistent **bitstream cache**, keyed by `(pattern_bytes,
+flags, generator_version, toolchain_version, shell/PR-region_version)`, means a
+previously synthesized pattern loads in **PR-load time (~O(100 ms))** rather than
+**synthesis time (minutes)**. This inverts the pre-2.0.0 design, in which a
+programmable engine was configured by loadable data; see the §14 changelog.
 
 "Transparent" means a user can obtain acceleration either by changing an import
 (`import pyro.re as re`) or by activating an interposition shim that patches the
 standard `re` module in place, with **byte-identical results** to CPython `re`
-for the supported subset and silent fallback otherwise.
+for the supported subset and silent fallback otherwise. Transparency now
+explicitly covers **asynchrony**: the returned results NEVER depend on whether a
+circuit has been synthesized or is resident — only timing and diagnostics do
+(R53, R16).
 
 The specification is written so that:
 
@@ -78,8 +92,30 @@ them; implementers MUST NOT assume different hardware.
 - **Fallback path:** matching performed by CPython's `re` in-process.
 - **Corpus / haystack:** the input string/bytes being searched.
 - **Pattern / needle:** the compiled regular expression.
-- **Automaton program:** the data structure loaded into the fabric that
-  configures the programmable engine to recognize a pattern set.
+- **Generated circuit:** the pattern-specific synthesizable RTL — and the PR
+  bitstream synthesized from it — that recognizes exactly one HW-eligible pattern
+  (or one pattern set). Produced by the HDL generator (L2) from the pattern's
+  automaton. Replaces the pre-2.0.0 "automaton program" concept.
+- **Harness contract:** the fixed CSR/DMA interface (§7.4) that **every**
+  generated circuit MUST implement, so the host runtime drives any circuit
+  uniformly (input/output DMA, START/DONE, result ring, identity).
+- **PR region / dynamic region:** the OpenNIC 250 MHz user-box reconfigurable
+  partition into which a generated circuit's PR bitstream is loaded. Unless the
+  shell proves multiple PR partitions, it holds **one** resident circuit at a
+  time (single-tenant, R64).
+- **Resident circuit:** the generated circuit currently loaded in the PR region.
+  Hardware dispatch of a pattern REQUIRES that pattern's circuit to be resident
+  and its identity verified (R47a).
+- **Synthesis service:** the out-of-process background service (R63) that turns a
+  generated RTL circuit into a PR bitstream (Vivado synth + P&R + PR bitstream
+  generation) and populates the bitstream cache.
+- **Bitstream cache:** persistent cache of synthesized PR artifacts and their
+  manifests, keyed by `(pattern_bytes, flags, generator_version,
+  toolchain_version, shell/PR-region_version)` (R4).
+- **Circuit lifecycle tiers:** **cold** — no cached artifact; synthesis needed
+  (minutes, async, never blocks callers); **warm** — artifact cached; PR-load
+  needed (~O(100 ms)); **resident** — loaded in the PR region; dispatch
+  immediately (R4).
 - **Candidate window:** a `[start, end)` byte span the FPGA reports as a
   probable match, which the CPU may re-verify.
 - **Group 0:** the whole-match span, as in CPython `re` (`Match.span(0)`).
@@ -107,17 +143,32 @@ suite). Thresholds are stated as requirements so tests can assert them; exact
 numeric targets may be revised by a version bump if measurement on real hardware
 proves them wrong, but they MUST NOT be silently ignored.
 
-- **R1 (win regime — throughput).** For a fixed compiled pattern set applied to
-  a streamed corpus of total size ≥ **1 MiB**, the hardware path SHALL sustain
-  match throughput of at least **5 GiB/s** aggregate scan rate for the
-  fixed-string engine (Phase 1) and at least **1 GiB/s** for the programmable
-  NFA engine (Phase 2), measured end-to-end from host memory to result, once the
-  pattern set is resident.
-- **R2 (win regime — reuse amortization).** When a single compiled pattern is
-  reused across at least **N_reuse = 32** search calls, or one search over a
-  corpus of at least **S_min = 64 KiB**, the median end-to-end wall-clock time of
-  the hardware path SHALL be ≤ the CPython `re` path for the same work on the
-  reference benchmark set (§9).
+- **R1 (win regime — throughput, resident circuit).** Hardware dispatch REQUIRES
+  the target pattern's generated circuit to be **resident** (§2, R51). For a
+  resident circuit applied to a streamed corpus of total size ≥ **1 MiB**, the
+  hardware path SHALL sustain match throughput of at least **5 GiB/s** aggregate
+  scan rate, measured end-to-end from host memory to result. A generated circuit
+  matches with a dedicated per-pattern datapath in the 250 MHz user box; the
+  floor for any resident circuit is **≥ 1 GiB/s**, and simple circuits SHOULD
+  reach the 5 GiB/s target with a multi-byte-per-cycle datapath. Throughput is
+  measured only for resident circuits; time spent cold (synthesizing) or warm
+  (PR-loading) is excluded from the scan-rate metric and accounted separately
+  (R4, R2).
+- **R2 (win regime — reuse amortization, incl. synthesis).** Amortization now
+  includes the **one-time synthesis cost** (cold tier, minutes) and the
+  **PR-load cost** (warm tier, ~O(100 ms)), not merely DMA setup. Accordingly:
+  - **R2a.** Once a pattern's circuit is **resident**, when that pattern is
+    reused across at least **N_reuse = 32** search calls, or applied to one
+    corpus of at least **S_min = 64 KiB**, the median end-to-end wall-clock time
+    of the hardware path SHALL be ≤ the CPython `re` path for the same work on
+    the reference benchmark set (§9).
+  - **R2b.** Because synthesis is minutes-long and asynchronous, the **break-even
+    reuse** that justifies *launching* synthesis is far higher than N_reuse. The
+    synthesis-launch policy (R4a) governs WHEN a circuit is worth building; until
+    it is resident, calls are served by fallback at no worse than the loss-regime
+    bound (R3). Synthesis and PR-load costs MUST NOT appear as caller-visible
+    latency (they run in the background, R63) beyond the fallback cost the caller
+    would have paid anyway.
 - **R3 (loss regime — routing, not slowdown).** For inputs below the offload
   threshold (corpus < `S_min` **and** effective reuse < `N_reuse`), PYRO SHALL
   route to the fallback path with bounded added overhead, measured relative to
@@ -139,11 +190,39 @@ proves them wrong, but they MUST NOT be silently ignored.
   decision path is native; expressing it as an absolute bound for Phase 0 (R3a)
   preserves the intent — negligible routing tax — without demanding a ratio that
   is unachievable for a Python wrapper around sub-microsecond C code.
-- **R4 (compile amortization).** Compiling a pattern to an automaton program and
-  loading it into the fabric (cold) is a one-time cost. PYRO SHALL cache compiled
-  automaton programs keyed by `(pattern_bytes, flags, engine_version)` so that a
-  repeated `compile()` of the same pattern is served from cache in ≤ **50 µs**
-  (warm) on the host side.
+- **R4 (compile amortization and cache tiers).** PYRO SHALL maintain two distinct
+  caches with three service tiers:
+  - **Host classification cache (warm, µs-scale).** Keyed by `(pattern_bytes,
+    flags, generator_version)`, holds the eligibility decision (R8) and the
+    generated automaton/RTL descriptor. A repeated `compile()` of the same
+    pattern MUST be served from this cache in ≤ **50 µs** on the host side. This
+    tier is unchanged from pre-2.0.0 and governs `re.compile()` latency.
+  - **Bitstream cache (persistent).** Keyed by `(pattern_bytes, flags,
+    generator_version, toolchain_version, shell/PR-region_version)`, holds
+    synthesized PR bitstream artifacts and their manifests (R47b). Its three
+    tiers are:
+    - **cold** — no artifact for the key: synthesis is required (minutes),
+      performed asynchronously by the synthesis service (R63); the caller is
+      served by fallback meanwhile and is NEVER blocked;
+    - **warm** — artifact present but not resident: a PR load is required
+      (~O(100 ms)), performed in the background; the caller is served by fallback
+      until resident;
+    - **resident** — the circuit is loaded in the PR region and identity-verified
+      (R47a): the call dispatches to hardware immediately.
+  - **R4 invariant.** A given `(key)` transitions cold → warm at most once per
+    `toolchain_version`/`shell_version`; a warm artifact loads in PR-load time,
+    not synthesis time, across process restarts.
+- **R4a (synthesis-launch policy).** Synthesis is expensive; PYRO MUST NOT launch
+  it for every pattern. A circuit's synthesis SHALL be launched (enqueued to the
+  service, R63) only when at least one of the following holds:
+  - the pattern has been dispatched HW-eligible at least **N_synth** times
+    (default **N_synth = 1000**, tunable), i.e. reuse proves the pattern hot; or
+  - the pattern is explicitly requested via `pyro.prewarm(patterns, flags=0)`
+    (R62), which enqueues synthesis regardless of call count.
+  The policy MUST be deterministic given the call history and configuration.
+  Launching synthesis MUST NOT block or slow the triggering call (it returns via
+  fallback). A pattern whose circuit is not yet resident is always served by
+  fallback (R3/R51); the launch policy only decides WHEN building is worthwhile.
 - **R5 (decision latency).** The offload-vs-fallback routing decision (§8) SHALL
   add ≤ **2 µs** median overhead per top-level API call relative to the raw
   fallback, excluding actual match work.
@@ -164,30 +243,45 @@ and tested independently.
 +-------------------------------------------------------------+
 | L0  Transparent interposition shim  (import hook / patcher) |  Phase 3
 +-------------------------------------------------------------+
-| L1  Python API layer  (pyro.re: compile/match/search/...)   |  Phase 0
+| L1  Python API layer  (pyro.re: compile/match/search/...    |  Phase 0
+|     + prewarm/stats/refresh_env)                             |
 +-------------------------------------------------------------+
-| L2  Pattern compiler (regex -> AST -> NFA/DFA -> program)   |  Phase 0/2
-|     + supported-subset gate + fallback classifier           |
+| L2  Pattern compiler + HDL generator                        |  Phase 0/1
+|     regex -> AST -> automaton -> synthesizable RTL circuit   |
+|     + supported-subset gate + fallback classifier + resource |
+|       estimator                                              |
 +-------------------------------------------------------------+
 | L3  Host runtime library (C ABI) + Python bindings          |  Phase 1
-|     - pattern/program cache, scheduling, result assembly     |
+|     - classification + bitstream cache, PR loader,           |
+|       synthesis-service client, scheduling, result assembly  |
 +-------------------------------------------------------------+
 | L4  Transport binding (QDMA char-dev OR raw Ethernet frame) |  Phase 1
 +-------------------------------------------------------------+
-| L5  FPGA user-plugin regex engine (OpenNIC dynamic region)  |  Phase 1/2
-|     - Phase 1: Aho-Corasick multi-fixed-string               |
-|     - Phase 2: programmable NFA (Thompson / bit-parallel)    |
+| L5  Generated per-pattern circuit in OpenNIC PR region      |  Phase 1/2
+|     - implements the fixed harness contract (§7.4)           |
+|     - one resident circuit at a time (single-tenant PR)      |
++-------------------------------------------------------------+
+
+        Out-of-process, asynchronous (side service):
++-------------------------------------------------------------+
+| SS  Synthesis service (R63)                                 |  Phase 1/2
+|     RTL -> Vivado synth + P&R -> PR bitstream -> cache       |
+|     queue; concurrency 1 PR region; eviction policy         |
 +-------------------------------------------------------------+
 ```
 
 - **R6.** Each layer L0–L4 SHALL expose a stable interface (Python types for
-  L0–L2, a C ABI for L3, a byte/register protocol for L4→L5) as specified in §7.
-  A layer MUST be testable using a mock of the layer beneath it.
-- **R7.** The system SHALL include a **software model** of the FPGA engine (a
-  pure-software reference implementation of L5 exercising the exact same L3/L4
-  contract) so that Phases 0–2 are testable without physical hardware. The
-  software model MUST produce results identical to the specified hardware
-  behavior for all supported patterns.
+  L0–L2, a C ABI for L3, a byte/register protocol for L4→L5, and a job/artifact
+  interface for the synthesis service, §7.5) as specified in §7. A layer MUST be
+  testable using a mock of the layer beneath it, and the synthesis service MUST
+  be testable with a **mock toolchain** that emits a stub artifact (R63).
+- **R7.** The system SHALL include a **software model** that stands in for a
+  **generated circuit**: a pure-software reference implementation exercising the
+  exact same L3/L4 harness contract (§7.4) so that Phases 0–2 are testable
+  without physical hardware or a real toolchain. For any HW-eligible pattern, the
+  model MUST produce results identical to the specified hardware behavior of that
+  pattern's generated circuit. The model stands in for the "resident" tier (R4)
+  when `PYRO_FORCE_MODEL=1` or no device is present.
 - **R8.** The pattern compiler (L2) SHALL classify every input pattern as either
   **HW-eligible** (in the supported subset and within resource limits) or
   **fallback-only**, and this classification MUST be a pure function of the
@@ -238,18 +332,25 @@ compiler's acceptance decision is unambiguous.
 
 ### 5.3 Resource / capacity limits
 
-- **R11.** The engine SHALL advertise, at runtime, its capacity parameters
-  (see the capability register block, §7.4): maximum number of automaton states
-  `MAX_STATES`, maximum number of concurrent patterns `MAX_PATTERNS`, maximum
-  literal/class alphabet width (bytes vs. Unicode), and maximum bounded-repeat
-  expansion `MAX_REPEAT`.
-- **R12.** The compiler SHALL reject (route to fallback) any pattern whose
-  compiled program would exceed any advertised capacity limit. Bounded repeats
-  are expanded prior to the state count check; a repeat that would expand beyond
-  `MAX_REPEAT` states is fallback-only.
-- **R13.** Default advertised minimums (software model and Phase-1 hardware)
+- **R11.** The system SHALL advertise, at runtime, the **PR-region resource
+  budget** a single generated circuit must fit within (see the capability
+  register block and manifest, §7.4): available LUTs, flip-flops, BRAM, and DSP
+  in the dynamic region, the harness datapath width, and the generator/harness
+  versions. It SHALL also advertise the derived **complexity bounds** the L2
+  resource estimator uses to decide fit without a full synthesis: maximum
+  automaton states `MAX_STATES`, maximum concurrent patterns per circuit
+  `MAX_PATTERNS`, and maximum bounded-repeat expansion `MAX_REPEAT`.
+- **R12.** The compiler/estimator (L2) SHALL reject (route to fallback) any
+  pattern whose generated circuit is estimated to exceed the PR-region resource
+  budget or any advertised complexity bound. Bounded repeats are expanded prior
+  to the estimate; a repeat expanding beyond `MAX_REPEAT` is fallback-only. If a
+  circuit passes the estimate but a later real synthesis (R63) fails to fit or
+  meet timing, the pattern becomes **permanently fallback-only** with a
+  diagnostic (R65); this is not a caller-visible error.
+- **R13.** Default advertised minimums (software model and Phase-1/2 targets)
   MUST be at least: `MAX_STATES ≥ 1024`, `MAX_PATTERNS ≥ 256`,
-  `MAX_REPEAT ≥ 255`.
+  `MAX_REPEAT ≥ 255`. The PR-region resource budget is device/shell-specific and
+  is advertised from the manifest (R47b), not hard-coded in software (P5).
 
 ### 5.4 Character encoding and case folding
 
@@ -414,10 +515,13 @@ drop-in for the subset of the standard `re` module listed here.
   triggering conditions as CPython (i.e., `pyro.re.compile` raises `re.error`
   iff `re.compile` would). PYRO MUST NOT accept a pattern CPython rejects.
 - **R31 (introspection hook).** Provide `pyro.re.explain(pattern, flags=0) ->
-  dict` returning `{"eligible": bool, "reason": str, "engine": "fpga"|"model"|
-  "fallback", "states": int|None}` for testing and diagnostics. This is PYRO-
-  specific and MUST NOT exist on the standard `re` namespace when interposing
-  (§7.2).
+  dict` returning at least the keys `{"eligible": bool, "reason": str, "engine":
+  "fpga"|"model"|"fallback", "states": int|None}` (existing keys retained for
+  compatibility) plus the v2.0.0 circuit-lifecycle keys `{"circuit_status":
+  "cold"|"warm"|"resident"|"synthesizing"|"fallback_only", "est_resources":
+  dict|None}`. `states` MAY be the estimated automaton state count or `None`.
+  Additional keys MAY be present. This is PYRO-specific and MUST NOT exist on the
+  standard `re` namespace when interposing (§7.2).
 - **R32 (thread safety).** All module-level and `Pattern` methods MUST be safe
   to call concurrently from multiple Python threads. Concurrent searches MUST
   serialize correctly onto the device (or software model) without corrupting
@@ -467,7 +571,12 @@ drop-in for the subset of the standard `re` module listed here.
   its test suite against stock `re` and uses only documented `re` behavior MUST
   produce identical observable output (return values and raised exceptions).
   Differences in timing and in PYRO-private attributes are permitted; differences
-  in results are defects.
+  in results are defects. The invariant explicitly covers **asynchrony
+  (v2.0.0)**: the observable result of any call MUST NOT depend on a pattern's
+  circuit lifecycle tier (cold / synthesizing / warm / resident / permanently
+  fallback, R4/R65) — a pattern served by fallback before its circuit is resident
+  and by hardware afterward MUST return byte-identical results at every point;
+  only latency and `pyro.re.stats()` counters may differ.
   - **R36a (isinstance carve-out — permanent limitation).** The transparency
     invariant explicitly **excludes** identity-based type checks against the
     concrete CPython types `re.Pattern` and `re.Match`. On the hardware/model
@@ -488,28 +597,46 @@ Python bindings. All functions are `extern "C"`. Integer widths are fixed. The
 ABI is versioned.
 
 - **R37 (ABI version).** Symbol `uint32_t pyro_abi_version(void)` returns a
-  packed `MAJOR<<16 | MINOR<<8 | PATCH`. This spec defines ABI **1.0.0**. A
-  caller MUST refuse a library whose MAJOR differs.
-- **R38 (types).** The header `pyro_rt.h` MUST define:
+  packed `MAJOR<<16 | MINOR<<8 | PATCH`. This v2.0.0 spec defines ABI **2.0.0**
+  (the circuit-oriented ABI below). A caller MUST refuse a library whose MAJOR
+  differs from the ABI it expects.
+  - *Version-history note (does not amend any AC).* The Phase-0 deliverable froze
+    a shape-only **stub** header at ABI **1.0.0**; **AC-0-8** validated that stub
+    on branch `phase0-pyro` and remains valid there unchanged. Phase 1 supersedes
+    the stub with the ABI **2.0.0** defined here; a fresh integrated build reports
+    `0x00020000`. AC-0-8's `0x00010000` assertion is a historical Phase-0
+    checkpoint against the stub, not an invariant of the shipped system.
+- **R38 (types).** The header `pyro_rt.h` (ABI 2.0.0) MUST define:
 
   ```c
-  typedef struct pyro_ctx  pyro_ctx;    /* opaque runtime context */
-  typedef struct pyro_prog pyro_prog;   /* opaque compiled automaton program */
+  typedef struct pyro_ctx     pyro_ctx;     /* opaque runtime context      */
+  typedef struct pyro_circuit pyro_circuit; /* opaque generated-circuit handle */
 
   typedef enum {
       PYRO_OK            = 0,
-      PYRO_E_UNSUPPORTED = 1,  /* pattern not HW-eligible */
-      PYRO_E_CAPACITY    = 2,  /* exceeds device limits    */
-      PYRO_E_DEVICE      = 3,  /* transport/device error   */
-      PYRO_E_INVALID     = 4,  /* bad argument             */
+      PYRO_E_UNSUPPORTED = 1,  /* pattern not HW-eligible                    */
+      PYRO_E_CAPACITY    = 2,  /* circuit exceeds PR-region resource budget  */
+      PYRO_E_DEVICE      = 3,  /* transport/device error                     */
+      PYRO_E_INVALID     = 4,  /* bad argument                               */
       PYRO_E_NOMEM       = 5,
-      PYRO_E_TIMEOUT     = 6
+      PYRO_E_TIMEOUT     = 6,
+      PYRO_E_NOT_RESIDENT= 7,  /* circuit not resident; caller must fall back */
+      PYRO_E_SYNTH       = 8   /* synthesis failed; pattern permanently FB    */
   } pyro_status;
 
   typedef enum {
       PYRO_ENC_BYTES = 0,
       PYRO_ENC_UTF8  = 1
   } pyro_encoding;
+
+  /* circuit lifecycle tier (mirrors R4 / R31) */
+  typedef enum {
+      PYRO_CIRC_COLD        = 0,  /* no artifact; synthesis needed          */
+      PYRO_CIRC_SYNTHESIZING= 1,  /* synthesis in flight (service)          */
+      PYRO_CIRC_WARM        = 2,  /* artifact cached; PR-load needed         */
+      PYRO_CIRC_RESIDENT    = 3,  /* loaded + identity-verified; dispatchable*/
+      PYRO_CIRC_FALLBACK    = 4   /* permanently fallback-only (R65)         */
+  } pyro_circ_status;
 
   /* one reported match window, all offsets in transport units (bytes) */
   typedef struct {
@@ -527,109 +654,230 @@ ABI is versioned.
   ```
   `transport_uri` selects the binding, e.g. `"model://"`, `"qdma://af:00.0/q0"`,
   or `"eth://enp175s0f0"`. On failure returns non-`PYRO_OK` and `*out == NULL`.
-- **R40 (compile/load).**
+- **R40 (generate / synthesize / load).** The former single-step "compile+load"
+  becomes an explicit lifecycle across the cache tiers (R4):
   ```c
-  pyro_status pyro_compile(pyro_ctx *ctx, const uint8_t *pattern, size_t len,
-                           uint32_t flags, pyro_encoding enc, pyro_prog **out);
-  void        pyro_prog_free(pyro_prog *p);
-  pyro_status pyro_prog_load(pyro_ctx *ctx, pyro_prog *p);   /* resident on dev */
+  /* L2 generate: parse, classify, and emit the pattern's RTL descriptor.
+     Returns PYRO_E_UNSUPPORTED/PYRO_E_CAPACITY for non-HW-eligible patterns. */
+  pyro_status pyro_generate(pyro_ctx *ctx, const uint8_t *pattern, size_t len,
+                            uint32_t flags, pyro_encoding enc,
+                            pyro_circuit **out);
+
+  /* Enqueue asynchronous synthesis (cold -> warm). Non-blocking: returns
+     immediately (PYRO_OK once enqueued). Idempotent per key. */
+  pyro_status pyro_synth_request(pyro_ctx *ctx, pyro_circuit *c);
+
+  /* Poll lifecycle tier without blocking. */
+  pyro_status pyro_circuit_status(pyro_ctx *ctx, pyro_circuit *c,
+                                  pyro_circ_status *out);
+
+  /* Load a warm artifact into the PR region (warm -> resident), verifying
+     identity (R47a). May evict the current resident circuit (R64). Blocks for
+     ~O(100 ms) PR-load; callers invoke this off the request hot path. */
+  pyro_status pyro_circuit_load(pyro_ctx *ctx, pyro_circuit *c);
+
+  void        pyro_circuit_free(pyro_circuit *c);
   ```
-  `pyro_compile` returns `PYRO_E_UNSUPPORTED`/`PYRO_E_CAPACITY` for
-  non-HW-eligible patterns; the caller then uses fallback. `flags` mirrors the
-  Python flag bits (§7.1).
+  `flags` mirrors the Python flag bits (§7.1). A caller MUST NOT scan a circuit
+  that is not `PYRO_CIRC_RESIDENT`; doing so returns `PYRO_E_NOT_RESIDENT` and
+  the caller MUST fall back.
 - **R41 (scan).**
   ```c
-  pyro_status pyro_scan(pyro_ctx *ctx, pyro_prog *p,
+  pyro_status pyro_scan(pyro_ctx *ctx, pyro_circuit *c,
                         const uint8_t *buf, size_t len,
                         uint64_t start_off,
                         pyro_match *out, size_t out_cap, size_t *out_count);
   ```
-  Scans `buf[0..len)`; reports up to `out_cap` matches; sets `*out_count`. If
-  more matches exist than `out_cap`, returns `PYRO_OK` with `*out_count ==
-  out_cap` and the runtime MUST support resumption via `start_off` (streaming).
-  Every returned `pyro_match` with `flags` bit0 clear MUST be treated as
-  **unverified** by the caller (Python layer re-verifies, R19).
+  Requires `c` resident (else `PYRO_E_NOT_RESIDENT`). Scans `buf[0..len)`;
+  reports up to `out_cap` matches; sets `*out_count`. If more matches exist than
+  `out_cap`, returns `PYRO_OK` with `*out_count == out_cap` and the runtime MUST
+  support resumption via `start_off` (streaming). Every returned `pyro_match`
+  with `flags` bit0 clear MUST be treated as **unverified** by the caller (Python
+  layer re-verifies, R19).
 - **R42 (capability query).**
   ```c
   typedef struct {
       uint32_t max_states, max_patterns, max_repeat;
-      uint32_t alphabet;      /* 256 for byte engine */
-      uint32_t engine_version;
-      uint32_t engine_kind;   /* 1=aho-corasick, 2=nfa, 0=model */
+      uint32_t alphabet;          /* 256 for byte datapath                  */
+      uint32_t generator_version; /* L2 HDL generator version               */
+      uint32_t harness_version;   /* §7.4 harness contract version          */
+      uint32_t datapath_bytes;    /* bytes/cycle of the harness datapath     */
+      /* PR-region resource budget one circuit must fit (R11) */
+      uint32_t pr_luts, pr_ffs, pr_bram_kb, pr_dsps;
+      uint32_t pr_partitions;     /* >=1; 1 => single-tenant region (R64)   */
   } pyro_caps;
   pyro_status pyro_caps_get(pyro_ctx *ctx, pyro_caps *out);
   ```
 - **R43 (ownership & lifetime).** Buffers passed to `pyro_scan` are borrowed for
-  the duration of the call only. `pyro_prog` is owned by the caller until
-  `pyro_prog_free`. `pyro_ctx` must outlive all `pyro_prog` created from it. The
-  library MUST NOT retain pointers past the call that received them, except a
-  loaded program's device-resident copy (managed until `pyro_prog_free` or ctx
-  close). All functions MUST be thread-safe given distinct `pyro_ctx`; a single
-  `pyro_ctx` MUST be internally synchronized (R32/R48).
+  the duration of the call only. `pyro_circuit` is owned by the caller until
+  `pyro_circuit_free`. `pyro_ctx` must outlive all `pyro_circuit` created from
+  it. The library MUST NOT retain pointers past the call that received them,
+  except a loaded circuit's device-resident state (managed until eviction (R64),
+  `pyro_circuit_free`, or ctx close). All functions MUST be thread-safe given
+  distinct `pyro_ctx`; a single `pyro_ctx` MUST be internally synchronized
+  (R32/R48). `pyro_synth_request` and `pyro_circuit_status` MUST be safe to call
+  concurrently with `pyro_scan`.
 - **R44 (no UB on error).** On any non-`PYRO_OK` return, all `out` pointers MUST
-  be left in a defined state (`NULL` for handles, `*out_count == 0` for scan).
+  be left in a defined state (`NULL` for handles, `*out_count == 0` for scan,
+  status set to `PYRO_CIRC_FALLBACK` or the last known tier). `PYRO_E_NOT_RESIDENT`
+  and `PYRO_E_SYNTH` are **not** device errors for R52 purposes: they are normal
+  fallback routing (R51/R65), not `fallback_after_error`.
 
-### 7.4 Hardware/software interface: register + DMA contract (L4↔L5)
+### 7.4 Hardware/software interface: harness contract (L4↔L5)
 
-This is the contract between the host transport (L4) and the FPGA engine (L5),
-mapped into the OpenNIC user-plugin address space. It MUST be honored identically
-by the software model (R7) so that the model and hardware are interchangeable.
+This is the **fixed harness contract** that **every generated circuit** (§2)
+MUST implement, mapped into the OpenNIC user-plugin address space. It is fixed
+across patterns so the host runtime drives any circuit uniformly. It MUST be
+honored identically by the software model (R7) so that the model and a real
+generated circuit are interchangeable. The pre-2.0.0 `PROG_*` program-blob
+registers and the R46 blob format are **obsolete and removed**: circuits are no
+longer configured by a data blob; the pattern is baked into the circuit at
+synthesis time and identified via the identity block (R47a).
 
-- **R45 (register map).** The engine exposes a control/status register (CSR)
-  block at a base offset `USER_BAR_BASE` within the user plugin's AXI-Lite
-  window. All registers are 32-bit, little-endian. The following offsets are
-  **normative**:
+- **R45 (harness register map).** Every generated circuit exposes a control/
+  status register (CSR) block at base offset `USER_BAR_BASE` within the user
+  plugin's AXI-Lite window. All registers are 32-bit, little-endian. The
+  following offsets are **normative** and **identical for all circuits**:
 
   | Offset  | Name          | Access | Meaning                                   |
   |---------|---------------|--------|-------------------------------------------|
   | 0x0000  | `ID`          | RO     | magic `0x5059524F` ("PYRO")               |
-  | 0x0004  | `VERSION`     | RO     | engine_version (packed MAJ/MIN/PATCH)     |
-  | 0x0008  | `CAPS0`       | RO     | `max_states` (low16) `max_patterns`(hi16) |
-  | 0x000C  | `CAPS1`       | RO     | `max_repeat`(low16) `engine_kind`(hi16)   |
+  | 0x0004  | `HARNESS_VER` | RO     | harness contract version (packed)         |
+  | 0x0008  | `CAPS0`       | RO     | `datapath_bytes`(low16) `pr_partitions`(hi16) |
+  | 0x000C  | `CAPS1`       | RO     | `generator_version` (packed)              |
   | 0x0010  | `CTRL`        | RW     | bit0 START, bit1 RESET, bit2 STREAM       |
   | 0x0014  | `STATUS`      | RO     | bit0 BUSY, bit1 DONE, bit2 ERR, bit3 OVF  |
-  | 0x0018  | `PROG_ADDR`   | RW     | DMA addr (low32) of automaton program     |
-  | 0x001C  | `PROG_ADDR_H` | RW     | DMA addr (high32)                         |
-  | 0x0020  | `PROG_LEN`    | RW     | program length in bytes                   |
-  | 0x0024  | `IN_ADDR`     | RW     | DMA addr (low32) of input buffer          |
-  | 0x0028  | `IN_ADDR_H`   | RW     | DMA addr (high32)                         |
-  | 0x002C  | `IN_LEN`      | RW     | input length in bytes                     |
-  | 0x0030  | `OUT_ADDR`    | RW     | DMA addr (low32) of result ring           |
-  | 0x0034  | `OUT_ADDR_H`  | RW     | DMA addr (high32)                         |
-  | 0x0038  | `OUT_CAP`     | RW     | result ring capacity in entries           |
-  | 0x003C  | `OUT_COUNT`   | RO     | number of results produced                |
-  | 0x0040  | `IRQ_ENABLE`  | RW     | bit0 DONE-irq enable                      |
-  | 0x0044  | `IRQ_STATUS`  | RW1C   | bit0 DONE, write-1-to-clear               |
+  | 0x0018  | `CIRC_ID0`    | RO     | pattern-hash word 0 (identity, R47a)      |
+  | 0x001C  | `CIRC_ID1`    | RO     | pattern-hash word 1                       |
+  | 0x0020  | `CIRC_ID2`    | RO     | pattern-hash word 2                       |
+  | 0x0024  | `CIRC_ID3`    | RO     | pattern-hash word 3                       |
+  | 0x0028  | `CIRC_FLAGS`  | RO     | baked pattern flags (§7.1) + `NUM_PAT`hi16|
+  | 0x002C  | `RESERVED`    | RO     | reads 0                                   |
+  | 0x0030  | `IN_ADDR`     | RW     | DMA addr (low32) of input buffer          |
+  | 0x0034  | `IN_ADDR_H`   | RW     | DMA addr (high32)                         |
+  | 0x0038  | `IN_LEN`      | RW     | input length in bytes                     |
+  | 0x0040  | `OUT_ADDR`    | RW     | DMA addr (low32) of result ring           |
+  | 0x0044  | `OUT_ADDR_H`  | RW     | DMA addr (high32)                         |
+  | 0x0048  | `OUT_CAP`     | RW     | result ring capacity in entries           |
+  | 0x004C  | `OUT_COUNT`   | RO     | number of results produced                |
+  | 0x0050  | `IRQ_ENABLE`  | RW     | bit0 DONE-irq enable                      |
+  | 0x0054  | `IRQ_STATUS`  | RW1C   | bit0 DONE, write-1-to-clear               |
 
-- **R46 (program blob format).** The automaton program is a self-describing
-  binary blob transferred by DMA. It MUST begin with a 32-byte header:
-  `magic(4)=0x50524F47 "PROG"`, `version(4)`, `engine_kind(4)`, `num_states(4)`,
-  `num_patterns(4)`, `alphabet(4)`, `blob_len(4)`, `crc32(4)` (CRC-32 over the
-  payload). The payload layout is engine-kind-specific and defined in the
-  per-phase engine sections (§10). The engine MUST reject a blob whose `crc32`,
-  `magic`, or `engine_kind` mismatch by setting `STATUS.ERR` and MUST NOT
-  produce results.
+- **R47a (circuit-identity register block — trust boundary).** Before dispatching
+  any scan, the host runtime MUST read the identity block (`CIRC_ID0..3`,
+  `CIRC_FLAGS`) and verify that the resident circuit's baked **pattern hash**
+  (a cryptographic hash, ≥ 128-bit, of `(pattern_bytes, flags, generator_version,
+  harness_version)`) and flags **exactly match** the pattern it is about to
+  dispatch. If they do not match (wrong circuit resident, or PR load not
+  complete), the host MUST NOT dispatch and MUST fall back (`PYRO_E_NOT_RESIDENT`,
+  R51). This is a **trust boundary**: a circuit proves *which* pattern it
+  implements via its baked identity, but the host **still re-verifies every
+  reported window** with CPython/model (R19). The identity check guards against
+  dispatching to the wrong circuit; the window re-verification guards against a
+  correct-identity circuit producing a false positive. A `pyro_match` `flags`
+  bit0 (`verified`) set by a circuit is advisory only and does NOT relieve the
+  host of R19 re-verification.
+- **R47b (PR bitstream artifact + manifest contract).** The synthesis service
+  (R63) produces, for each key `(pattern_bytes, flags, generator_version,
+  toolchain_version, shell/PR-region_version)`, a **PR bitstream artifact**
+  accompanied by a **manifest** (a self-describing sidecar, e.g. JSON + a binary
+  bitstream). The manifest MUST contain at least:
+  - the **pattern hash** (same value baked into `CIRC_ID*`, R47a);
+  - the pattern flags and `generator_version`, `toolchain_version`,
+    `harness_version`, and target **shell / PR-region identifier** (the artifact
+    is only loadable into a compatible region);
+  - **resource utilization** (LUTs, FFs, BRAM, DSP) and achieved timing (Fmax /
+    met-timing boolean) from P&R;
+  - a **CRC-32/hash of the bitstream payload** for integrity.
+  Before a PR load (R40 `pyro_circuit_load`), the host MUST verify the manifest's
+  shell/PR-region identifier matches the live device and the bitstream integrity
+  hash; on mismatch it MUST refuse the load and treat the pattern as fallback
+  (not a device error). The obsolete R46 32-byte `"PROG"` blob header is removed.
 - **R47 (result ring entry).** Each result entry is 24 bytes, little-endian:
   `start(8) end(8) pattern_id(4) flags(4)` — matching `pyro_match` (R38). The
-  engine writes entries densely from ring base; on overflow (`OUT_COUNT ==
+  circuit writes entries densely from ring base; on overflow (`OUT_COUNT ==
   OUT_CAP` with more matches pending) it MUST set `STATUS.OVF` and the host MUST
-  resume via streaming (R41).
-- **R48 (operation sequence).** A single scan is: (1) ensure program resident
-  (`PROG_*` + program DMA, once per program), (2) write `IN_*`, `OUT_*`,
-  `OUT_CAP`, (3) write `CTRL.START`, (4) wait `STATUS.DONE` (poll or IRQ),
-  (5) read `OUT_COUNT`, DMA the result ring back. The host runtime MUST enforce
-  that only one scan is in flight per engine instance at a time (single-issue),
-  or use hardware queues if `engine_kind` advertises multi-queue; concurrency is
-  otherwise serialized in L3 (R43).
+  resume via streaming (R41). `pattern_id` selects among the patterns baked into
+  a multi-pattern circuit (0 for a single-pattern circuit).
+- **R48 (operation sequence).** A single scan against a **resident, identity-
+  verified** circuit (R47a) is: (1) verify identity block matches the target
+  pattern, (2) write `IN_*`, `OUT_*`, `OUT_CAP`, (3) write `CTRL.START`, (4) wait
+  `STATUS.DONE` (poll or IRQ), (5) read `OUT_COUNT`, DMA the result ring back.
+  There is no per-scan program load. The host runtime MUST enforce that only one
+  scan is in flight against the (single-tenant) PR region at a time (single-
+  issue); concurrency is serialized in L3 (R43, R64). Loading a different
+  pattern's circuit is a PR reconfiguration (R40 `pyro_circuit_load`), not part
+  of the scan sequence.
 - **R49 (endianness/alignment).** All DMA buffers MUST be 64-byte aligned. All
   multi-byte fields are little-endian. The input buffer needs no alignment beyond
   64-byte start. The model MUST assert these to catch host bugs.
 - **R50 (transport-agnostic contract).** The register/DMA semantics above are
-  identical regardless of whether L4 reaches the engine over the QDMA char-dev
+  identical regardless of whether L4 reaches the circuit over the QDMA char-dev
   binding or the raw-Ethernet binding; only the mechanism of MMIO/DMA differs.
   In the Ethernet binding, CSR writes and buffer transfers are encapsulated in a
   defined control-frame format (specified at Phase 1 §10.1) but the register
-  meanings are unchanged.
+  meanings are unchanged. PR reconfiguration (loading a bitstream artifact) uses
+  the platform PR mechanism (ICAP/PCAP via the shell, or a vendor PR flow), which
+  is out of band from the scan datapath.
+
+### 7.5 Synthesis service, prewarm, and diagnostics
+
+- **R62 (`prewarm` API).** `pyro.prewarm(patterns, flags=0) -> None` MUST accept
+  a single pattern or an iterable of patterns and, for each HW-eligible one (R8),
+  enqueue synthesis (R4a/R63) regardless of call count. It MUST return promptly
+  (non-blocking); it MUST NOT wait for synthesis to complete and MUST NOT raise
+  for a pattern that is fallback-only or whose synthesis later fails (R65).
+  `pyro.prewarm` is PYRO-specific and MUST NOT appear on the standard `re`
+  namespace when interposing (§7.2). Fallback-only patterns passed to `prewarm`
+  are silently ignored (optionally surfaced via stats).
+- **R63 (synthesis service).** Synthesis MUST run in a **separate process** (or
+  processes) from the caller, so that a minutes-long Vivado run never blocks or
+  slows the Python application. The service:
+  - **R63a (job queue).** Accepts synthesis jobs keyed by the R4 bitstream-cache
+    key, deduplicates by key (a job already queued/running/cached for a key is
+    not re-run), and processes them from a queue. Job admission is governed by
+    the launch policy (R4a).
+  - **R63b (toolchain).** Runs the real flow (regex-derived RTL → Vivado synth +
+    P&R → PR bitstream + manifest, R47b) when the toolchain is present (P1);
+    otherwise, and in all tests, runs a **mock toolchain** that emits a **stub
+    artifact + manifest** for the software model (R7), so every phase is testable
+    without Vivado.
+  - **R63c (concurrency vs. PR region).** The service MAY synthesize multiple
+    circuits concurrently (subject to host resources / Vivado licenses), but the
+    **PR region is single-tenant**: at most **one** circuit is resident at a time
+    unless `pr_partitions > 1` is advertised (R42/R64). Loading is serialized.
+  - **R63d (cache population).** On success the service writes the artifact +
+    manifest to the persistent bitstream cache (R4) so subsequent runs (including
+    after process restart) find it **warm**.
+  - **R63e (isolation).** A crash, hang, or non-termination of a synthesis job
+    MUST NOT affect caller correctness or availability; the caller continues on
+    fallback. The service MUST enforce a per-job timeout after which the job is
+    abandoned and the pattern treated per R65.
+- **R64 (PR-region arbitration / eviction).** With a single-tenant PR region,
+  the runtime MUST implement an **eviction policy** deciding which resident
+  circuit to replace when a different pattern's circuit is chosen for residency.
+  The policy MUST be deterministic given the access history (default: evict the
+  **least-recently-dispatched** resident circuit) and MUST guarantee progress
+  (no thrashing loop). A load that would evict a circuit currently mid-scan MUST
+  wait for or serialize after that scan (R48/R43). Eviction is not a device error
+  and MUST NOT affect results (evicted patterns simply revert to fallback until
+  reloaded).
+- **R65 (synthesis-failure semantics).** If synthesis fails — RTL does not fit
+  the PR-region budget, fails timing, the toolchain errors, or the per-job
+  timeout (R63e) fires — the pattern MUST become **permanently fallback-only**
+  for the current `(generator_version, toolchain_version, shell_version)`: the
+  failure MUST be recorded (bitstream cache negative entry + diagnostic /
+  `pyro.re.stats()`), MUST NOT be retried indefinitely, and MUST **never** raise
+  an exception to the caller. The caller continues to receive byte-identical
+  results via fallback (R16, R52 distinction: this is routing, not
+  `fallback_after_error`).
+- **R66 (`stats` extensions).** `pyro.re.stats() -> dict` MUST report, in
+  addition to the pre-2.0.0 dispatch counters (hardware / model / fallback /
+  fallback-after-error, R52), the circuit-lifecycle counters:
+  `synth_launched`, `synth_succeeded`, `synth_failed`, `circuits_synthesizing`,
+  `circuits_resident`, `circuits_evicted`, and `pr_loads`. Counters MUST be
+  monotonic (except gauges `circuits_synthesizing`/`circuits_resident`) and
+  thread-safe (R32). Stats MUST be observable without perturbing routing.
 
 ---
 
@@ -647,8 +895,19 @@ by the software model (R7) so that the model and hardware are interchangeable.
   4. Estimate work: if `len(subject) < S_min` AND estimated reuse `< N_reuse`
      (per-pattern call counter) → fallback (R3), unless the **cached**
      `PYRO_FORCE_MODEL` flag (R35a) is set.
-  5. If no device and no model available → fallback.
-  6. Otherwise → hardware/model path.
+  5. **Residency check (v2.0.0).** Determine the pattern's circuit tier (R4):
+     - If **resident** and its identity block verifies (R47a) → dispatch to the
+       generated circuit (hardware). If `PYRO_FORCE_MODEL` is set → dispatch to
+       the software model (which stands in for the resident circuit, R7).
+     - If **not resident** (cold / synthesizing / warm) → **fallback for this
+       call**, and evaluate the synthesis-launch policy (R4a): if the pattern is
+       now hot (≥ N_synth eligible dispatches) or was `prewarm`ed, enqueue
+       synthesis / a PR load (R63/R64) in the **background**. Launching MUST NOT
+       block or slow this call.
+     - If synthesis previously failed → the pattern is permanently fallback-only
+       (R65) → fallback.
+  6. If no device and no model available → fallback.
+  7. Otherwise (resident + verified) → hardware/model path.
 - **R51a (Phase-0 safety gates).** Under R16's "when in doubt, fall back"
   umbrella, the Phase-0 implementation applies the following additional
   fallback gates. They are evaluated **before** dispatching to the hardware/model
@@ -685,8 +944,10 @@ by the software model (R7) so that the model and hardware are interchangeable.
   (`pyro.re.stats()`), MUST NOT raise to the caller, and MUST NOT change the
   returned value relative to CPython.
 - **R53 (determinism).** Given identical inputs and configuration, the
-  *observable result* MUST be independent of whether the hardware, model, or
-  fallback path served it. Only timing/stats may differ.
+  *observable result* MUST be independent of whether the hardware (resident
+  generated circuit), model, or fallback path served it, and independent of the
+  circuit lifecycle tier at the moment of the call (R36 asynchrony clause). Only
+  timing/stats may differ.
 
 ---
 
@@ -713,15 +974,34 @@ MUST NOT read the implementation; they exercise the Python API (§7.1), the C AB
 - **R56 (classification tests).** For each of R9/R10/R11–R13, tests MUST assert
   `pyro.re.explain()` returns the correct `eligible`/`reason` and that capacity
   overflow routes to fallback.
-- **R57 (ABI conformance).** Tests MUST drive the C ABI directly (via ctypes/
-  cffi) against the software model: lifecycle (R39), compile/load (R40), scan
-  including overflow/resume (R41), caps (R42), error states (R44), and thread
-  safety (R43/R32).
-- **R58 (register/DMA contract tests).** Against the software model implementing
-  §7.4, tests MUST assert: `ID`/`VERSION`/`CAPS` values (R45), program-blob CRC/
-  magic rejection (R46), result-ring entry layout and overflow `OVF` behavior
-  (R47), operation sequence and single-issue enforcement (R48), alignment
-  assertions (R49).
+- **R57 (ABI conformance).** Tests MUST drive the C ABI (ABI 2.0.0) directly (via
+  ctypes/cffi) against the software model: lifecycle (R39), generate/synth-
+  request/status/load (R40), scan including overflow/resume and the
+  `PYRO_E_NOT_RESIDENT` guard (R41), caps incl. PR-region budget (R42), error
+  states incl. `PYRO_E_SYNTH`/`PYRO_E_NOT_RESIDENT` (R44), and thread safety
+  (R43/R32).
+- **R58 (harness contract tests).** Against the software model implementing §7.4,
+  tests MUST assert: `ID`/`HARNESS_VER`/`CAPS` values (R45); the **circuit-
+  identity** block and the dispatch-only-if-identity-matches trust boundary,
+  including refusal + fallback on identity mismatch and mandatory window re-
+  verification regardless of the circuit `verified` flag (R47a); the **PR
+  bitstream artifact + manifest** contract — shell/PR-region compatibility check,
+  bitstream integrity hash, and load refusal on mismatch (R47b); result-ring
+  entry layout and overflow `OVF` behavior (R47); the operation sequence with no
+  per-scan program load and single-issue enforcement (R48); alignment assertions
+  (R49). Tests MUST confirm the obsolete `PROG_*` registers and `"PROG"` blob are
+  absent.
+- **R58a (synthesis-service & lifecycle tests).** Using the **mock toolchain**
+  (R63b), tests MUST assert: the launch policy fires only at ≥ N_synth or via
+  `prewarm` (R4a/R62); synthesis is asynchronous and never blocks a call
+  (`compile`/`search` return promptly while a job is queued); the cold→warm→
+  resident tier transitions and cache-key hits across a simulated process restart
+  (R4/R63d); job dedup by key (R63a); single-tenant residency + deterministic
+  eviction with no thrashing (R64); synthesis-failure → permanent fallback with
+  no exception and correct stats (R65/R66); and — the correctness keystone — that
+  results are **byte-identical across every tier** for the same pattern/subject
+  (R36 asynchrony clause, R53), i.e. differential equivalence to CPython `re`
+  whether served cold-fallback, model, or resident-circuit.
 - **R59 (benchmark suite).** A benchmark harness MUST measure, for a defined
   corpus set, the metrics in R1–R5 and emit machine-readable results. The corpus
   set MUST include: (a) a ≥ 1 MiB log-file corpus with a reused pattern set of
@@ -785,92 +1065,118 @@ be Python for Phase 0; the C ABI is stubbed but shape-frozen).
 - **AC-0-8.** The frozen `pyro_rt.h` compiles and `pyro_abi_version()` returns
   `0x00010000`. (R37, R38)
 
-### Phase 1 — Fixed-string / multi-pattern (Aho-Corasick) engine
+### Phase 1 — HDL generator + circuit model + synthesis-service skeleton (mock toolchain)
 
-Deliver the C-ABI host runtime (L3), one transport binding (L4) — the model
-binding is mandatory; the Ethernet binding is the first real target — and an
-Aho-Corasick multi-fixed-string engine (`engine_kind=1`) as software model and
-(optionally, if toolchain available) as RTL for the OpenNIC user plugin.
-Supported patterns this phase: literal strings and alternations of literals
-(`foo|bar|baz`), i.e., the regular sublanguage expressible by Aho-Corasick, plus
-IGNORECASE over ASCII.
+Deliver: the L2 **HDL generator** (regex → automaton → synthesizable per-pattern
+RTL) plus resource estimator (R11/R12); the C-ABI host runtime (L3) with the
+bitstream cache, PR loader, and synthesis-service client; the **software model**
+standing in for a generated circuit (R7); the **synthesis-service skeleton**
+(R63) driven by a **mock toolchain** that emits stub artifacts + manifests
+(R63b); the PR-artifact cache with tier transitions (R4); and the Ethernet/QDMA
+**transport contract** (§7.4, model binding mandatory). No real Vivado required.
+Every AC below is testable **without hardware**.
 
-- **AC-1-1.** The C ABI (R39–R44) passes ABI-conformance tests against the model.
-  (R57)
-- **AC-1-2.** The register/DMA contract (R45–R50) is implemented by the model and
-  passes contract tests, including CRC/magic rejection, result-ring layout,
-  overflow `OVF`, single-issue, and alignment. (R58)
-- **AC-1-3.** For multi-literal pattern sets over a ≥ 1 MiB corpus, `finditer`
-  results are byte-identical to stock `re` with an equivalent
-  alternation-of-literals pattern, including overlapping-match/leftmost
-  semantics reconciled to CPython. (R16, R17, R19)
+- **AC-1-1.** The C ABI (ABI 2.0.0, R39–R44) passes ABI-conformance tests against
+  the model, including the async generate → synth-request → status → load
+  lifecycle and the `PYRO_E_NOT_RESIDENT`/`PYRO_E_SYNTH` guards. (R57)
+- **AC-1-2.** The harness contract (R45–R50) is implemented by the model and
+  passes contract tests: identity-block trust boundary and dispatch-only-if-match
+  (R47a), PR artifact + manifest compatibility/integrity checks (R47b), result-
+  ring layout, overflow `OVF`, single-issue, alignment, and absence of the
+  obsolete `PROG_*`/blob path. (R58)
+- **AC-1-3.** The HDL generator lowers every §5.1 construct to a valid per-pattern
+  RTL circuit that the model recognizes; over-budget/over-`MAX_*` patterns are
+  rejected by the estimator and route to fallback (R11–R13). For a ≥ 1 MiB
+  corpus, results from the model circuit are byte-identical to stock `re`,
+  including leftmost reconciliation (R16, R17, R19, R9, R12).
 - **AC-1-4.** Overflow/resume: a corpus producing more matches than `OUT_CAP`
   returns the complete, correct match list via streaming resumption. (R41, R47)
-- **AC-1-5.** `pyro_caps_get` reports `engine_kind=1` and limits ≥ R13 minimums;
-  patterns exceeding `MAX_PATTERNS` route to fallback. (R11–R13, R42)
+- **AC-1-5.** The synthesis-service skeleton with the mock toolchain: launch
+  policy fires only at ≥ N_synth or via `pyro.prewarm` (R4a/R62); jobs run out of
+  process and never block calls; cold→warm→resident transitions and cache-key
+  hits persist across a simulated restart; job dedup by key; deterministic
+  single-tenant eviction without thrashing; synthesis failure → permanent
+  fallback, no exception, correct `stats()` counters. (R62–R66, R58a)
 - **AC-1-6.** Fault-injection: model-reported false-positive windows are re-
   verified and never leak; device errors trigger fallback-retry with CPython-
-  identical output. (R19, R52, R61)
-- **AC-1-7 (hardware, conditional).** If the Vivado/OpenNIC toolchain (§11) is
-  present, the RTL engine loaded into the user plugin passes AC-1-2/AC-1-3
-  against the physical device over the selected transport. If absent, this AC is
-  recorded SKIP (never PASS) and all others run against the model. (R7, F5)
+  identical output; `NOT_RESIDENT`/`SYNTH` are counted as routing, not
+  `fallback_after_error`. (R19, R44, R52, R61)
+- **AC-1-7.** Asynchrony correctness keystone: for the same pattern/subject,
+  results are byte-identical whether served cold-fallback, via the model, or via
+  a "resident" model circuit — proving R36's asynchrony clause and R53 without
+  hardware. (R36, R53, R58a)
 
-### Phase 2 — Programmable NFA engine
+### Phase 2 — Real Vivado flow + on-hardware bring-up
 
-Deliver a programmable finite-automaton engine (`engine_kind=2`) — a Thompson
-NFA / bit-parallel (e.g., Glushkov + bit-parallel simulation) engine configured
-by the automaton program blob, so new patterns load as data (R4), no bitstream
-rebuild. Extends supported subset to full §5.1 (classes, quantifiers, bounded
-repeats, anchors, groups-structure).
+Deliver the **real** synthesis flow (generated RTL → Vivado synthesis + P&R → PR
+bitstream + manifest, R47b) integrated into the synthesis service, and bring up a
+generated circuit in the OpenNIC PR region on the physical device over the chosen
+transport. Requires the toolchain and transport prerequisites (§11 P1/P2); ACs
+gated on hardware are SKIP (never PASS) when unavailable.
 
-- **AC-2-1.** The compiler (L2) lowers every §5.1 construct to a valid program
-  blob (R46) accepted by the engine; §5.2 constructs remain fallback-only. (R9,
-  R10, R46)
-- **AC-2-2.** For the full differential corpus (R54) and property-based fuzzing
-  (R55) over the supported subset, `search/match/fullmatch/findall/finditer/sub/
-  subn/split` are byte-identical to stock `re`. (R16, R17, R18)
-- **AC-2-3.** Loading a new pattern into a resident engine requires only a
-  program-blob DMA + `PROG_*`/`CTRL.START` sequence (no reconfiguration); warm
-  compile-cache hit ≤ 50 µs. (R4, R48)
-- **AC-2-4.** Bounded-repeat expansion respects `MAX_REPEAT`; over-limit patterns
-  route to fallback. (R11–R13)
-- **AC-2-5.** Throughput on the NFA engine meets R1's ≥ 1 GiB/s target on
-  hardware, or records SKIP without hardware; routing thresholds (R3–R5) hold in
-  all cases. (R1, R2, R3, R59)
-- **AC-2-6 (PR alternative, optional).** If partial reconfiguration is used for a
-  pattern class exceeding the programmable engine's capacity, PYRO MUST still
-  return byte-identical results and MUST fall back rather than block if PR is
-  unavailable. (R12, R52)
+- **AC-2-1.** With the real toolchain present, a HW-eligible pattern synthesizes
+  to a PR bitstream whose manifest fits the PR-region budget and meets timing;
+  the artifact populates the bitstream cache and reloads warm across restarts.
+  If the toolchain is absent → SKIP. (R11, R47b, R63, P1)
+- **AC-2-2.** A synthesized circuit loaded into the PR region passes the harness
+  contract on the physical device: identity block verifies (R47a), scans produce
+  sound/complete candidate windows re-verified to byte-identical CPython results
+  over a ≥ 1 MiB corpus. Absent hardware → SKIP. (R16, R17, R19, R47a, F5)
+- **AC-2-3.** Cold→warm→resident timing on hardware matches R4's model:
+  synthesis is minutes (async, never caller-blocking), warm PR load is
+  ~O(100 ms), resident dispatch is immediate. Absent hardware → SKIP; the
+  async/non-blocking property is still asserted against the model. (R4, R63)
+- **AC-2-4.** Bounded-repeat expansion respects `MAX_REPEAT` and the resource
+  estimator agrees with real P&R utilization within a stated margin; a pattern
+  that passes the estimate but fails real synthesis becomes permanently
+  fallback-only with a diagnostic and no caller-visible error. (R11–R13, R65)
+- **AC-2-5.** Throughput of a resident circuit meets R1 on hardware (≥ 1 GiB/s
+  floor, 5 GiB/s target), or records SKIP without hardware; routing thresholds
+  (R3–R5) and the relative loss-regime bound (R3b) hold in all cases. (R1, R2,
+  R3, R59)
+- **AC-2-6.** Single-tenant PR arbitration on hardware: loading a second
+  pattern's circuit evicts the first per R64; results remain byte-identical
+  across evict/reload cycles. Absent hardware → SKIP; policy asserted on model.
+  (R64, R53)
 
 ### Phase 3 — Transparent interposition + benchmarks
 
 Deliver production-grade L0 interposition, the full benchmark suite (R59), and
-the diagnostics surface, integrating Phases 1–2 engines with automatic engine
-selection.
+the diagnostics surface, integrating the generated-circuit pipeline with
+automatic tier-based dispatch and prewarming.
 
 - **AC-3-1.** With `pyro.install()`, the transparency-regression suite (R60)
   passes on a corpus of real `re`-using programs: identical outputs and
-  exceptions vs. stock `re`. (R36, R60)
-- **AC-3-2.** Automatic engine selection picks Aho-Corasick for literal sets and
-  the NFA engine otherwise, transparently; results remain byte-identical. (R51,
-  R53)
+  exceptions vs. stock `re`, including patterns that transition tiers mid-run.
+  (R36, R60)
+- **AC-3-2.** Automatic tier-based dispatch is transparent: a hot pattern is
+  prewarmed/synthesized in the background and silently upgraded from fallback to
+  resident-circuit dispatch with byte-identical results throughout; a cold or
+  fallback-only pattern is served by fallback. (R4a, R51, R53, R62)
 - **AC-3-3.** The benchmark suite emits machine-readable metrics for R1–R5 and,
-  on hardware, demonstrates the win regime (R1/R2) and the loss-regime routing
-  (R3). Without hardware, R1/R2 are SKIP, R3–R5 PASS. (R1–R5, R59)
-- **AC-3-4.** `pyro.re.stats()` reports counts of hardware / model / fallback /
-  fallback-after-error dispatches; fault injection increments the error-fallback
-  counter without altering results. (R52, R61)
+  on hardware, demonstrates the win regime (R1/R2, resident circuits) and the
+  loss-regime routing (R3), and records synthesis/PR-load costs separately from
+  scan throughput. Without hardware, R1/R2 are SKIP, R3–R5 PASS. (R1–R5, R59)
+- **AC-3-4.** `pyro.re.stats()` reports the dispatch counters (hardware / model /
+  fallback / fallback-after-error) **and** the lifecycle counters (synth
+  launched/succeeded/failed, synthesizing, resident, evicted, pr_loads); fault
+  and synthesis-failure injection increment the correct counters without altering
+  results. (R52, R61, R65, R66)
 
 ---
 
 ## 11. Prerequisites, risks, and open items
 
-- **P1 (toolchain).** Building the RTL engine for the OpenNIC user plugin
-  requires Vivado (matching the OpenNIC shell's version) and the OpenNIC
-  `open-nic-shell` build flow. Currently absent (F5). All software phases (0–2
-  model path) MUST proceed without it; hardware ACs are conditional (AC-1-7,
-  AC-2-5).
+- **P1 (toolchain — Phase 2 critical path).** The v2.0.0 design makes per-pattern
+  synthesis the core of the hardware path, so the Vivado toolchain and the
+  OpenNIC `open-nic-shell` **partial-reconfiguration** build flow are now the
+  **critical path for Phase 2** (not an optional add-on). Required: Vivado
+  matching the OpenNIC shell version; a floorplanned PR partition for the 250 MHz
+  user box with a fixed static/reconfigurable interface (`pblock` + the harness
+  contract, §7.4); and a PR bitstream generation flow. All of this is currently
+  absent (F5). **Phase 0 and Phase 1 MUST proceed entirely without it** via the
+  software model and mock toolchain (R7/R63b); Phase 2 ACs are conditional on its
+  availability (AC-2-1..2-6 SKIP when absent).
 - **P2 (transport enablement).** The performance-target QDMA char-dev binding
   requires the QDMA PF/queue setup and `/dev/qdma*` (or equivalent) char devices,
   which do not currently exist (F5). Until then, the **raw-Ethernet-frame
@@ -899,6 +1205,29 @@ selection.
   under those names in 3.11. The target host runs CPython 3.12. Importing under
   an older interpreter is unsupported and PYRO MAY refuse to import with a clear
   error.
+- **P8 (synthesis latency).** Vivado synth + P&R for a single circuit is
+  **minutes**, dwarfing any match. This is the reason synthesis is async and
+  gated by the launch policy (R4a) and the win-regime economics restated in R2.
+  Risk: patterns that are hot but short-lived may never pay back synthesis;
+  mitigation is the N_synth threshold, `prewarm` for known-hot patterns, and the
+  persistent bitstream cache (R4) so cost is paid once per key across restarts.
+- **P9 (PR-region capacity).** The dynamic region is a fixed-size PR partition;
+  a generated circuit must fit its LUT/FF/BRAM/DSP budget and meet 250 MHz timing
+  (R11/R47b). Complex patterns may not fit → permanent fallback (R12/R65). Risk:
+  the fit rate of real-world patterns is unknown; mitigation is the resource
+  estimator (reject early) and measuring fallback-due-to-capacity in benchmarks.
+- **P10 (single-tenant region arbitration).** With one PR partition, only one
+  pattern's circuit is resident at a time; the eviction policy (R64) can thrash
+  under many competing hot patterns, and PR reload (~O(100 ms)) is far costlier
+  than a scan. Risk mitigated by LRU eviction, the residency check preferring the
+  resident circuit, and (future) multi-partition shells (`pr_partitions > 1`).
+- **P11 (Vivado licensing / version pinning).** Synthesis requires valid Vivado
+  licenses and a **pinned** toolchain version; `toolchain_version` and
+  `shell/PR-region_version` are part of the bitstream-cache key (R4) and manifest
+  (R47b) precisely because artifacts are not portable across tool/shell versions.
+  Risk: license contention limits synthesis concurrency (R63c); a toolchain
+  upgrade invalidates the cache (cold rebuilds). Mitigation: pin versions, key
+  the cache on them, and stage upgrades.
 
 ---
 
@@ -913,9 +1242,20 @@ selection.
 - Accelerating non-`re` engines (`regex` third-party module, `hyperscan`
   bindings) — PYRO targets the stdlib `re` API surface only.
 - Multi-tenant/QoS scheduling of the FPGA across processes (single-process
-  serialization only in this version).
-- Automatic partial-reconfiguration bitstream generation (only listed as an
-  optional alternative, AC-2-6).
+  serialization only in this version). Cross-process sharing of the PR region or
+  of the synthesis service among unrelated applications is out of scope; the
+  bitstream cache MAY be shared read-only but arbitration is single-process.
+- **Multiple concurrent resident circuits.** This version assumes a single-tenant
+  PR region (one resident circuit at a time, R64). Exploiting a shell with
+  `pr_partitions > 1` to hold several circuits simultaneously is a future
+  extension, not a v2.0.0 deliverable.
+- **Full-chip (non-PR) bitstream rebuilds** and generating/altering the OpenNIC
+  static shell itself. PYRO only produces **partial** bitstreams for the
+  pre-defined dynamic-region partition; building the shell/static region is a
+  prerequisite (P1), not a PYRO function.
+- **Speculative/whole-corpus synthesis.** PYRO does not synthesize circuits for
+  patterns that are neither hot (R4a) nor `prewarm`ed; there is no attempt to
+  predict or pre-synthesize arbitrary future patterns.
 - **Nominal type identity of match/pattern objects on the accelerated path.**
   `isinstance(obj, re.Pattern)` / `isinstance(obj, re.Match)` are not guaranteed
   on the hardware/model path because those CPython types are concrete and
@@ -942,6 +1282,61 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.0.0** (2026-07-05) — *Architecture inversion (MAJOR), project-owner
+  decision.* Owner intent, verbatim: "each new regex compilation creates a new
+  circuit/block for the FPGA dynamic region." The programmable/loadable-program
+  engines (pre-2.0.0 Phase-1 Aho-Corasick-as-blob and Phase-2 programmable NFA)
+  are **dropped as hardware deliverables** and replaced by **per-pattern
+  synthesized circuits** loaded into the OpenNIC PR region. Changes:
+  - **§0/§2/§4:** central design rewritten to per-pattern generated circuit +
+    async background synthesis + PR hot-swap; new definitions (generated circuit,
+    harness contract, PR region, resident circuit, synthesis service, bitstream
+    cache, cold/warm/resident tiers); architecture layers L2 (regex→RTL
+    generator), L3 (bitstream cache + PR loader + synth client), L5 (per-pattern
+    circuit), and a side synthesis service (SS).
+  - **R1/R2:** win-regime economics restated — hardware dispatch requires a
+    **resident** circuit; amortization now includes minutes-long synthesis;
+    added R2a/R2b.
+  - **R4 rewrite + R4a:** explicit host-classification cache (µs, unchanged) vs.
+    persistent bitstream cache with cold/warm/resident tiers; new synthesis-launch
+    policy (N_synth or `prewarm`).
+  - **R11–R13:** capacity reframed as PR-region resource budget (LUT/FF/BRAM/DSP)
+    + complexity bounds; estimator rejects over-budget patterns; real-synthesis
+    non-fit → permanent fallback.
+  - **§7.3 (ABI 2.0.0):** `pyro_prog`→`pyro_circuit`; `pyro_compile`→
+    `pyro_generate` + async `pyro_synth_request`/`pyro_circuit_status`/
+    `pyro_circuit_load`; new `PYRO_E_NOT_RESIDENT`/`PYRO_E_SYNTH` and
+    `pyro_circ_status`; caps now advertise PR-region budget and generator/harness
+    versions. ABI major bumped to 2.0.0 (AC-0-8's 1.0.0 stub check is a Phase-0
+    historical checkpoint, left unchanged per the "don't break AC-0-*" constraint;
+    see R37 note).
+  - **§7.4:** `PROG_*` registers and the R46 "PROG" blob format **removed**;
+    added the fixed **harness contract**, the **circuit-identity** register block
+    (R47a, trust boundary — circuit proves identity, host still re-verifies
+    windows R19), and the **PR bitstream artifact + manifest** contract (R47b:
+    pattern hash, caps, utilization/timing, shell/PR-region compatibility,
+    integrity hash).
+  - **§7.5 (new):** synthesis service (out-of-process, queue, dedup, mock
+    toolchain, single-tenant concurrency, isolation — R63), `pyro.prewarm` (R62),
+    PR-region eviction policy (R64), synthesis-failure = permanent fallback,
+    never an exception (R65), and `pyro.re.stats()` lifecycle counters (R66).
+  - **R36/R53:** transparency invariant and determinism now explicitly cover
+    **asynchrony** — results never depend on the circuit tier; only timing/stats
+    do.
+  - **§8 R51:** decision order gains a residency check + background synthesis
+    launch; **§9** R57/R58 updated and R58a added (synthesis-service & tier
+    equivalence tests); **§10** rephased — Phase 1 = HDL generator + circuit model
+    + synthesis-service skeleton (mock toolchain) + PR-artifact cache + transport
+    contract (all hardware-free); Phase 2 = real Vivado flow + on-hardware
+    bring-up; Phase 3 = interposition + benchmarks. **§11** P1 rewritten (Vivado
+    + open-nic-shell PR flow = Phase 2 critical path), added P8–P11 (synthesis
+    latency, PR capacity, single-tenant arbitration, Vivado licensing/version
+    pinning); **§12** updated.
+  - **Correctness architecture untouched:** byte-identical-or-fallback (R16),
+    hybrid group extraction (R17–R20), routing gates (R51/R51a), device-error
+    fallback (R52), env sampling (R35a–d) all preserved. **Phase 0 (AC-0-1..0-8)
+    is untouched and remains green on `phase0-pyro`** — its "fallback until
+    hardware exists" behavior is now also the steady-state cold-start behavior.
 - **1.2.1** (2026-07-05) — *Clarifications (PATCH).* Surfaced by the final
   whole-branch review; no AC/interface breaks. (1) Added R14a: in str mode a
   subject or pattern that is not strictly UTF-8-encodable (unpaired surrogates,
