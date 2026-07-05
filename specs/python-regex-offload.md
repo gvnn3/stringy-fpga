@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.0.2
+- **Version:** 2.0.3
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1a in progress)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-05
@@ -298,7 +298,9 @@ and tested independently.
   without physical hardware or a real toolchain. For any HW-eligible pattern, the
   model MUST produce results identical to the specified hardware behavior of that
   pattern's generated circuit. The model stands in for the "resident" tier (R4)
-  when `PYRO_FORCE_MODEL=1` or no device is present.
+  when `PYRO_FORCE_MODEL=1` or no device is present. When no physical device is
+  present, R7 takes precedence over R51 step 5: the model MAY serve HW-eligible
+  dispatches at any tier while tier state is still tracked (R51b).
 - **R8.** The pattern compiler (L2) SHALL classify every input pattern as either
   **HW-eligible** (in the supported subset and within resource limits) or
   **fallback-only**, and this classification MUST be a pure function of the
@@ -976,6 +978,17 @@ synthesis time and identified via the identity block (R47a).
        block or slow this call.
      - If synthesis previously failed → the pattern is permanently fallback-only
        (R65) → fallback.
+     - **R51b (device-free precedence of R7).** When **no physical device is
+       present**, R7 **takes precedence over this step 5**: the software model MAY
+       serve **any** HW-eligible, gate-crossed, non-permanent-fallback dispatch at
+       **any** tier (cold / synthesizing / warm / resident), counting as a
+       `model` dispatch (R66). Residency/tier state is still tracked and reported
+       per R4/R66 (launch/lifecycle bookkeeping and the genuine
+       `NOT_RESIDENT`/`SYNTH` tier semantics remain live in the residency
+       manager), and results MUST be byte-identical across tiers (R36 asynchrony
+       clause, R53). **On hardware (Phase 2+), step 5 binds strictly**: a
+       not-resident pattern falls back for this call while synthesis/PR-load
+       proceeds in the background.
   6. If no device and no model available → fallback.
   7. Otherwise (resident + verified) → hardware/model path.
 - **R51a (Phase-0 safety gates).** Under R16's "when in doubt, fall back"
@@ -1357,6 +1370,17 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.0.3** (2026-07-05) — *Ratification (PATCH), Task 6 review.* No interface/AC
+  break; blesses the implemented router. Added **R51b (device-free precedence of
+  R7)** and a mirroring sentence in R7: when **no physical device is present**,
+  R7 takes precedence over R51 step 5 — the software model MAY serve any
+  HW-eligible, gate-crossed, non-permanent-fallback dispatch at any tier (counted
+  as `model`), with residency/tier state still tracked and reported (R4/R66) and
+  results byte-identical across tiers (R36/R53). On hardware (Phase 2+), step 5
+  binds strictly (not resident → fallback while synthesis proceeds in
+  background). Reconciles R51 step 5 with the Phase-0/R7 invariant that
+  `stats()["model"] > 0` for eligible gate-crossing calls on a device-free host
+  (AC-1-7).
 - **2.0.2** (2026-07-05) — *Clarification (PATCH), Task 5 fix round.* No
   interface/AC break. Added **R4b (canonicalization scope)**: the R4/R47a
   canonicalization (stripped leading global inline flags + effective flags +
