@@ -21,3 +21,23 @@ Should I install jq ?
 
 Installed
 
+## 2026-07-04 07:25:00 (backfilled, approximate time)
+
+Python has its own regex and string implementations. Can regex matching be accerlated from the Python code onto the FGPA installed in this system?  Using the @spec-writer, create a sepcification for a system that transparetnly offloads regular expression parsing from Python to the FGPA.
+
+## 2026-07-05 00:08:00 (backfilled, approximate time)
+
+Add all files and commit.
+
+## 2026-07-05 00:09:00 (backfilled, approximate time)
+
+I will push, you are NEVER to push
+
+## 2026-07-05 00:14:00 (backfilled, approximate time)
+
+Fix up the commits with the right email now wset
+
+## 2026-07-05 00:20:00 (backfilled, approximate time)
+
+Add Python as a submodule of this repo, carry out the development based on the written spec.
+
