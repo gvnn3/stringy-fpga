@@ -5,13 +5,14 @@ in a fixture teardown, leaving no spawned-process or temp-dir residue.
 """
 
 import os
+import time
 
 import pytest
 
 import pyro.hdl as hdl
 from pyro.hdl import identity
 from pyro.synth import (
-    BitstreamCache, SynthesisService, ToolchainConfig, make_key,
+    BitstreamCache, SynthesisService, ToolchainConfig, make_key, key_digest,
     STATUS_OK, STATUS_FAILED,
 )
 from pyro.synth.residency import _job_from_circuit
@@ -89,6 +90,27 @@ def test_timeout_mode_marks_failed(service_factory):
     svc.submit(k, _job("slow[0-9]+"))
     assert svc.drain(10.0) is True
     assert cache.is_failed(k) is True
+
+
+# --- R63e per-job timeout reap: hung job -> permanent fallback -------------
+def test_timeout_reap_marks_failed_and_fires_callback(service_factory):
+    # A genuinely hung worker never reports back; the client-side per-job timeout
+    # reap MUST treat the key exactly like a worker-mediated failure: write a
+    # negative cache entry (R65) AND fire the done-callback with the failure, so a
+    # residency manager's in-flight slot is unstuck and the key is not
+    # re-synthesizable.  Injected directly (no real hang) for determinism.
+    svc, cache = service_factory(timeout=0.01)
+    seen = []
+    svc.set_done_callback(lambda k, s, r: seen.append((s, r)))
+    k = _key("hung[0-9]+")
+    # Simulate a job stuck in flight past its deadline.
+    svc._inflight[key_digest(k)] = (k, time.monotonic() - 10.0)
+    svc.poll()                                   # triggers _reap_timeouts
+    assert cache.is_failed(k) is True            # permanent-fallback entry (R65)
+    assert svc.in_flight() == 0                   # slot unstuck
+    assert len(seen) == 1 and seen[0][0] == STATUS_FAILED
+    # Re-submitting the reaped key is refused (dedup against the negative entry).
+    assert svc.submit(k, _job("hung[0-9]+")) is False
 
 
 # --- R63e isolation: a job failure does not affect other jobs --------------

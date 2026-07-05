@@ -97,8 +97,9 @@ class SynthesisService:
         self._job_q = self._ctx.Queue()
         self._result_q = self._ctx.Queue()
         self._procs = []
-        # digest -> submit monotonic timestamp (for R63e timeout + dedup)
-        self._inflight: Dict[str, float] = {}
+        # digest -> (key, submit monotonic timestamp) for R63e timeout + dedup.
+        # The full key is kept so a timeout reap can write a negative cache entry.
+        self._inflight: Dict[str, Tuple[BitstreamKey, float]] = {}
         self._done_cb: Optional[Callable[[BitstreamKey, str, str], None]] = None
         for _ in range(max(1, int(workers))):
             p = self._ctx.Process(
@@ -126,7 +127,7 @@ class SynthesisService:
             return False
         if self._cache.has(key) or self._cache.is_failed(key):
             return False
-        self._inflight[dig] = time.monotonic()
+        self._inflight[dig] = (key, time.monotonic())
         self._job_q.put((key, job))
         return True
 
@@ -150,19 +151,29 @@ class SynthesisService:
                 self._done_cb(key, status, reason)
 
     def _reap_timeouts(self) -> None:
-        """R63e: mark any job that overran the per-job timeout as failed.
+        """R63e: mark any job that overran the per-job timeout as **failed**.
 
-        The (mock) worker will finish quickly; this guards the real-flow case
-        where a job hangs.  A reaped key becomes a permanent-fallback negative
-        entry (R65); a late worker result for it is ignored (no longer inflight).
+        The (mock) worker finishes quickly; this guards the real-flow case where
+        a job hangs.  A reaped key is treated exactly like a worker-mediated
+        failure: it becomes a permanent-fallback negative cache entry (R65) AND
+        the done-callback is fired with the failure, so the residency manager's
+        ``_synthesizing`` set/gauge is unstuck and ``synth_failed`` is counted.
+        A late worker result for a reaped key is ignored (no longer in flight).
         """
         if not self._inflight:
             return
         now = time.monotonic()
-        expired = [dig for dig, t0 in self._inflight.items()
+        expired = [(dig, key) for dig, (key, t0) in self._inflight.items()
                    if now - t0 > self._timeout]
-        for dig in expired:
+        for dig, key in expired:
             self._inflight.pop(dig, None)
+            reason = f"synthesis per-job timeout ({self._timeout:g}s) exceeded (R63e)"
+            try:
+                self._cache.put_failure(key, reason)     # R65 permanent fallback
+            except OSError:
+                pass
+            if self._done_cb is not None:
+                self._done_cb(key, STATUS_FAILED, reason)
 
     def poll(self) -> None:
         """Drain any available results and reap timeouts (non-blocking)."""

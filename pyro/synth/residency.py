@@ -95,6 +95,12 @@ class ResidencyManager:
         self._synthesizing: Set[str] = set()        # digest set (in flight)
         # digest -> _ResidentInfo, ordered least->most recently dispatched (LRU).
         self._resident: "OrderedDict[str, _ResidentInfo]" = OrderedDict()
+        # In-memory memo of the *persistent* per-key verdict ("cold"/"warm"/
+        # "failed"), so the hot reused-pattern dispatch path (R51 step 5) does not
+        # re-stat the filesystem every call.  Populated on the first fs read for a
+        # key and invalidated on the state transitions this manager controls under
+        # the RLock (synthesis completion, generator-gap failure, timeout reap).
+        self._verdict: Dict[str, str] = {}
 
         self._stats = {
             "synth_launched": 0,
@@ -127,8 +133,10 @@ class ResidencyManager:
             self._synthesizing.discard(dig)
             if status == STATUS_OK:
                 self._stats["synth_succeeded"] += 1
+                self._verdict[dig] = "warm"    # worker wrote the artifact (R63d)
             elif status == STATUS_FAILED:
                 self._stats["synth_failed"] += 1
+                self._verdict[dig] = "failed"  # negative cache entry (R65)
             self._stats["circuits_synthesizing"] = len(self._synthesizing)
 
     def poll(self) -> None:
@@ -160,6 +168,7 @@ class ResidencyManager:
             # than raising into the caller.
             self._cache.put_failure(key, "generator could not lower pattern")
             self._stats["synth_failed"] += 1
+            self._verdict[dig] = "failed"
             return
         service = self._ensure_service()
         if service.submit(key, job):
@@ -236,6 +245,28 @@ class ResidencyManager:
                 return TIER_SYNTHESIZING
             return TIER_COLD
 
+    def _fs_verdict(self, key: BitstreamKey, dig: str) -> str:
+        """Memoized persistent verdict for a key: ``"cold"``/``"warm"``/``"failed"``.
+
+        Hits the filesystem (``is_failed`` + ``has``) only on the first lookup of
+        a key; thereafter the in-memory memo is authoritative, kept current by the
+        state transitions this manager owns under the RLock (synthesis completion
+        -> warm/failed, generator-gap/timeout -> failed).  Keeps the hot
+        reused-pattern dispatch path off the filesystem while staying behaviorally
+        identical to reading the cache each call.
+        """
+        v = self._verdict.get(dig)
+        if v is not None:
+            return v
+        if self._cache.is_failed(key):
+            v = "failed"
+        elif self._cache.has(key):
+            v = "warm"
+        else:
+            v = "cold"
+        self._verdict[dig] = v
+        return v
+
     # -- the router-facing step (R51 step 5, amended) ----------------------
     def note_eligible_dispatch(self, pattern, flags: int = 0,
                                enc: Optional[int] = None) -> str:
@@ -254,7 +285,8 @@ class ResidencyManager:
             dig = key_digest(key)
             self.poll()
 
-            if self._cache.is_failed(key):
+            verdict = self._fs_verdict(key, dig)   # memoized (no per-call stat)
+            if verdict == "failed":
                 return ROUTE_PERMANENT_FALLBACK
 
             self._counts[dig] = self._counts.get(dig, 0) + 1
@@ -266,7 +298,7 @@ class ResidencyManager:
                 return ROUTE_RESIDENT
 
             # Warm artifact present: promote to resident (mock PR load, R4/R64).
-            if self._cache.has(key):
+            if verdict == "warm":
                 if self._promote_to_resident(key, dig):
                     return ROUTE_RESIDENT
                 return ROUTE_NOT_RESIDENT
@@ -305,6 +337,7 @@ class ResidencyManager:
         with self._lock:
             self._counts.clear()
             self._prewarmed.clear()
+            self._verdict.clear()
             for k in self._stats:
                 self._stats[k] = 0
 

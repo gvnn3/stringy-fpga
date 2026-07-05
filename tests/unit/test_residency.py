@@ -6,6 +6,9 @@ thrashing (R64); synthesis failure -> permanent fallback with correct counters
 (R65/R66); NOT_RESIDENT/SYNTH are ordinary routing outcomes (AC-1-6).
 """
 
+import pathlib
+import time
+
 import pytest
 
 import pyro.hdl as hdl
@@ -117,6 +120,49 @@ def test_failure_persists_and_is_not_retried(manager_factory):
         assert mgr.note_eligible_dispatch(
             "bad2[0-9]+", 0, ENC) == ROUTE_PERMANENT_FALLBACK
     assert mgr.stats()["synth_launched"] == 1
+
+
+# --- R63e: a hung synthesis is reaped -> permanent fallback (R65/R66) -------
+def test_hung_synthesis_becomes_permanent_fallback(manager_factory):
+    # Toolchain latency far exceeds the per-job timeout, so the job never reports
+    # back before the client reaps it (models a hung real worker).  The reap MUST
+    # unstick the synthesizing gauge, count synth_failed, and make the key a
+    # permanent fallback that is not re-synthesizable.
+    mgr = manager_factory(n_synth=1,
+                          config=ToolchainConfig(latency=30.0))
+    mgr._timeout = 0.02   # tiny per-job timeout for the (lazily created) service
+    assert mgr.note_eligible_dispatch("hung[0-9]+", 0, ENC) == ROUTE_SYNTH
+    assert mgr.stats()["circuits_synthesizing"] == 1        # gauge set
+    procs = list(mgr._service._procs)
+    time.sleep(0.05)                                        # pass the deadline
+    mgr.poll()                                              # triggers the reap
+    assert mgr.tier("hung[0-9]+", 0, ENC) == TIER_FALLBACK_ONLY
+    s = mgr.stats()
+    assert s["synth_failed"] == 1
+    assert s["circuits_synthesizing"] == 0                  # gauge unstuck
+    assert mgr.note_eligible_dispatch(
+        "hung[0-9]+", 0, ENC) == ROUTE_PERMANENT_FALLBACK   # not re-synthesized
+    assert s["synth_launched"] == 1
+    mgr.reset()                                             # terminates the worker
+    assert all(not p.is_alive() for p in procs)            # no zombie
+
+
+# --- Minor 2: hot reused-pattern dispatch does not re-stat the filesystem ---
+def test_second_dispatch_is_memoized_no_fs_stat(manager_factory, monkeypatch):
+    mgr = manager_factory(n_synth=1000)   # high threshold: stays cold, no launch
+    calls = {"n": 0}
+    real_is_file = pathlib.Path.is_file
+
+    def counting_is_file(self):
+        calls["n"] += 1
+        return real_is_file(self)
+
+    monkeypatch.setattr(pathlib.Path, "is_file", counting_is_file)
+    mgr.note_eligible_dispatch("memo[0-9]+", 0, ENC)       # first: reads the fs
+    assert calls["n"] > 0
+    calls["n"] = 0
+    mgr.note_eligible_dispatch("memo[0-9]+", 0, ENC)       # second: memoized
+    assert calls["n"] == 0, "second dispatch of a memoized key must not stat the fs"
 
 
 # --- R66 stats shape + monotonicity ----------------------------------------
