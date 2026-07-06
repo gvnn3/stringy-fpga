@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.2.4
+- **Version:** 2.2.5
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
@@ -1546,6 +1546,21 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     rule (R88). Populates `ToolchainConfig.reference_dcp`. Registered so the residency
     service (constructed from sampled knobs) can reach the substrate artifacts without
     code changes; test/AC harnesses MAY also pass the `ToolchainConfig` fields directly.
+  - `PYRO_PR_EVIDENCE_MANIFEST` (**NEW obligation, v2.2.5**) — filesystem path to a
+    JSON **PR-flow evidence manifest** (a `pyro.synth.Manifest` sidecar) that the
+    operator **asserts was produced by THIS host's PR flow against the
+    currently-configured substrate DCPs** (`PYRO_PR_STATIC_DCP` /
+    `PYRO_PR_REFERENCE_DCP`). It is the **host-observable proxy** for the one R82d
+    conjunct that is otherwise Vivado-only — a passing `pr_verify` (R82c) — and is the
+    evidence the availability probe consumes to flip `pr_flow_present` true (R83a).
+    **No default; fail-loud/fail-closed** — no filesystem scanning to discover it
+    (R70 discipline). Unlike the substrate DCP knobs it does **not** gate a synthesis
+    job, so its absence is **not** a `SynthesisFailed` (R88); instead the availability
+    probe keeps `pr_flow_present` **false** with the R83a canonical reason rather than
+    guessing. Populates `ToolchainConfig.pr_evidence_manifest` (Optional path, default
+    `None`; additive with mock-preserving default, R70a). Registered because the
+    evidence's location is host/operator-specific; test/AC harnesses MAY also pass the
+    `ToolchainConfig` field directly.
   Both device knobs are sampled at the R35a points and carried on the device config
   (R86); the library MUST NOT read them ad hoc. **Spec-fixed (NOT knobs):** the
   expected shell identity `PYRO_SHELL_SPEC16` (`0x0202`, compiled-in per R81), the
@@ -2124,13 +2139,26 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     that produces a genuine loadable partial bitstream with a passing `pr_verify`
     (R82c). The substrate paths are **config-in with no filesystem scanning** (R70
     discipline) and **fail-loud** when a `pr_bitstream` job needs an absent one (R88).
+    Of these four conjuncts, the first three have host-observable proxies (the locked
+    static DCP carries the `pyro_rp` floorplan/`HD.RECONFIGURABLE`/`Pblock`, so its
+    presence/readability attests both the static substrate and the floorplan; the
+    reference routed DCP's presence/readability attests the `pr_verify` reference); the
+    **fourth** — a flow that actually produced a genuine loadable partial with a
+    **passing `pr_verify`** — has **no** host-observable proxy except a manifest the
+    flow emitted. The spec-named host-observable evidence of that conjunct is therefore
+    the **`PYRO_PR_EVIDENCE_MANIFEST`** (R68) manifest asserting
+    `payload_kind == "pr_bitstream"` with `pr_verified == true`, consumed by the
+    availability predicate R83a.
 
 - **R83 (R71 predicate-flip semantics + canonical SKIP string — normative,
   supersedes the v2.1.3 literal).** Amends R71's dispositions with the exact
   flip conditions and the canonical SKIP reason:
   - **`pr_flow_present` flips true** iff the R82d artifacts are all present and
-    validated on the host. While any is absent it is **false** and clauses requiring
-    it SKIP with reason `pr_flow_present=false — <first missing R82d artifact>`.
+    validated on the host, made **host-observable** by the concrete evidence predicate
+    **R83a** (v2.2.5). While any condition is unmet it is **false** and clauses
+    requiring it SKIP with the R83a canonical reason
+    `pr_flow_present=false — <first unmet R83a condition>` (this **supersedes** the
+    earlier placeholder `<first missing R82d artifact>` wording).
   - **`device_usable` flips true** iff **both**: (i) a **live probe** sends
     `ID_REQUEST` and receives a valid `ID_REPLY` whose `static_shell_id` satisfies
     the R81 `SPEC16` check within `PYRO_PROBE_TIMEOUT` (R84); **and** (ii) transport
@@ -2142,7 +2170,7 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     1. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)`
     2. `transport: CAP_NET_RAW absent`
     A clause requiring `device_usable ∧ pr_flow_present` appends
-    `; pr_flow_present=false — <first missing R82d artifact>` when that predicate is
+    `; pr_flow_present=false — <first unmet R83a condition>` when that predicate is
     also false. This **supersedes** the fixed v2.1.3 literal
     (`… no loadable PR artifact …, no PYRO transport …, full reprogram needs root
     PCIe-rescan cooperation`); the enumeration now reflects the *actual* probe
@@ -2151,6 +2179,78 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     (PR shell not yet flashed; `CAP_NET_RAW` not granted).
   - A **SKIP is never PASS**; a device clause PASSes only from real execution against
     a probe-confirmed `device_usable == true` (R71 honesty, unchanged).
+
+- **R83a (`pr_flow_present` evidence predicate — normative, v2.2.5).** R83's first
+  bullet said `pr_flow_present` flips true when the R82d artifacts are "present and
+  validated on the host," but the decisive validation — a **passing `pr_verify`**
+  (R82c) — is a Vivado-only fact with no host-observable trace of its own. This
+  sub-clause gives the availability probe the **exact, host-observable predicate** it
+  MUST implement so it stops reporting a conservative `false` on a host where the full
+  PR flow demonstrably works. `pr_flow_present == true` **iff all** of the following
+  hold, evaluated in this **fixed order** (the first that fails is the one named in the
+  canonical `pr_flow_present=false — …` reason):
+  1. **static DCP** — `ToolchainConfig.static_dcp` is configured (from
+     `PYRO_PR_STATIC_DCP`, R68) **and** the path exists and is readable (attests the
+     R82b locked static substrate **and** the R80/`pyro_rp` floorplan it carries).
+     Else: `static DCP not configured/unreadable (PYRO_PR_STATIC_DCP)`.
+  2. **reference DCP** — `ToolchainConfig.reference_dcp` is configured (from
+     `PYRO_PR_REFERENCE_DCP`, R68) **and** the path exists and is readable (attests the
+     R82c `pr_verify` reference). Else:
+     `reference DCP not configured/unreadable (PYRO_PR_REFERENCE_DCP)`.
+  3. **evidence manifest configured** — `ToolchainConfig.pr_evidence_manifest` is
+     configured (from `PYRO_PR_EVIDENCE_MANIFEST`, R68) **and** the path exists and is
+     readable. Else:
+     `evidence manifest not configured/unreadable (PYRO_PR_EVIDENCE_MANIFEST)`.
+  4. **evidence manifest parses** — the file loads via the **R47b-consistency-enforcing
+     loader** `pyro.synth.Manifest.from_json(...)` **without raising** (so a corrupt or
+     internally-inconsistent manifest — one violating
+     `pr_verified == (payload_kind == "pr_bitstream")` — is rejected at this step, not
+     silently accepted). Else: `evidence manifest not parseable`.
+  5. **evidence attests a verified PR bitstream** — the parsed manifest carries
+     **`payload_kind == "pr_bitstream"` and `pr_verified == true`**. (By
+     R47b-consistency these two agree once step 4 succeeds, so either check suffices;
+     the probe checks **both** defensively.) Else:
+     `evidence manifest not pr_verified (no verified pr_bitstream attested)`.
+
+  The predicate does **no filesystem scanning** and reads **no `os.environ`** itself
+  (R70/R5/R35a): all three paths arrive on the `ToolchainConfig` from the R68 knobs
+  sampled at the R35a points. The probe **never raises** for an unmet condition — a
+  missing/unreadable/unparseable/not-`pr_verified` evidence input yields
+  `(false, "pr_flow_present=false — <first unmet condition above>")`, exactly the
+  conservative fail-closed disposition.
+
+  **Honesty rationale (why an operator-asserted manifest is legitimate evidence).** A
+  manifest with `payload_kind == "pr_bitstream"` and `pr_verified == true` can only be
+  emitted by the synthesis service **after** a `pr_verify` pass (R82c), and
+  R47b-consistency makes that claim un-fabricable at the boundary (a hand-edited
+  inconsistent manifest is rejected at `from_json`). It is therefore the **honest
+  host-observable proxy** for the Vivado-only `pr_verify` fact. Naming it via
+  `PYRO_PR_EVIDENCE_MANIFEST` is an **operator act of exactly the same kind** as
+  configuring `PYRO_PR_STATIC_DCP`/`PYRO_PR_REFERENCE_DCP`: the operator asserts "this
+  artifact belongs to this host's currently-configured PR flow." Universalized (Kant),
+  the rule is uniform across all three substrate inputs — the probe trusts operator
+  configuration of file paths and validates what it can machine-check (existence,
+  readability, parse, consistency, the `pr_verified` claim), and asserts nothing it
+  cannot observe. It does **not** claim `device_usable` (a separate live-probe +
+  `CAP_NET_RAW` predicate, R83) and it does **not** silently promote SKIP to PASS.
+
+  **Staleness caveat (SHOULD, not MUST — and why).** The evidence binds to the
+  **currently-configured substrate**: a manifest is only meaningful against the same
+  locked static / reference DCPs it was produced from. Operators **SHOULD** regenerate
+  the evidence manifest (re-run a `pr_bitstream` job → `pr_verify`) **after rebuilding
+  or reflashing the static shell** (a new locked static DCP), because a stale manifest
+  from an older static would misrepresent the current flow. This is an **advisory
+  SHOULD, not an enforced MUST**, for an honesty reason: the host **cannot presently
+  machine-detect staleness** — the manifest's `shell_version` is still the R89
+  **placeholder** (`SHELL_VERSION == 0x0A000001`), not yet the real PR-region identity,
+  so there is nothing to cross-check the evidence against the configured static DCP. A
+  MUST the probe cannot enforce would be dishonest. **Forward path:** when R89 lands and
+  the `pr_bitstream` manifest's `shell_version` becomes the **real PR-region identity**
+  (relatable to `static_shell_id`, R81), R83a gains a machine-checkable sixth
+  condition — `evidence manifest.shell_version` matches the PR-region identity of the
+  configured `static_dcp` — at which point staleness becomes probe-detectable and this
+  SHOULD is promoted to an enforced MUST. That promotion is **deferred** to the R89
+  bump; until then R83a is exactly conditions 1–5.
 
 - **R84 (probe and PR-job timeouts — normative constants).**
   - **`PYRO_PROBE_TIMEOUT = 500 ms`** per `ID_REQUEST` attempt, with **3 attempts**
@@ -2530,6 +2630,42 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.2.5** (2026-07-06) — *`pr_flow_present` evidence predicate (PATCH — one
+  clarification + one additive knob/field), spec-writer.* Closes a real gap the
+  test-developer flagged: R83 flipped `pr_flow_present` true when the R82d artifacts
+  were "present and validated," but the decisive validation — a passing `pr_verify`
+  (R82c) — is **Vivado-only**, so with no host-observable evidence the availability
+  probe stayed conservatively `false` **forever**, even on a host where the full PR
+  flow demonstrably works (this host now has the complete R82d artifact set and the
+  first real `pr_bitstream` job saves its manifest alongside the partial `.bit`). No
+  interface/AC break, no renumbering, frozen invariants untouched (C ABI 2.0.0,
+  `PYROART1`, `SHELL_VERSION 0x0A000001`, `PYRO_SHELL_SPEC16 0x0202`, existing AC
+  numbers).
+  - **R68 knob `PYRO_PR_EVIDENCE_MANIFEST` (NEW, additive).** No-default,
+    fail-closed/no-scanning path to a `pyro.synth.Manifest` JSON sidecar the operator
+    asserts THIS host's PR flow produced against the currently-configured substrate
+    DCPs. Populates `ToolchainConfig.pr_evidence_manifest` (Optional, default `None`,
+    mock-preserving per R70a). Unlike the substrate DCP knobs it gates the availability
+    **report**, not a job, so its absence keeps `pr_flow_present` false (R83a), **not**
+    a `SynthesisFailed` (R88). Amended R82d to name it as the host-observable proxy for
+    the fourth R82d conjunct (a flow with a passing `pr_verify`).
+  - **R83a (NEW sub-clause — the `pr_flow_present` evidence predicate).** Spells out
+    the exact host-observable predicate the probe MUST implement: `pr_flow_present ==
+    true` iff (1) `static_dcp` configured+readable, (2) `reference_dcp`
+    configured+readable, (3) `pr_evidence_manifest` configured+readable, (4) it parses
+    via the R47b-consistency-enforcing `Manifest.from_json`, and (5) it carries
+    `payload_kind == "pr_bitstream"` **and** `pr_verified == true` — evaluated in that
+    fixed order, the first failure naming the canonical reason. Fail-closed, never
+    raises, no env reads/scanning. States the **honesty rationale** (an operator
+    asserting an un-fabricable, boundary-validated manifest is the same Kant-universal
+    act as configuring the DCP paths) and the **staleness caveat** as an advisory
+    **SHOULD** (regenerate after reflashing the static shell) — deliberately not a MUST
+    because staleness is not yet machine-detectable (manifest `shell_version` is still
+    the R89 placeholder); the SHOULD is promoted to an enforced MUST under the R89 bump
+    that makes `shell_version` the real PR-region identity.
+  - **R83 wording.** Updated R83's first bullet and its combined-enumeration append to
+    reference the R83a canonical reason `pr_flow_present=false — <first unmet R83a
+    condition>`, superseding the placeholder `<first missing R82d artifact>` literal.
 - **2.2.4** (2026-07-06) — *`pr_bitstream`-mode dispositions (PATCH — clarifications +
   additive config fields/knobs), spec-writer.* Six gaps from the PR-flow
   implementation round (RP-child wrapper generator + `VivadoToolchain` PR flow); no
