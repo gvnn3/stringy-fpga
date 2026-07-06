@@ -239,8 +239,11 @@ def _stub_payload(job: SynthJob) -> bytes:
 # to SynthesisFailed; run() never lets any other exception escape (R63e/R65).
 
 # report_utilization row parsers ("| CLB LUTs | 197 | ..." style tables).
-_RE_CLB_LUTS = re.compile(r"^\|\s*CLB LUTs\s*\|\s*(\d+)\s*\|", re.MULTILINE)
-_RE_CLB_FFS = re.compile(r"^\|\s*CLB Registers\s*\|\s*(\d+)\s*\|", re.MULTILINE)
+# 2025.2 renders the row as "CLB LUTs*" (footnote asterisk) in both flat and
+# -cells-scoped reports (verified empirically on this host, W3-b); the marker
+# is absent in other configurations, so it is optional here.
+_RE_CLB_LUTS = re.compile(r"^\|\s*CLB LUTs\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
+_RE_CLB_FFS = re.compile(r"^\|\s*CLB Registers\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
 # WNS marker emitted by the flow tcl.  Vivado's `format %.4f` guarantees a plain
 # fixed-point decimal ("PYRO_METRIC:WNS:2.4050"), so no exponent/odd formatting
 # can slip past this regex; the sentinel "NONE" (no setup timing paths) is
@@ -340,12 +343,17 @@ class VivadoToolchain:
         "set _fh [open pr_verify.rpt r]\n"
         "set _rpt [read $_fh]\n"
         "close $_fh\n"
-        "if {[regexp -nocase "
-        "{critical warning|not compatible|incompatible|mismatch|differ|fail} "
+        # W6-b: anchored tokens mirroring _RE_PR_VERIFY_FAIL/_RE_PR_VERIFY_OK —
+        # a passing report's "Number of differences found: 0" / "PASSED" must
+        # not be rejected; nonzero counts and real failure statements must be.
+        "if {[regexp -nocase -line "
+        "{critical\\s+warning|\\mnot\\s+compatible\\M|\\mincompatible\\M"
+        "|\\mfailed\\M(?!\\s*:\\s*0)"
+        "|^\\s*ERROR[: ]|(?:differences|mismatches)[^:\\n]*:\\s*[1-9]} "
         "$_rpt]} {\n"
         "    error \"PYRO_PR: pr_verify report has failure/critical tokens (R82c)\"\n"
         "}\n"
-        "if {![regexp -nocase {compatible} $_rpt]} {\n"
+        "if {![regexp -nocase {\\mcompatible\\M|\\mpassed\\M} $_rpt]} {\n"
         "    error \"PYRO_PR: pr_verify report lacks compatibility confirmation (R82c)\"\n"
         "}\n"
         "puts \"PYRO_METRIC:PR_VERIFY:PASS\"\n"
@@ -724,10 +732,18 @@ class VivadoToolchain:
 
 
 # W6: pr_verify report failure/critical tokens and the required compatibility token.
+# W6-b: failure tokens are word/line-anchored so that a PASSING report's
+# benign phrasing ("Number of differences found: 0", "No mismatches found",
+# "pr_verify: PASSED") is not rejected, while any real failure statement,
+# nonzero difference/mismatch count, or ERROR/CRITICAL line still is.
+# ("incompatible" cannot satisfy the OK pattern: \bcompatible\b has no word
+# boundary inside "incompatible".)  Final phrasing check against live
+# pr_verify output remains a release gate for the first real PR job.
 _RE_PR_VERIFY_FAIL = re.compile(
-    r"critical warning|not compatible|incompatible|mismatch|differ|fail",
-    re.IGNORECASE)
-_RE_PR_VERIFY_OK = re.compile(r"compatible", re.IGNORECASE)
+    r"critical\s+warning|\bnot\s+compatible\b|\bincompatible\b|\bfailed\b(?!\s*:\s*0\b)"
+    r"|^\s*ERROR[: ]|(?:differences|mismatches)[^:\n]*:\s*[1-9]",
+    re.IGNORECASE | re.MULTILINE)
+_RE_PR_VERIFY_OK = re.compile(r"\bcompatible\b|\bpassed\b", re.IGNORECASE)
 
 
 def _validate_pr_verify_report(path: str) -> None:
