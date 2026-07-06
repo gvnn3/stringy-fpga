@@ -65,6 +65,21 @@ _ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
              "PYRO_PR_EVIDENCE_MANIFEST")
 
 
+# --------------------------------------------------------------------------
+# Toolchain-env leak containment (test-isolation hygiene).
+# phase2_support.toolchain_present() PINS PYRO_TOOLCHAIN=vivado / PYRO_VIVADO into
+# os.environ (a raw persistent write, needed so out-of-process synth workers select the
+# real OOC adapter). It is called from the SESSION-scoped `vivado_corpus` fixture, which
+# is set up BEFORE the function-scoped `pyro_isolation` fixture for the first requesting
+# test — so pyro_isolation captures the ALREADY-pinned 'vivado' as its per-test baseline
+# and "restores" to 'vivado', letting the pin outlive the suite and leak into tests/unit
+# in a combined `pytest tests/acceptance tests/unit` run (mock-expecting unit tests then
+# launch real Vivado synth). We snapshot the PRISTINE toolchain selection at conftest
+# import (before any fixture can pin it) and force these two keys back to it in every
+# pyro_isolation teardown, so the pin can never survive past the test that set it.
+_PRISTINE_TOOLCHAIN = {k: os.environ.get(k) for k in ("PYRO_TOOLCHAIN", "PYRO_VIVADO")}
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "perf: performance / routing-overhead tests (AC-0-6, R3a/R5)"
@@ -111,6 +126,14 @@ def pyro_isolation():
         _safe(lambda: pyro.testing.reset())  # never leak injected faults
         _safe(pyro.uninstall)
         for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        # Defeat the polluted-baseline ordering bug: force the toolchain-selection keys
+        # back to the PRISTINE session snapshot (not the possibly-vivado-pinned per-test
+        # baseline) so a session-fixture pin never outlives its test or leaks to tests/unit.
+        for k, v in _PRISTINE_TOOLCHAIN.items():
             if v is None:
                 os.environ.pop(k, None)
             else:
