@@ -135,6 +135,13 @@ _HW_SERVER = _HW_SERVER_DEFAULT
 # Unset here => None; the residency service passes them through to the worker.
 _PR_STATIC_DCP = None
 _PR_REFERENCE_DCP = None
+# R68 PR-evidence knob (v2.2.5) — PYRO_PR_EVIDENCE_MANIFEST ->
+# ToolchainConfig.pr_evidence_manifest: a Manifest JSON the operator asserts
+# this host's PR flow produced against the configured substrate (R82d proxy for
+# the passing-pr_verify conjunct).  No default; gates the R83a availability
+# report only, never a job (absence => pr_flow_present stays false, not
+# SynthesisFailed).
+_PR_EVIDENCE_MANIFEST = None
 
 
 def _parse_n_synth(raw):
@@ -157,6 +164,7 @@ def sample_env() -> None:
     """
     global _ENV, _TEST_HOOKS, _N_SYNTH, _TOOLCHAIN, _VIVADO_DIR
     global _DEVICE_IFACE, _HW_SERVER, _PR_STATIC_DCP, _PR_REFERENCE_DCP
+    global _PR_EVIDENCE_MANIFEST
     with _ENV_LOCK:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
@@ -181,6 +189,9 @@ def sample_env() -> None:
         _PR_STATIC_DCP = _psd if _psd else None
         _prd = os.environ.get("PYRO_PR_REFERENCE_DCP")
         _PR_REFERENCE_DCP = _prd if _prd else None
+        # R68 PR-evidence knob (v2.2.5): no default; availability-report only.
+        _pem = os.environ.get("PYRO_PR_EVIDENCE_MANIFEST")
+        _PR_EVIDENCE_MANIFEST = _pem if _pem else None
     # Push the freshly-sampled launch threshold onto the live residency manager
     # (R68).  Done outside the _ENV_LOCK and only if the synth subsystem is
     # already imported, so package init / the fallback hot path never pull it in.
@@ -235,6 +246,13 @@ def pr_substrate_dcps():
     an absent path, R88).  Sampled only at R35a points; read by
     :mod:`pyro.synth.residency` when it builds the worker's ToolchainConfig."""
     return (_PR_STATIC_DCP, _PR_REFERENCE_DCP)
+
+
+def pr_evidence_manifest():
+    """Cached PYRO_PR_EVIDENCE_MANIFEST path (R68/R83a, v2.2.5); ``None`` when
+    unset.  Evidence for the R83a pr_flow_present predicate only — never
+    consumed by a synthesis job.  Sampled only at R35a points."""
+    return _PR_EVIDENCE_MANIFEST
 
 
 # Sample once at first import of this module (R35a.1: package initialization).

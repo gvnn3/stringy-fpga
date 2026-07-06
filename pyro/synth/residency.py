@@ -465,7 +465,8 @@ def _effective_toolchain_config() -> ToolchainConfig:
         # host) they pass through as None and any pr_bitstream request fails loud.
         static_dcp, reference_dcp = _route.pr_substrate_dcps()
         return ToolchainConfig(kind="vivado", vivado_dir=vivado_dir,
-                               static_dcp=static_dcp, reference_dcp=reference_dcp)
+                               static_dcp=static_dcp, reference_dcp=reference_dcp,
+                               pr_evidence_manifest=_route.pr_evidence_manifest())
     return ToolchainConfig()
 
 

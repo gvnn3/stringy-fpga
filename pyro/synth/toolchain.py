@@ -139,6 +139,10 @@ class ToolchainConfig:
     pr_bitstream: bool = False        # R88: request the R82 pr_bitstream flow
     static_dcp: Optional[str] = None  # R82b/R88 locked static DCP (linking substrate)
     reference_dcp: Optional[str] = None  # R82c/R82d/R88 reference routed DCP for pr_verify
+    # R68/R83a (v2.2.5) evidence-manifest path: consulted ONLY by the R83a
+    # pr_flow_present availability predicate, never by a synthesis job; absence
+    # keeps the report false rather than failing anything.
+    pr_evidence_manifest: Optional[str] = None
     rp_cell: str = "pyro_rp"          # reconfigurable-partition cell name (R80 boundary)
     # R84 (v2.2.4) names BOTH per-job timeout fields: job_timeout_s (OOC, 1800 s,
     # R77) above and pr_job_timeout_s (PR, 3600 s) here; the adapter selects the PR
