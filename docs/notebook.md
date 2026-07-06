@@ -17,14 +17,113 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-2. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-3. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-4. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+2. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+3. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+4. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+5. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 
 ---
 
-# EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration :complete:
+# EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial :complete:
+
+## 1. Hypothesis
+
+Can PYRO build a partial-reconfiguration-enabled OpenNIC shell for the Alveo
+U250 and, against its locked static checkpoint, generate a genuine per-pattern
+**partial bitstream** that closes timing and passes `pr_verify` — flipping the
+R71/R83a `pr_flow_present` predicate true on honest, host-observable evidence?
+
+## 2. How
+
+- **Equipment:** Alveo U250 (xcu250-figd2104-2L-e), owner's board at PCI af:00.0;
+  host 72-core, 376 GB RAM, Ubuntu 24.04 / glibc 2.39.
+- **Software:** Vivado **2025.2** (`/usr/local/cad/2025.2/Vivado`, re-pinned from
+  2023.1 which segfaults at batch exit on this glibc — spec v2.2.1); open-nic-shell
+  @ ce85c8d + `pyro` plugin (reconfigurable partition `pyro_rp`, Pblock
+  `CLOCKREGION_X5Y7:X5Y8`); CMAC license permanent through 2027.06.
+- **Flow:** full DFX — baseline shell build, then static synth + `link` (opt/place/
+  route → routed + **locked** static DCP, full flash `.bit`/`.mcs`, ID-stub partial),
+  then the `VivadoToolchain` `pr_bitstream` mode against the locked substrate.
+
+### Key commands
+
+```bash
+# PR shell (detached, ~2 h): static synth + DFX link
+vivado -mode batch -source build_pr.tcl -tclargs -stage link -board au250 \
+  -tag pyro_pr -jobs 32 -reference 1
+# First real per-pattern partial via the toolchain PR mode
+PYRO_TOOLCHAIN=vivado PYRO_VIVADO=/usr/local/cad/2025.2/Vivado \
+PYRO_PR_STATIC_DCP=.../pr/pyro_static_locked.dcp \
+PYRO_PR_REFERENCE_DCP=.../pr/pyro_static_id_stub_routed.dcp \
+  python3 first_pr_job.py     # pattern 'ab+c'
+# R83a availability probe with the evidence manifest
+PYRO_PR_EVIDENCE_MANIFEST=.../patterns/pattern_a7cb950cc8624276_manifest.json \
+  python3 -c "import phase2_support as p; print(p.pr_flow_present())"
+```
+
+## 3. Observations
+
+PR shell (ID-stub reference config) and first pattern partial (`ab+c`):
+
+| Artifact | Result |
+|----------|--------|
+| Baseline shell (2025.2 port) | 0 errors, `.bit`+routed DCP+`.mcs` |
+| PR static, timing | **WNS +0.031 ns**, all constraints met |
+| Locked static DCP | 101 MB, `lock_design -level routing` |
+| Pattern `ab+c` partial | **1,752,132 B**, `pr_verify` = **compatible** |
+| Pattern partial, timing | met, **fmax 251.95 MHz** (> 250 target) |
+| RP-child resources | **3131 LUT / 1592 FF / 3 BRAM** (0.18 % device) |
+| `pr_flow_present` probe | **True** on the real evidence manifest |
+
+RP-child wrapper size, before vs after the RAM reworks:
+
+| Version | LUT | FF | OOC synth | Routes? |
+|---------|-----|-----|-----------|---------|
+| Byte-array buffers | ~7204 | ~13709 | **50+ min (timeout)** | no |
+| Beat-wide RAM buffers | 7204 | 13709 | 59 s | plateau ~34k overlaps |
+| + match store → BRAM, hdr snapshot | **3131** | **1592** | **45 s** | **0 overlaps, closes** |
+
+## 4. Data analysis
+
+The end-to-end PR path works: a per-pattern circuit becomes a routed,
+`pr_verify`-passing partial bitstream against the locked static, and the
+resulting `pr_bitstream`/`pr_verified` manifest is the sole host-observable,
+un-fabricable evidence (R47b-consistency rejects inconsistent manifests) that
+flips `pr_flow_present` true (R83a).
+
+Two synthesis/routing pathologies gated the result, both the same root cause —
+storage expressed as flip-flops instead of memory. (1) A 1536-byte frame buffer
+with 64 write ports could not infer as RAM (12 k flops + decode) → 50-min synth;
+fixed with beat-wide single-write-port word arrays. (2) A 61×192-bit match
+capture in parallel flops (~11.7 k FF) plus contained-routing pressure in a
+2-clock-region DFX Pblock → routing plateaued at ~34 k overlaps; fixed by moving
+the capture to block RAM, which then forced a beat-0 header-snapshot register to
+keep the frame buffers RAM-inferable. Net **9× FF reduction** (13709 → 1592)
+took utilization to ~0.2 % and routing closed immediately. Every wire byte
+stayed identical across both reworks (xsim 5/5). The estimator predicts only the
+engine (288 LUT); the wrapper's fixed parser/buffer/capture overhead dominates —
+a calibration input for Phase 3.
+
+Toolchain robustness also validated on real output: the `pr_verify` gate
+correctly accepts "compatible / Number of differences : 0" while rejecting real
+failures (W6-b), and the RM-scoped `report_utilization -cells` regex handles the
+2025.2 "CLB LUTs*" footnote (W3-b). One flow bug fixed: the RP cell must be
+located by `HD.RECONFIGURABLE` (its ref-name is gone once black-boxed in the
+locked DCP) and re-queried by immutable NAME after each netlist mutation.
+
+## 5. Ideas for future experiments
+
+- Flash the PR shell via JTAG and perform the one root-assisted PCIe rescan to
+  flip `device_usable` true; run the on-device ACs live (AC-2b-2/2b-3).
+- Load the `ab+c` partial into `pyro_rp` over JTAG (R85) on the live board and
+  drive a MATCH_REQUEST end-to-end over the onic netdev.
+- Feed measured RP-child utilization back into the estimator (R74a): model the
+  fixed wrapper overhead separately from the per-pattern engine.
+- Multi-pattern residency: exercise R87 slot ≥ 2 once a multi-partition shell
+  floorplan exists.
+
+---
 
 ## 1. Hypothesis
 
