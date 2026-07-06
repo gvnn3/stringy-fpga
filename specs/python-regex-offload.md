@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.2.2
+- **Version:** 2.2.3
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
@@ -908,6 +908,16 @@ synthesis time and identified via the identity block (R47a).
     **independent, observable seam** for `pr_verify` success (closing the AC-2b-3
     observability gap: tests read `pr_verified` directly rather than inferring it from
     `payload_kind`).
+  - **R47b-consistency (defense-in-depth — normative, v2.2.3).** The consistency
+    invariant `pr_verified == (payload_kind == "pr_bitstream")` (R82c) is enforced
+    **at the boundary, not only by the producer**: the `pyro.synth.Manifest`
+    constructor **and** `Manifest.from_json(...)` MUST **reject** an inconsistent
+    manifest by raising a defined exception (a `ValueError`/`pyro.synth` manifest
+    error), rather than silently accepting it. This is back-compat safe: every
+    pre-v2.2.2 on-disk manifest is `mock_stub`/`ooc_metrics` with `pr_verified`
+    absent→`false`, which satisfies the invariant. Chosen over a producer-only
+    obligation so a corrupt or hand-edited manifest cannot enter the system; consumers
+    additionally remain entitled to reject on load (R47b/R82c).
   Before a PR load (R40 `pyro_circuit_load`), the host MUST verify the manifest's
   shell/PR-region identifier matches the live device, the bitstream integrity
   hash, and the R47a identity; on any of these failing it MUST refuse the load
@@ -1742,8 +1752,9 @@ clauses, the flashed PR shell and validated PR flow (P1).
 - **AC-2b-1.** The host-side control-frame codec `pyro.device.encode_frame`/
   `decode_frame` (R78/R86) round-trips the **normative test vectors** byte-for-byte
   on their PYRO-header-onward portion (R78 frame offset 14+): encoding an
-  `ID_REQUEST`, a `MATCH_REQUEST`, an `ID_REPLY`, and a `MATCH_REPLY` from their
-  field values produces **exactly** the R78.10 bytes, and decoding those bytes
+  `ID_REQUEST`, a `MATCH_REQUEST`, an `ID_REPLY`, a `MATCH_REPLY`, and a
+  `STATUS`/`ERROR` (R78.10(a)–(e)) from their field values produces **exactly** the
+  R78.10 bytes, and decoding those bytes
   recovers **exactly** the R78-named fields (big-endian PYRO header; little-endian
   embedded `pyro_match` entries in `MATCH_REPLY`). The codec MUST raise
   `PyroFrameError` (R86.1) on a frame whose `length` exceeds the MTU bound
@@ -1901,7 +1912,8 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     `pyro_status` value, R38) followed by optional UTF-8 diagnostic text
     (`N = length − 4`). A device that receives a `MATCH_REQUEST` for a `slot` that is
     not resident (e.g. the default ID stub) MUST reply `STATUS`/`ERROR` with
-    `code = PYRO_E_NOT_RESIDENT` (7); the host then falls back (R51).
+    `code = PYRO_E_NOT_RESIDENT` (7); the host then falls back (R51). The normative
+    wire vector for this exact reply is R78.10(e).
   - **R78.9 (MTU, minimum length, padding).** The **total** Ethernet frame
     (`dst+src+ethertype + 14B PYRO header + payload + 4B FCS`) MUST NOT exceed
     **1518** bytes; equivalently the PYRO `length` (payload) MUST be **≤ 1486**. A
@@ -1959,6 +1971,21 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     ```
     (84 bytes; `length = 0x38 = 56`. This round-trip — (c)→(d) — is the normative
     `MATCH` vector for AC-2b-1.)
+
+    **(e) `STATUS`/`ERROR`** (device → host; the exact reply the **default RP child
+    (R80) ID stub** produces to the `MATCH_REQUEST` (c) — no pattern resident, so
+    `code = PYRO_E_NOT_RESIDENT = 7`; echoes `slot = 1`, `seq = 2`; no diagnostic
+    text, `length = 4`):
+    ```
+    02 00 00 00 00 01  02 00 00 00 00 02  88 B5
+    50 01 05 00  00 01  00 00 00 02  00 04  00 00
+    00 00 00 07                                      ; payload: code = PYRO_E_NOT_RESIDENT (7, BE)
+    ```
+    (32 meaningful bytes; zero-padded to 60 on the wire. The exchange (c)→(e) is the
+    normative `STATUS`/`ERROR` vector for AC-2b-1 and for the RP-child xsim testbench;
+    it is byte-consistent with (c) by MAC-swap, `slot`/`seq` echo, and `kind = 0x05`.
+    A `STATUS`/`ERROR` frame MAY carry UTF-8 diagnostic text after `code` (R78.8); the
+    ID stub emits none, so this vector's `length` is exactly `4`.)
 
 - **R79 (frame parsing lives inside `pyro_rp`).** The PYRO control-frame parser and
   responder are implemented **inside the reconfigurable partition `pyro_rp`**
@@ -2050,7 +2077,9 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     passed, and `pr_verified` MUST be consistent with `payload_kind` (`true` exactly
     when `payload_kind == "pr_bitstream"`; `false`/absent for `mock_stub` and
     `ooc_metrics`). This gives tests a specced seam to verify `pr_verify` ran without
-    inferring it from `payload_kind` alone (AC-2b-3).
+    inferring it from `payload_kind` alone (AC-2b-3). The `pr_verified`/`payload_kind`
+    consistency is enforced defensively at manifest construction and `from_json`
+    (R47b-consistency, v2.2.3), not merely by the producer.
   - **R82d (`pr_flow_present` artifacts).** `pr_flow_present` (R71/R83) is the
     conjunction of: the locked static DCP (R82b) present and validated on the host,
     a `pyro_rp` floorplan (`Pblock` + `HD.RECONFIGURABLE`, R80 boundary), and a
@@ -2224,12 +2253,14 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     made hardware-free-testable via **three private, defaulted `DeviceConfig` seam
     fields** the **test-developer MAY use normatively**:
     - `cap_check: Callable[[], bool]` — overrides the `CAP_NET_RAW` detection
-      (exercises the no-privilege `(False, reason)` path, R86.4);
-    - `transport_factory: Callable[..., Transport]` — supplies a fake frame
-      transport (exercises timeout / `SPEC16`-mismatch / valid-`ID_REPLY` paths
-      without a NIC);
-    - `load_runner: Callable[..., None]` — supplies a fake JTAG runner (exercises
-      `PyroLoadError` / timeout without `hw_server`).
+      (exercises the no-privilege `(False, reason)` path, R86.4); returns `True` iff
+      the caller holds `CAP_NET_RAW`;
+    - `transport_factory: Callable[[DeviceConfig], Transport]` — supplies a frame
+      transport implementing the **R86.7 `Transport` protocol** (exercises timeout /
+      `SPEC16`-mismatch / valid-`ID_REPLY` paths without a NIC);
+    - `load_runner: Callable[..., tuple[int, str]]` — supplies a JTAG runner
+      implementing the **R86.7 `load_runner` contract** (exercises `PyroLoadError` /
+      timeout without `hw_server`).
     Each MUST **default to the real production implementation** so a `DeviceConfig()`
     with no overrides is byte-identical to production behavior (mirroring R63b's mock
     seam and R70a's mock-preserving defaults). These seams need **no**
@@ -2238,6 +2269,31 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     value is the deliberate act. They are the specced way to drive the
     no-privilege / timeout / `SPEC16`-mismatch / load-failure paths of AC-2b-1..2b-3
     without hardware.
+  - **R86.7 (seam callable protocols — normative, v2.2.3).** The seam callables of
+    R86.6 have the following **normative contracts** (converged behaviorally by coder
+    and test-developer; spelled out here so future work needs no rediscovery):
+    - **`Transport` protocol** — the object `transport_factory` returns. It carries
+      **full Ethernet frames including the 14-byte L2 header** (`dst/src/0x88B5`), so
+      it is the layer that prepends/strips the L2 header around the R86.2/R86.3 PYRO
+      portion. Methods:
+      - `send(frame: bytes) -> None` — transmit one complete Ethernet frame
+        (caller supplies the full frame; the transport does not add or remove L2
+        header bytes). Zero-padding to the 60-byte minimum (R78.9) is the transport's
+        responsibility.
+      - `recv(timeout: float) -> bytes | None` — return the next received complete
+        Ethernet frame, or **`None` if no frame arrives within `timeout`** seconds
+        (the sentinel `None` means *no-frame-within-timeout*, distinct from an empty
+        frame). A `None` at each of `probe_attempts` attempts drives the
+        `probe: no valid ID_REPLY` disposition (R84/R86.4).
+      - `close() -> None` — release the transport; idempotent.
+    - **`load_runner` contract** — a callable that runs the JTAG programming step and
+      returns **`(rc: int, output: str)`**, where `rc` is the process exit code and
+      `output` the combined tool log. **A nonzero `rc` MUST map to `PyroLoadError`**
+      (with `output` in the diagnostic message); `rc == 0` is success. A run that
+      exceeds `jtag_load_timeout_s` (R84/R86.5) is a timeout → the process tree is
+      killed and `PyroLoadError` is raised (it need not surface as an `rc`). This
+      keeps `load_partial`'s failure mapping (R86.5) identical whether the real or a
+      fake runner is used.
 
 ---
 
@@ -2377,6 +2433,31 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.2.3** (2026-07-06) — *v2.2.2-round dispositions (PATCH — clarifications + one
+  normative test vector), spec-writer.* Three notes from the `pyro.device`
+  implementation round; no interface/AC break, no renumbering, frozen invariants
+  untouched. Context: the RP ID-stub RTL now exists and passed xsim byte-exact
+  against R78.10(a)/(b) under 2025.2; the AC-2b host suite is committed (74 passed / 2
+  skipped).
+  - **R86.7 (test-dev note 1 — seam callable protocols).** Spelled out the R86.6 seam
+    contracts normatively: the **`Transport` protocol** (`send(frame)` /
+    `recv(timeout) -> bytes | None` with `None` = *no-frame-within-timeout* /
+    `close()`; frames are **full Ethernet frames including the 14-byte L2 header**),
+    and the **`load_runner`** contract (returns `(rc, output)`; **nonzero `rc` maps to
+    `PyroLoadError`**; timeout kills the tree and raises). Fixed `load_runner`'s type
+    from `-> None` to `-> (int, str)` in R86.6.
+  - **R47b-consistency (test-dev note 2 — chose defense-in-depth).** Ruled that the
+    `pr_verified == (payload_kind == "pr_bitstream")` invariant (R82c) MUST be enforced
+    at the boundary: the `pyro.synth.Manifest` constructor **and** `from_json` MUST
+    **reject** inconsistent manifests (raise a defined error), not merely rely on the
+    producer. Back-compat safe (all pre-v2.2.2 manifests satisfy it); consumers still
+    entitled to reject on load. Updated R47b/R82c.
+  - **R78.10(e) (coder-A/RTL note 3 — STATUS/ERROR wire vector).** Added the missing
+    normative test vector: the `STATUS`/`ERROR` `PYRO_E_NOT_RESIDENT` (code 7) reply
+    the default RP child (R80) produces to the R78.10(c) `MATCH_REQUEST` — byte-derived
+    by MAC-swap, `slot`/`seq` echo, `kind = 0x05`, `length = 4`, payload
+    `00 00 00 07`. Wired into R78.8 and AC-2b-1; picked up by both the RP-child xsim
+    testbench and `test_ac2b1_codec.py`.
 - **2.2.2** (2026-07-06) — *`pyro.device` dispositions (PATCH — clarifications +
   small additive fields), spec-writer.* Resolves five coder notes and three
   test-developer notes against v2.2.1's R86; no interface/AC break, no renumbering,
