@@ -851,3 +851,43 @@ This completes the follow-up rulings. This is a clean checkpoint — recommend *
 <usage><subagent_tokens>117622</subagent_tokens><tool_uses>3</tool_uses><duration_ms>36880</duration_ms></usage>
 </task-notification>
 
+## 2026-07-06 02:48:50
+
+<task-notification>
+<task-id>bgtnpa9vg</task-id>
+<tool-use-id>toolu_016csqExeiAhhLM6KUMCPA5m</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/bgtnpa9vg.output</output-file>
+<status>completed</status>
+<summary>Background command "Authoritative full verification: ABI + entire suite including real Vivado tests" completed (exit code 0)</summary>
+</task-notification>
+
+## 2026-07-06 02:52:21
+
+<task-notification>
+<task-id>a12ad3d4156c989d3</task-id>
+<tool-use-id>toolu_0153MLnXCMhGgMcSU4N6samu</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/a12ad3d4156c989d3.output</output-file>
+<status>completed</status>
+<summary>Agent "Tech-writer: Phase 2 toolchain docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>File written correctly, no leftover placeholder.
+
+## Summary
+
+I wrote `/home/gn262/Repos/Yale/stringy-fpga/docs/vivado-toolchain.md`, a new operator's guide for the Phase 2 real Vivado toolchain. No other files were modified, and nothing was committed or pushed.
+
+Content, section by section:
+
+1. **What it does / doesn't** — regex → RTL → Vivado OOC synth+P&amp;R+timing at 250 MHz for `xcu250-figd2104-2L-e`, honest `ooc_metrics` manifest (R72/R73). Explicitly states no PR bitstream, no device load, citing the R71 predicates (`toolchain_present=true`, `pr_flow_present=false`, `device_usable=false`).
+2. **Configuration** — `PYRO_TOOLCHAIN`/`PYRO_VIVADO` (R70, fail-safe default `mock`, no auto-scanning), `PYRO_N_SYNTH`/`PYRO_CACHE_DIR` (R68), R35a sampling discipline, R70b pinning-at-construction rationale, R77 1800 s per-job timeout with the adapter-level process-tree kill, R75/R75a cache-key separation via `toolchain_version` (`0x17010000` for 2023.1 vs mock's `0x00000100`).
+3. **Host prerequisites** — Vivado 2023.1 at `/usr/local/cad/Vivado/2023.1`, the automatic `libtinfo.so.5` shim (confirmed against `pyro/synth/toolchain.py`), minutes-long jobs, `PYRO_CACHE_DIR` artifact location.
+4. **Failure semantics** — R65 permanent fallback, negative cache entry, no exception, observable via `pyro.re.stats()` counters (confirmed key names against `pyro/re.py`), and the `pyro.testing.inject_synth_failure` seam (R67).
+5. **AC-2 ledger table** — all six AC-2 clauses with LIVE/SKIP dispositions and reasons per the R71 matrix, including the R3b/R3c SKIP nuance and R64a model-side eviction note. Suite result 1045 passed, 6 skipped (cross-checked against `docs/notebook.md`, which also confirms the 4.77× routing-ratio figure).
+6. **Calibration data table** — the six measured patterns with LUT/FF counts, all `met_timing == true`, plus the estimator constants (256 LUT base + 4/state + 2/edge; 448 FF base + 1/state) and the R74 margin explanation including the empty-success-set SKIP rule.
+
+Spec citations used: R1–R5, R14a-adjacent None, R35a/b, R47b, R51b, R52, R63–R77 (all), R51-related AC-2-1..6, §11 P1, and the R71 matrix verbatim. I read `pyro/synth/toolchain.py` and `pyro/re.py` only to confirm the libtinfo shim behavior, `VIVADO_JOB_TIMEOUT = 1800.0`, and the `stats()` counter names — not to source any undocumented behavior.
+
+No spec gaps or ambiguities surfaced during this task — R70/R71/R72/R73/R74/R75/R77 were sufficiently precise to write the guide without inventing behavior. One minor observation (not a gap, just a note for whoever maintains `docs/notebook.md`): the notebook's table of contents currently lists only the Phase 0 and Phase 1 experiment entries, not a Phase 2 entry, even though the Phase 2 data (4.77× ratio, 1045/6 suite counts) already appears in the body text — that's a notebook-entry/TOC bookkeeping matter for the parent agent or committer, not something I touched since I was scoped to only create `docs/vivado-toolchain.md`.</result>
+<usage><subagent_tokens>73454</subagent_tokens><tool_uses>21</tool_uses><duration_ms>143774</duration_ms></usage>
+</task-notification>
+

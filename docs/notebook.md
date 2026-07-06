@@ -17,9 +17,102 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-2. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-3. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+2. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+3. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+4. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+
+---
+
+# EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration :complete:
+
+## 1. Hypothesis
+
+Can the Phase-1 mock toolchain be replaced by a real Vivado synthesis flow —
+regex-generated RTL through synth + P&R + timing for the physical board's part —
+and does the resource estimator agree with real post-route utilization within
+the pre-registered R74 margin? Hardware-gated ACs must record SKIP (never PASS)
+since the board is unavailable (spec v2.1.x, R71).
+
+## 2. How
+
+- **Equipment:** Alveo U250 (xcu250-figd2104-2L-e) at PCI 0000:af:00.0/1 running
+  a third-party OpenNIC shell image (onic driver v0.21) — observed only, never
+  touched. Host: Ubuntu (kernel 6.8.0-124), no root, no /dev/qdma*, no OpenNIC
+  PR-partition floorplan.
+- **Software:** Vivado 2023.1 (/usr/local/cad/Vivado/2023.1; needs a
+  libtinfo.so.5→.so.6 shim on this host — the adapter creates its own), CPython
+  3.12.3, spec v2.1.0→v2.1.2 (R70–R77, R3c, R64a, R70b), PYRO ABI 2.0.0 frozen.
+- **Benchmarks:** 6-pattern calibration corpus through OOC synth+P&R at 250 MHz;
+  full acceptance suite AC-0-*..AC-2-* (1051 tests).
+
+### Key commands
+
+```bash
+# probe: which Vivado supports the U250 part with a license
+LD_LIBRARY_PATH=<shim> /usr/local/cad/Vivado/2023.1/bin/vivado -mode batch -source probe.tcl
+
+# real flow, end to end
+PYRO_TOOLCHAIN=vivado PYRO_VIVADO=/usr/local/cad/Vivado/2023.1 \
+  python3 -m pytest tests/acceptance -q -rs
+gmake lib abi-check
+```
+
+## 3. Observations
+
+- Vivado 2019.2 (/tools/Xilinx) has **no UltraScale+ Alveo device support**;
+  2023.1 and 2025.2 both synth+place+route xcu250 cleanly (license OK).
+- The Phase-1 generated RTL (`pyro_circuit`) went through real synthesis
+  **unmodified** — all patterns met 250 MHz timing OOC (WNS +1.7 to +2.4 ns).
+- Real post-route utilization vs (recalibrated) estimator, Vivado 2023.1:
+
+| pattern | states | real LUT | est LUT | real FF | est FF | WNS (ns) |
+|---|---|---|---|---|---|---|
+| `abc` | 4 | 197 | 278 | 427 | 452 | **+2.405** |
+| `[a-z]+[0-9]{2,4}` | 9 | 197 | 304 | 430 | 457 | +1.726 |
+| `(?:GET\|POST\|PUT) /[a-z/]* HTTP` | 24 | 221 | 388 | 441 | 472 | +2.200 |
+| `^ERROR: .*$` | 12 | 226 | 320 | 431 | 460 | +1.884 |
+| `[A-Za-z0-9]{60}` | 62 | 228 | 624 | 484 | 510 | — |
+| `[A-Za-z0-9]{200}` | 202 | **410** | 1464 | **626** | 650 | — |
+
+- The mock-era estimator (base 2000 LUTs/2000 FFs) violated the pre-registered
+  R74 margin on 3 of 4 initial patterns (est/real up to **10.6×** > 10× ceiling);
+  recalibrated constants: **256 LUTs + 4/state + 2/edge; 448 FFs + 1/state**.
+- Full verification: **1045 passed, 6 skipped, 0 failed** (63:41). ABI 2.0.0
+  intact. All 6 skips are R71-mandated, each naming its absent prerequisite.
+- Loss-regime routing measured: median pyro 1225 ns vs stock re 257 ns =
+  **4.77×** relative (R3a absolute ≤ 2 µs bound PASSES; R3b relative 1.15×
+  bound SKIPs per new R3c — routing decision still Python-level).
+
+## 4. Data analysis
+
+The ~200-LUT/~430-FF floor (CSR mux, control FSM, 64-bit offset counters)
+dominates small circuits, which is why the mock-era +2000 base overshot the
+10× honesty ceiling — pre-registering the R74 margin before peeking at data
+did its job by forcing an estimator fix rather than a margin fix. Per-state
+scaling is mild (~1.1 LUT/state real vs 4 estimated conservatively); at
+MAX_STATES=1024 the estimate (~6.4k LUTs) is ≪ the PR budget (216k), so
+MAX_STATES remains the binding eligibility constraint (R12 design intent
+preserved). Phase 2's deliverable ledger: real-toolchain clauses of
+AC-2-1/2-3/2-4 and the model clauses of AC-2-5/2-6 PASS from real execution;
+every PR-bitstream/on-device clause SKIPs honestly (no PR floorplan; board is
+a third-party live NIC). The R3b 4.77× measurement confirms the relative
+loss-regime bound needs the native routing path — now explicitly deferred to
+AC-3-3 (R3c).
+
+## 5. Ideas for future experiments
+
+- Build an OpenNIC shell PR-partition floorplan (needs Vivado 2022.2-era shell
+  sources + a pblock for the 250 MHz user box) to un-SKIP AC-2-1's bitstream
+  clause — requires a board we are allowed to program.
+- Move the §8 R51 routing decision into the L3 native runtime to attack the
+  4.77× → ≤1.15× gap (hard requirement at AC-3-3, Phase 3).
+- Calibrate BRAM once patterns large enough to infer block RAM appear; today's
+  circuits use 0 BRAM (manifest carries the fixed 16 KiB reserve).
+- Richer calibration corpus: bounded-repeat counters and case-folded classes to
+  stress the FF intercept (only ~24 FF headroom above the observed floor).
+- Wall-clock synthesis latency distribution (currently ~4–6 min/pattern OOC) to
+  tune the R77 timeout and the R4a launch threshold for interactive workloads.
 
 ---
 
