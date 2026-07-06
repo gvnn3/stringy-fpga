@@ -65,6 +65,17 @@ class Manifest:
     #   "pr_bitstream" — a genuine loadable partial bitstream (reserved; not
     #                    produced until pr_flow_present becomes true).
     payload_kind: str = "mock_stub"
+    # --- pr_verify seam (R47b/R82c, v2.2.2) --------------------------------
+    # Independent, observable record of Vivado `pr_verify` success (R82c), added
+    # additively with a default that preserves the JSON round-trip exactly like
+    # payload_kind: an on-disk manifest lacking the key deserializes to False.
+    # Invariant (R47b/R82c): pr_verified is True **iff** pr_verify ran and passed
+    # for this artifact — which is exactly when payload_kind == "pr_bitstream".
+    # It MUST be False for "mock_stub" and "ooc_metrics" payloads (neither runs
+    # pr_verify), so both the mock and vivado-OOC construction paths leave the
+    # default False.  Gives AC-2b-3 tests a seam that does not infer pr_verify
+    # success from payload_kind alone.
+    pr_verified: bool = False
 
     # -- (de)serialization --------------------------------------------------
     def to_json(self) -> str:
@@ -77,6 +88,9 @@ class Manifest:
         # R72a: a pre-2.1.0 manifest on disk lacks payload_kind — default it so
         # the JSON round-trip is preserved (missing key => "mock_stub").
         data.setdefault("payload_kind", "mock_stub")
+        # R47b/R82c (v2.2.2): a pre-v2.2.2 manifest lacks pr_verified — default it
+        # False so the round-trip is preserved (missing key => not pr-verified).
+        data.setdefault("pr_verified", False)
         return cls(**data)
 
     # -- host-side checks performed before a PR load (R47b) -----------------

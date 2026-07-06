@@ -114,6 +114,19 @@ _N_SYNTH = None
 _TOOLCHAIN = "mock"
 _VIVADO_DIR = None
 
+# R68 device knobs (v2.2.2) — sampled at the SAME R35a points, never per call.
+# PYRO_DEVICE_IFACE is the onic netdev the R86 device transport binds (default
+# enp175s0f0, F3); PYRO_HW_SERVER is the Vivado hw_server URL the R85/R86.5 JTAG
+# loader connects to (default TCP:localhost:3121).  These are the ONLY two
+# env-sampled device inputs (R68/R86): pyro.device.DeviceConfig reads this cached
+# snapshot for its iface/hw_server field defaults — the device functions
+# themselves never touch os.environ (R5/R35a).  Every other device parameter
+# (SPEC16, R84 timeouts, R78 frame constants) is a spec-fixed constant.
+_DEVICE_IFACE_DEFAULT = "enp175s0f0"
+_HW_SERVER_DEFAULT = "TCP:localhost:3121"
+_DEVICE_IFACE = _DEVICE_IFACE_DEFAULT
+_HW_SERVER = _HW_SERVER_DEFAULT
+
 
 def _parse_n_synth(raw):
     """Validate a PYRO_N_SYNTH value: a positive int, else ``None`` (default)."""
@@ -134,6 +147,7 @@ def sample_env() -> None:
     rebind so in-flight decisions are unaffected (R35d).
     """
     global _ENV, _TEST_HOOKS, _N_SYNTH, _TOOLCHAIN, _VIVADO_DIR
+    global _DEVICE_IFACE, _HW_SERVER
     with _ENV_LOCK:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
@@ -146,6 +160,12 @@ def sample_env() -> None:
         _TOOLCHAIN = "vivado" if _tc == "vivado" else "mock"
         _vd = os.environ.get("PYRO_VIVADO")
         _VIVADO_DIR = _vd if _vd else None
+        # R68 device knobs (v2.2.2): the only two env-sampled device inputs.  An
+        # unset/empty value keeps the spec default (F3 iface, stock hw_server).
+        _di = os.environ.get("PYRO_DEVICE_IFACE")
+        _DEVICE_IFACE = _di if _di else _DEVICE_IFACE_DEFAULT
+        _hs = os.environ.get("PYRO_HW_SERVER")
+        _HW_SERVER = _hs if _hs else _HW_SERVER_DEFAULT
     # Push the freshly-sampled launch threshold onto the live residency manager
     # (R68).  Done outside the _ENV_LOCK and only if the synth subsystem is
     # already imported, so package init / the fallback hot path never pull it in.
@@ -175,6 +195,21 @@ def toolchain_selection():
     at R35a points; read by :mod:`pyro.synth.residency` when it builds the
     residency manager's ToolchainConfig (never on the per-call hot path)."""
     return (_TOOLCHAIN, _VIVADO_DIR)
+
+
+def device_iface():
+    """Cached PYRO_DEVICE_IFACE (R68/v2.2.2), the onic netdev for the device
+    transport (default ``enp175s0f0``).  Sampled only at R35a points; read by
+    :mod:`pyro.device`'s ``DeviceConfig`` for its ``iface`` default — never on the
+    per-call hot path, never via os.environ inside the device functions (R86)."""
+    return _DEVICE_IFACE
+
+
+def hw_server_url():
+    """Cached PYRO_HW_SERVER (R68/v2.2.2), the Vivado hw_server URL for the R85
+    JTAG loader (default ``TCP:localhost:3121``).  Sampled only at R35a points;
+    read by :mod:`pyro.device`'s ``DeviceConfig`` for its ``hw_server`` default."""
+    return _HW_SERVER
 
 
 # Sample once at first import of this module (R35a.1: package initialization).

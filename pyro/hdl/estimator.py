@@ -51,6 +51,14 @@ PR_PARTITIONS = 1  # single-tenant region (R64)
 # Vivado 2023.1 OOC synth+P&R of `pyro_circuit` for the physical U250 part
 # (`xcu250-figd2104-2L-e`), 250 MHz constraint, all met timing:
 #
+# R74a re-validation PENDING (v2.2.1, R70a-pin).  Post-route utilization is
+# toolchain-bound, so this 2023.1-measured (0x17010000) calibration is NOT
+# evidence for the re-pinned Vivado 2025.2 (0x19020000).  The constants are left
+# unchanged deliberately — recalibration under 2025.2 happens later per R74a, and
+# the R4/R75a cache key keeps 2023.1 and 2025.2 artifacts on distinct keys so no
+# stale 2023.1 datum can claim an AC-2-4 PASS under the 2025.2 pin.  Data below is
+# retained as the 2023.1 provenance record, awaiting re-measurement under 2025.2:
+#
 #   pattern                              n_states  byte_edges  real_LUTs  real_FFs
 #   rb"abc"                                     4         3        197       427
 #   rb"[a-z]+[0-9]{2,4}"                        9         6        197       430

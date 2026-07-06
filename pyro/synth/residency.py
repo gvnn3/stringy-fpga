@@ -120,7 +120,7 @@ class ResidencyManager:
     def _toolchain_version(self) -> int:
         """The R4/R47b toolchain_version for the configured kind (R75/R75a).
 
-        mock => 0x00000100, vivado => 0x17010000 (pinned 2023.1).  Because this
+        mock => 0x00000100, vivado => 0x19020000 (pinned 2025.2, R70a-pin).  Because this
         is a component of the R4 bitstream-cache key, a mock artifact and a
         vivado artifact for the same pattern occupy **distinct keys** and never
         collide (R75a) — switching PYRO_TOOLCHAIN never serves a mock stub where

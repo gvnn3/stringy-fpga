@@ -39,14 +39,24 @@ from .manifest import Manifest, payload_crc32
 TOOLCHAIN_VERSION = 0x00000100   # mock toolchain v0.1.0 (packed)
 SHELL_VERSION = 0x0A000001       # OpenNIC target shell / PR-region id (opaque)
 
-# R75: the vivado toolchain's toolchain_version encodes the actual Vivado
-# version, packed (YY << 24) | (RR << 16) | build.  For Vivado 2023.1 this is
-# 0x17010000 (YY=23=0x17, RR=1, build=0).  Used as the R4/R47b cache-key
-# component for the vivado kind, keeping mock (0x00000100) and vivado artifacts
-# on distinct keys (R75a).  The adapter re-derives the concrete value from the
-# tool's own `vivado -version` at run time, but the host-side key needs a static
-# pin, so this constant records the operator-selected install (2023.1).
-VIVADO_TOOLCHAIN_VERSION = 0x17010000
+# R75/R70a-pin: the vivado toolchain's toolchain_version encodes the actual
+# Vivado version, packed (YY << 24) | (RR << 16) | build.  For the pinned
+# **Vivado 2025.2** (R70a-pin, v2.2.1) this is 0x19020000 (YY=25=0x19, RR=2,
+# build=0).  Used as the R4/R47b cache-key component for the vivado kind, keeping
+# mock (0x00000100) and vivado artifacts on distinct keys (R75a).  The adapter
+# re-derives the concrete value from the tool's own `vivado -version` at run time,
+# but the host-side key needs a static pin, so this constant records the pinned
+# install (2025.2).  (The prior 2023.1 pin 0x17010000 is retired: 2023.1 segfaults
+# at batch-process exit on this host's Ubuntu 24.04 / glibc 2.39, corrupting the
+# exit-code integrity R77 relies on — see R70a-pin and the v2.2.1 changelog.)
+VIVADO_TOOLCHAIN_VERSION = 0x19020000
+
+# R70a-pin: the pinned Vivado 2025.2 install directory (normative, v2.2.1).  This
+# records the pinned location for documentation/`load_partial` (R86.5); it is NOT
+# a resolution default for the vivado synth adapter — R70 forbids library-side
+# defaulting/scanning of PYRO_VIVADO, so the adapter still resolves its install
+# dir from the sampled ToolchainConfig.vivado_dir (None => unavailable).
+PINNED_VIVADO_DIR = "/usr/local/cad/2025.2/Vivado"
 
 # R77: default per-job Vivado timeout (30 min); overridable via ToolchainConfig.
 VIVADO_JOB_TIMEOUT = 1800.0
@@ -214,52 +224,16 @@ _RE_CLB_FFS = re.compile(r"^\|\s*CLB Registers\s*\|\s*(\d+)\s*\|", re.MULTILINE)
 # matched separately and mapped to SynthesisFailed (R65).
 _RE_WNS = re.compile(r"^PYRO_METRIC:WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
 _RE_WNS_NONE = re.compile(r"^PYRO_METRIC:WNS:NONE\s*$", re.MULTILINE)
-# `vivado -version` first line: "vivado v2023.1 (64-bit)".
+# `vivado -version` first line: "vivado v2025.2 (64-bit)" (R70a-pin).  The
+# regex is release-agnostic (major.minor), so it also parses the retired 2023.1.
 _RE_VIVADO_VER = re.compile(r"v(\d+)\.(\d+)")
 
 
-def _libtinfo5_shim(workdir: str) -> Optional[str]:
-    """Return a dir to prepend to LD_LIBRARY_PATH so Vivado can find
-    ``libtinfo.so.5``, or ``None`` if no shim is needed / possible.
-
-    Host quirk (contained + commented): this Ubuntu ships only
-    ``libtinfo.so.6``; Vivado's launcher dlopen's the SONAME ``libtinfo.so.5``
-    and aborts at startup without it.  When ``libtinfo.so.5`` cannot be loaded we
-    create a per-job shim dir with a symlink ``libtinfo.so.5 -> <system
-    libtinfo.so.6>`` and hand it back to the caller, which prepends it to
-    ``LD_LIBRARY_PATH`` **for the Vivado subprocess only** (never the parent
-    process).  If ``libtinfo.so.5`` already loads, or no ``.so.6`` is found, we
-    return None and let Vivado run/fail on its own.
-    """
-    import ctypes
-    import ctypes.util
-
-    try:
-        ctypes.CDLL("libtinfo.so.5")
-        return None                      # already resolvable — no shim needed
-    except OSError:
-        pass
-    # Locate the system libtinfo.so.6 (soname via find_library, then common
-    # multiarch dirs as a fallback).
-    candidates = []
-    soname = ctypes.util.find_library("tinfo")   # e.g. "libtinfo.so.6"
-    if soname:
-        for d in ("/lib/x86_64-linux-gnu", "/usr/lib/x86_64-linux-gnu",
-                  "/lib64", "/usr/lib64", "/usr/lib", "/lib"):
-            candidates.append(os.path.join(d, soname))
-    candidates += [
-        "/lib/x86_64-linux-gnu/libtinfo.so.6",
-        "/usr/lib/x86_64-linux-gnu/libtinfo.so.6",
-    ]
-    target = next((c for c in candidates if os.path.exists(c)), None)
-    if target is None:
-        return None
-    shim = os.path.join(workdir, "libshim")
-    os.makedirs(shim, exist_ok=True)
-    link = os.path.join(shim, "libtinfo.so.5")
-    if not os.path.lexists(link):
-        os.symlink(os.path.realpath(target), link)
-    return shim
+# NOTE (R70a-pin, v2.2.1): the pinned **Vivado 2025.2** officially supports this
+# host OS (Ubuntu 24.04 / glibc 2.39) and starts cleanly with **no libtinfo.so.5
+# shim** — verified on this host.  The prior ``_libtinfo5_shim`` helper (needed by
+# the retired 2023.1 pin, which dlopen'd the missing ``libtinfo.so.5`` SONAME) is
+# therefore removed and no shim is applied to the 2025.2 subprocess environment.
 
 
 class VivadoToolchain:
@@ -365,19 +339,16 @@ class VivadoToolchain:
             with open(os.path.join(workdir, "flow.tcl"), "w") as f:
                 f.write(self._FLOW_TCL.replace("@PART@", cfg.part))
 
-            # 2. Build the Vivado subprocess environment (libtinfo.so.5 shim,
-            #    contained to this subprocess only).
+            # 2. Build the Vivado subprocess environment.  The pinned 2025.2
+            #    starts cleanly on this host OS with no libtinfo.so.5 shim
+            #    (R70a-pin), so the environment is inherited unmodified.
             env = dict(os.environ)
-            shim = _libtinfo5_shim(workdir)
-            if shim:
-                prev = env.get("LD_LIBRARY_PATH", "")
-                env["LD_LIBRARY_PATH"] = shim + (os.pathsep + prev if prev else "")
 
             # R75/R75a: the manifest records the *probed* Vivado version, while
             # the R4 cache key uses the *pinned* VIVADO_TOOLCHAIN_VERSION
             # (residency.bitstream_key).  Assert they agree so key and manifest
             # can never diverge: a mismatch (e.g. PYRO_VIVADO points at a version
-            # other than the recorded 2023.1 pin) fails synthesis with a clear
+            # other than the recorded 2025.2 pin) fails synthesis with a clear
             # diagnostic rather than silently keying an artifact under one version
             # while labelling it another.
             tool_ver = self._resolve_toolchain_version(exe, env)
