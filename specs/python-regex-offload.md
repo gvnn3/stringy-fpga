@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.2.3
+- **Version:** 2.2.4
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
@@ -1083,7 +1083,10 @@ knob is set.
     extended **additively** with at least: a toolchain **kind** (`mock`|`vivado`),
     the resolved **vivado install directory**, the target **part**
     (`xcu250-figd2104-2L-e`, the physical U250's part — R71), the target
-    **clock** in MHz (R73), and the **per-job timeout** (R77). All new fields carry
+    **clock** in MHz (R73), the two named **job timeouts** `job_timeout_s` (1800) and
+    `pr_job_timeout_s` (3600) (R77/R84), the **`pr_bitstream: bool`** job-request flag
+    (default `False`, R88), and the PR substrate paths **`static_dcp`**/**`reference_dcp`**
+    (default `None`, R82d/R88). All new fields carry
     defaults that reproduce the mock behavior, so a `ToolchainConfig()` with no
     overrides is byte-identical to the pre-2.1.0 default. The worker constructs the
     named toolchain from this config; the service/queue/dedup/isolation machinery
@@ -1315,9 +1318,10 @@ knob is set.
   worker and never blocks or slows any caller (a caller is served by fallback the
   whole time).
 
-  > *Numbering note.* R76 and R78–R86 are assigned in §10.1/§10.2 (the Ethernet
-  > control-frame format, Phase-2b bring-up, and the `pyro.device` surface), keeping
-  > those rulings adjacent to the material they govern.
+  > *Numbering note.* R76 and R78–R89 are assigned in §10.1/§10.2 (the Ethernet
+  > control-frame format, Phase-2b bring-up, the `pyro.device` surface, and the PR
+  > slot/job/substrate rulings), keeping those rulings adjacent to the material they
+  > govern.
 
 ---
 
@@ -1532,6 +1536,16 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     JTAG loader (R85/R86.5) connects to. **Default `TCP:localhost:3121`** (the
     stock `hw_server` port). Registered as a knob because the server location is
     operator-specific.
+  - `PYRO_PR_STATIC_DCP` (**NEW obligation, v2.2.4**) — filesystem path to the
+    **locked static shell DCP** (R82b), the in-context linking substrate for
+    `pr_bitstream` jobs. **No default; fail-loud** — if a `pr_bitstream` job (R88) is
+    requested and this is unset/unresolvable, synthesis is `SynthesisFailed` (R88),
+    never a silent OOC fallback. Populates `ToolchainConfig.static_dcp`.
+  - `PYRO_PR_REFERENCE_DCP` (**NEW obligation, v2.2.4**) — filesystem path to the
+    **reference routed DCP** used by `pr_verify` (R82c). Same **no-default, fail-loud**
+    rule (R88). Populates `ToolchainConfig.reference_dcp`. Registered so the residency
+    service (constructed from sampled knobs) can reach the substrate artifacts without
+    code changes; test/AC harnesses MAY also pass the `ToolchainConfig` fields directly.
   Both device knobs are sampled at the R35a points and carried on the device config
   (R86); the library MUST NOT read them ad hoc. **Spec-fixed (NOT knobs):** the
   expected shell identity `PYRO_SHELL_SPEC16` (`0x0202`, compiled-in per R81), the
@@ -1856,7 +1870,7 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     | 15  | 1    | `version`  | —      | protocol version; this spec defines **`0x01`**     |
     | 16  | 1    | `kind`     | —      | message kind (R78.4)                               |
     | 17  | 1    | `flags`    | —      | reserved; MUST be `0x00` in version 1              |
-    | 18  | 2    | `slot`     | BE     | circuit/pattern slot identifier (0 = ID stub / n/a)|
+    | 18  | 2    | `slot`     | BE     | circuit/pattern slot identifier (0 = ID stub; 1 = the Phase-2b pattern slot, R87)|
     | 20  | 4    | `seq`      | BE     | sequence number; a reply MUST echo its request's   |
     | 24  | 2    | `length`   | BE     | payload length in bytes (excludes the 14B header)  |
     | 26  | 2    | `reserved` | BE     | MUST be `0x0000`                                    |
@@ -1882,8 +1896,29 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     | Off (from payload) | Size | Field             | Endian | Meaning                                   |
     |--------------------|------|-------------------|--------|-------------------------------------------|
     | 0                  | 4    | `static_shell_id` | BE     | flashed PR-shell identity (R81)           |
-    | 4                  | 4    | `harness_version` | BE     | resident harness contract version (R45)   |
-    | 8                  | 4    | `rp_child_id`     | BE     | `0x00000000` = default ID stub; non-zero identifies a loaded pattern circuit |
+    | 4                  | 4    | `harness_version` | BE     | **resident (R45) harness version** (R78.5b) |
+    | 8                  | 4    | `rp_child_id`     | BE     | `0x00000000` = default ID stub; non-zero = loaded pattern circuit id (R78.5a) |
+
+    - **R78.5a (`rp_child_id` derivation — normative, v2.2.4).** For a loaded pattern
+      circuit, `rp_child_id` is the **low 32 bits of the R47a pattern hash, forced
+      non-zero** (if the low 32 bits are `0`, use `0x00000001`); it is
+      **overridable** by the generator but MUST remain non-zero. This blesses the
+      implementation: it is deterministic, collision-improbable, and **host-verifiable**
+      — the host holds the same pattern hash (R47a) and MAY check that the resident
+      child's `rp_child_id` matches the low-32/forced-non-zero of the pattern it
+      dispatched, as a cheap wire-level cross-check ahead of (not replacing) the R47a
+      identity/window re-verification. The default ID stub (R80) reports `0`.
+    - **R78.5b (`harness_version` namespace — normative reconciliation, v2.2.4).** The
+      wire `harness_version` field carries the **R45 resident-harness contract
+      version** (the `HARNESS_VER` register value; `0x00010000` in the current model
+      harness / flashed ID stub). This is a **distinct namespace** from the
+      **`PYROART1` artifact-header `HARNESS_VERSION`** (`0x00020000`, the L2-generator
+      artifact-format version tied to ABI 2.0.0). A pattern child MUST report the
+      **wire/R45 value** here (matching the ID stub for wire consistency), **not** the
+      artifact value. The two are intentionally different and MUST NOT be "fixed" to
+      match each other: one identifies the *resident hardware harness contract*, the
+      other the *host-side artifact-container format*. (The `PYROART1` header is
+      ABI-frozen, R72a; neither value is changed by this ruling.)
 
   - **R78.6 (`MATCH_REQUEST`).** `slot` selects the resident circuit; payload framing
     (big-endian), followed by the raw subject chunk:
@@ -2080,11 +2115,15 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     inferring it from `payload_kind` alone (AC-2b-3). The `pr_verified`/`payload_kind`
     consistency is enforced defensively at manifest construction and `from_json`
     (R47b-consistency, v2.2.3), not merely by the producer.
-  - **R82d (`pr_flow_present` artifacts).** `pr_flow_present` (R71/R83) is the
-    conjunction of: the locked static DCP (R82b) present and validated on the host,
-    a `pyro_rp` floorplan (`Pblock` + `HD.RECONFIGURABLE`, R80 boundary), and a
-    PR-generation flow that produces a genuine loadable partial bitstream with a
-    passing `pr_verify` (R82c).
+  - **R82d (`pr_flow_present` artifacts + their locations).** `pr_flow_present`
+    (R71/R83) is the conjunction of: the **locked static DCP** (R82b;
+    `ToolchainConfig.static_dcp`, from `PYRO_PR_STATIC_DCP`, R68) present and validated
+    on the host, the **reference routed DCP** for `pr_verify`
+    (`ToolchainConfig.reference_dcp`, from `PYRO_PR_REFERENCE_DCP`, R68), a `pyro_rp`
+    floorplan (`Pblock` + `HD.RECONFIGURABLE`, R80 boundary), and a PR-generation flow
+    that produces a genuine loadable partial bitstream with a passing `pr_verify`
+    (R82c). The substrate paths are **config-in with no filesystem scanning** (R70
+    discipline) and **fail-loud** when a `pr_bitstream` job needs an absent one (R88).
 
 - **R83 (R71 predicate-flip semantics + canonical SKIP string — normative,
   supersedes the v2.1.3 literal).** Amends R71's dispositions with the exact
@@ -2125,11 +2164,18 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     R77's discipline is otherwise unchanged and applies to PR jobs verbatim: the
     adapter enforces the deadline **inside the out-of-process worker** and, on expiry,
     **kills the entire Vivado process tree** and raises `SynthesisFailed` →
-    permanent-fallback (R65); the R63e reaper is the bookkeeping backstop. Both
-    timeouts are overridable via the `ToolchainConfig` per-job-timeout field (R70a);
-    the adapter selects the PR default when the job targets `payload_kind ==
-    "pr_bitstream"`, else the R77 default. Neither timeout ever blocks or slows a
-    caller (R63/R77 asynchrony unchanged).
+    permanent-fallback (R65); the R63e reaper is the bookkeeping backstop. Neither
+    timeout ever blocks or slows a caller (R63/R77 asynchrony unchanged).
+  - **Two named `ToolchainConfig` timeout fields (normative wording, v2.2.4).** The
+    two synthesis-job timeouts are carried as **two distinct named fields** (R70a),
+    not one adapter-selected field: **`job_timeout_s` (default `1800`, the R77
+    `ooc_metrics`/OOC default)** and **`pr_job_timeout_s` (default `3600`, the
+    `VIVADO_PR_JOB_TIMEOUT` PR default)**. The adapter selects `pr_job_timeout_s`
+    when the job requests `pr_bitstream` (R88, `ToolchainConfig.pr_bitstream == True`),
+    else `job_timeout_s`. This supersedes the earlier ambiguous "single per-job-timeout
+    field, adapter-selected default" wording; both fields carry mock-preserving
+    defaults (R70a). (Reaper windows are correspondingly mode-tiered — PR/OOC/mock —
+    outside this ruling.)
   - **`PYRO_JTAG_LOAD_TIMEOUT = 600 s` (10 min) — normative constant, v2.2.2.** The
     deadline for the R85 JTAG `program_hw_devices` step in `load_partial` (R86.5),
     which is distinct from and much shorter than the synthesis-job timeouts above (it
@@ -2295,6 +2341,57 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
       keeps `load_partial`'s failure mapping (R86.5) identical whether the real or a
       fake runner is used.
 
+- **R87 (Phase-2b slot map + multi-slot deferral — normative, v2.2.4).** The `slot`
+  field (R78.3) has a fixed Phase-2b layout:
+  - **slot `0` — the default ID stub** (R80): answers `ID_REQUEST`, replies
+    `STATUS`/`ERROR` `PYRO_E_NOT_RESIDENT` to any `MATCH_REQUEST` (R78.8/R78.10(e));
+  - **slot `1` — THE single-tenant pattern slot.** Because the PR region is
+    single-tenant (R64, `pr_partitions == 1`), exactly **one** pattern circuit is
+    resident at a time and it occupies **slot 1**. Pattern children default to
+    `SLOT = 1`; `MATCH_REQUEST`s for a resident pattern target slot 1, and the
+    resident child's `ID_REPLY` reports its `rp_child_id` (R78.5a) at slot 1.
+
+  **Multi-slot layout is deferred (own ruling, like R76/R85).** A layout with more
+  than one concurrently-resident pattern slot (`slot ≥ 2`) requires a shell advertising
+  `pr_partitions > 1` (R42/R64) and is **out of scope for Phase 2b** (consistent with
+  §12's "multiple concurrent resident circuits" exclusion). Until this deferral is
+  lifted under a future version bump, `slot` values other than `0`/`1` are undefined
+  and a device MUST reply `STATUS`/`ERROR` `PYRO_E_NOT_RESIDENT` to a `MATCH_REQUEST`
+  for any `slot ≥ 2`.
+
+- **R88 (PR-vs-OOC job request mechanism — normative, v2.2.4).** A synthesis job
+  requests a genuine partial bitstream via the **`ToolchainConfig.pr_bitstream: bool`**
+  field (**default `False`**, construction-pinned per R70b; additive with
+  mock-preserving default, R70a). This blesses the implementation:
+  - `pr_bitstream == False` → the OOC path (R72 `ooc_metrics`/`mock_stub`), unchanged
+    Phase-0/1/2 behavior.
+  - `pr_bitstream == True` → the PR link flow (R82): implement `pyro_rp` in-context
+    against `static_dcp`, run `pr_verify` against `reference_dcp`, and — only on a
+    passing `pr_verify` (R82c) — emit `payload_kind == "pr_bitstream"` with
+    `pr_verified == true` (R47b).
+  - **Fail-loud, never a silent downgrade (normative).** If `pr_bitstream == True` but
+    a required substrate (`static_dcp`/`reference_dcp`, R82d) is **absent or
+    unresolvable**, the job MUST raise `SynthesisFailed` → permanent-fallback (R65).
+    It MUST **NOT** silently fall back to `ooc_metrics`: an operator who asked for a
+    device bitstream and cannot get one must see a failure (honesty, R72c), not a
+    quietly non-loadable artifact. On this host, where the substrate DCPs do not yet
+    exist, a `pr_bitstream` request is therefore `SynthesisFailed` and every on-device
+    clause continues to SKIP (R71/R83), consistent with `pr_flow_present == false`.
+
+- **R89 (`pr_bitstream` manifest `shell_version` → PR-region identity — forward
+  ruling, v2.2.4).** A `pr_bitstream` manifest currently records
+  `shell_version == SHELL_VERSION` (`0x0A000001`, the model-harness value, R45/R75).
+  This is a **placeholder**: once a real static shell / PR-region is targeted and
+  validated (`pr_flow_present == true`, R82d), the `pr_bitstream` manifest's
+  `shell_version` MUST become the **real PR-region identity** (derived from the flashed
+  static image, relatable to `static_shell_id`, R81), so the R47b load-time
+  shell/PR-region compatibility check (R47b/R47c) binds against the actual region.
+  Setting that real value is **deferred** to the version bump that flips
+  `pr_flow_present` true (nothing consumes it yet on this host); until then
+  `SHELL_VERSION` stays `0x0A000001` per R75 and this ruling reserves the obligation so
+  the placeholder is not mistaken for the final contract. This does **not** change
+  `SHELL_VERSION` now (frozen-invariant respected).
+
 ---
 
 ## 11. Prerequisites, risks, and open items
@@ -2433,6 +2530,45 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.2.4** (2026-07-06) — *`pr_bitstream`-mode dispositions (PATCH — clarifications +
+  additive config fields/knobs), spec-writer.* Six gaps from the PR-flow
+  implementation round (RP-child wrapper generator + `VivadoToolchain` PR flow); no
+  interface/AC break, no renumbering, frozen invariants untouched (C ABI 2.0.0,
+  `PYROART1`, `SHELL_VERSION 0x0A000001`, existing AC numbers).
+  - **R78.5a (item 1 — `rp_child_id` derivation, blessed).** A loaded pattern circuit's
+    `rp_child_id` is the **low 32 bits of the R47a pattern hash, forced non-zero**,
+    overridable; deterministic, collision-improbable, host-verifiable from the same
+    hash. Default ID stub reports `0`.
+  - **R87 (item 2 — Phase-2b slot map + multi-slot deferral).** Fixed slot `0` = ID
+    stub, **slot `1` = THE single-tenant pattern slot** (R64); `slot ≥ 2` (multi-slot,
+    needs `pr_partitions > 1`) is **deferred** with this ruling number; a device replies
+    `PYRO_E_NOT_RESIDENT` to `slot ≥ 2`. Updated R78.3.
+  - **R78.5b (item 3 — `harness_version` namespace reconciliation).** The wire
+    `harness_version` field carries the **R45 resident-harness version** (`0x00010000`),
+    a **distinct namespace** from the **`PYROART1` artifact `HARNESS_VERSION`**
+    (`0x00020000`). Pattern children report the wire/R45 value; the two MUST NOT be
+    unified. Neither value changed.
+  - **R88 (item 4 — PR-vs-OOC job request, blessed).** `ToolchainConfig.pr_bitstream:
+    bool = False` (construction-pinned, R70b) requests the PR flow. **`pr_bitstream ==
+    True` with an absent substrate DCP is `SynthesisFailed` (R65), never a silent
+    `ooc_metrics` downgrade** (honesty). On this host such a request fails and device
+    clauses keep SKIPping (`pr_flow_present == false`).
+  - **R68 knobs + R82d (item 5 — substrate locations, registered).** Registered
+    **`PYRO_PR_STATIC_DCP`** (→ `ToolchainConfig.static_dcp`) and
+    **`PYRO_PR_REFERENCE_DCP`** (→ `reference_dcp`), **no default, fail-loud** (R88), so
+    the residency service reaches the locked static / reference routed DCPs from
+    sampled knobs without code; harnesses MAY also pass the config fields directly.
+    Amended R82d to name them.
+  - **R84 wording (item 6 — two named timeout fields).** Replaced the ambiguous
+    "single adapter-selected per-job-timeout" with **two named `ToolchainConfig`
+    fields**: `job_timeout_s` (1800, OOC/R77) and `pr_job_timeout_s` (3600, PR); the
+    adapter picks by `pr_bitstream`. Recorded the new additive fields in R70a.
+  - **R89 (awareness item — `pr_bitstream` `shell_version` → PR-region identity,
+    forward ruling).** The current `pr_bitstream` manifest `shell_version ==
+    SHELL_VERSION` is a **placeholder**; when a real PR-region is targeted
+    (`pr_flow_present == true`) it MUST become the real PR-region identity (relatable to
+    `static_shell_id`, R81) so the R47b compatibility check binds. Deferred to that
+    bump; `SHELL_VERSION` unchanged now (R75).
 - **2.2.3** (2026-07-06) — *v2.2.2-round dispositions (PATCH — clarifications + one
   normative test vector), spec-writer.* Three notes from the `pyro.device`
   implementation round; no interface/AC break, no renumbering, frozen invariants
