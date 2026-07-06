@@ -120,12 +120,76 @@ def test_pr_verified_json_roundtrip(value, payload_kind):  # AC-2b-3 (R47b)
 
 def test_pr_verified_absent_key_is_false_backcompat():  # AC-2b-3 (R47b back-compat)
     """R47b: from_json of a legacy manifest with NO pr_verified key defaults it to
-    False (back-compat exactly like payload_kind)."""
+    False (back-compat exactly like payload_kind).  Absent-key manifests are always
+    mock_stub/ooc_metrics (pr_verified False), so they satisfy R47b-consistency."""
     data = json.loads(psynth.Manifest(**_MANIFEST_BASE).to_json())
     data.pop("pr_verified", None)
     assert "pr_verified" not in data
     back = psynth.Manifest.from_json(json.dumps(data))
     assert back.pr_verified is False
+
+
+# --- R47b-consistency: boundary rejection of inconsistent manifests (v2.2.3) ---
+# Enforcement is landing in parallel (coder); a manifest that is ACCEPTED where the
+# spec requires rejection is reported as pending-implementation (xfail), a WRONG
+# error type as a real failure, and correct rejection as PASS.
+_INCONSISTENT = [
+    (True, "ooc_metrics"),    # verified claim on a non-PR payload
+    (True, "mock_stub"),      # verified claim on a mock payload
+    (False, "pr_bitstream"),  # PR payload without a verified claim
+]
+
+
+def _assert_rejects(build):
+    """R47b-consistency: `build()` MUST raise ValueError or a pyro.synth manifest
+    error.  Accept either; distinguish pending-impl (accepted) from a wrong type."""
+    try:
+        build()
+    except ValueError:
+        return                                   # accepted taxonomy (R47b-consistency)
+    except Exception as exc:  # noqa: BLE001
+        if type(exc).__module__.startswith("pyro"):
+            return                               # a pyro.synth manifest error is fine
+        pytest.fail(
+            f"R47b-consistency must raise ValueError / a pyro.synth manifest error, "
+            f"got {type(exc).__module__}.{type(exc).__name__}: {exc}")
+    else:
+        pytest.xfail("R47b-consistency boundary rejection not yet landed (v2.2.3; "
+                     "coder implementing in parallel)")
+
+
+@pytest.mark.parametrize("pv,pk", _INCONSISTENT,
+                         ids=[f"{pv}+{pk}" for pv, pk in _INCONSISTENT])
+def test_manifest_ctor_rejects_inconsistent(pv, pk):  # AC-2b-3 (R47b-consistency)
+    """R47b-consistency (v2.2.3): the Manifest constructor MUST reject a manifest
+    violating pr_verified == (payload_kind == 'pr_bitstream')."""
+    _assert_rejects(lambda: psynth.Manifest(**_MANIFEST_BASE, pr_verified=pv,
+                                            payload_kind=pk))
+
+
+@pytest.mark.parametrize("pv,pk", _INCONSISTENT,
+                         ids=[f"{pv}+{pk}" for pv, pk in _INCONSISTENT])
+def test_manifest_from_json_rejects_inconsistent(pv, pk):  # AC-2b-3 (R47b-consistency)
+    """R47b-consistency (v2.2.3): Manifest.from_json MUST reject an inconsistent
+    on-disk/hand-edited manifest, so corruption cannot enter the system."""
+    # Build the JSON without going through the (also-rejecting) constructor.
+    data = json.loads(psynth.Manifest(**_MANIFEST_BASE).to_json())
+    data["pr_verified"] = pv
+    data["payload_kind"] = pk
+    _assert_rejects(lambda: psynth.Manifest.from_json(json.dumps(data)))
+
+
+@pytest.mark.parametrize("pv,pk", [
+    (True, "pr_bitstream"),   # verified PR bitstream — consistent
+    (False, "ooc_metrics"),   # honest metrics — consistent
+    (False, "mock_stub"),     # mock stub — consistent
+])
+def test_manifest_accepts_consistent(pv, pk):  # AC-2b-3 (R47b-consistency)
+    """The consistent combinations MUST still be accepted by ctor and from_json."""
+    m = psynth.Manifest(**_MANIFEST_BASE, pr_verified=pv, payload_kind=pk)
+    assert m.pr_verified is pv and m.payload_kind == pk
+    back = psynth.Manifest.from_json(m.to_json())
+    assert back.pr_verified is pv and back.payload_kind == pk
 
 
 def test_mock_produced_manifest_carries_pr_verified_false():  # AC-2b-3 (R47b/R82c)

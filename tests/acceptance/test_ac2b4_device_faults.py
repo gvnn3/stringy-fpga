@@ -72,7 +72,11 @@ class _FakeTransport:
         self._responder = responder
         self.sends = []
         self._recv_i = 0
-        self.closed = False
+        self.closes = 0
+
+    @property
+    def closed(self):
+        return self.closes > 0
 
     def send(self, frame):
         self.sends.append(bytes(frame))
@@ -91,8 +95,8 @@ class _FakeTransport:
         except pdev.PyroFrameError:
             return pdev.decode_frame(raw[14:]).seq  # strip 14B Ethernet header
 
-    def close(self):
-        self.closed = True
+    def close(self):  # R86.7: idempotent
+        self.closes += 1
 
 
 def _probe(responder, *, cap=True, attempts=3, timeout=0.02, expected_spec16=0x0202):
@@ -205,6 +209,52 @@ def test_probe_never_leaks_os_permission_error():  # AC-2b-2 (R86.1/R86.4)
                 probe_timeout_s=0.01, probe_attempts=1))
         except (OSError, PermissionError) as exc:  # pragma: no cover - spec violation
             pytest.fail(f"probe_device leaked {type(exc).__name__} (R86.1/R86.4)")
+
+
+# ==========================================================================
+# R86.7 Transport-protocol conformance (v2.2.3): close() on every path,
+# None sentinel, short-frame handling.
+# ==========================================================================
+@pytest.mark.parametrize("scenario", ["timeout", "mismatch", "valid"])
+def test_probe_closes_transport_on_every_path(scenario):  # AC-2b-2 (R86.7)
+    """R86.7: `close()` releases the transport; the probe MUST call it on success
+    AND on failure paths (no leaked transport)."""
+    responders = {
+        "timeout": lambda seq, i: None,
+        "mismatch": lambda seq, i: _id_reply_frame(0x0303, seq),
+        "valid": lambda seq, i: _id_reply_frame(0x0202, seq),
+    }
+    (_usable, _reason), t = _probe(responders[scenario], cap=True, attempts=2)
+    assert t.closes >= 1, (
+        f"probe must close() the transport on the {scenario} path (R86.7)")
+
+
+def test_transport_close_is_idempotent():  # AC-2b-2 (R86.7)
+    """R86.7: close() is idempotent — a second call is a harmless no-op."""
+    t = _FakeTransport(lambda seq, i: None)
+    t.close()
+    t.close()  # must not raise
+    assert t.closes == 2
+
+
+def test_probe_recv_none_sentinel_is_no_frame_not_empty():  # AC-2b-2 (R86.7/R84)
+    """R86.7: recv()==None is the *no-frame-within-timeout* sentinel; a None at each
+    of probe_attempts attempts drives the `probe: no valid ID_REPLY` disposition
+    (distinct from an empty/short frame, which is also handled without crashing)."""
+    (usable, reason), t = _probe(lambda seq, i: None, cap=True, attempts=3)
+    assert usable is False and reason == CANON_PROBE
+    assert len(t.sends) == 3
+
+
+@pytest.mark.parametrize("frag", [b"", b"\x50", b"\x50\x01\x02", b"\x02\x00\x00"])
+def test_probe_handles_short_frame_without_crash(frag):  # AC-2b-2 (R86.7)
+    """R86.7: a transport returning a short/partial frame (fewer bytes than a valid
+    reply) is handled per protocol — treated as not-a-valid-reply, never a crash;
+    the probe concludes not-usable and closes the transport."""
+    (usable, reason), t = _probe(lambda seq, i, f=frag: (_ETH + f), cap=True, attempts=2)
+    assert usable is False, f"short frame {frag!r} must not yield usable (R86.7)"
+    assert reason == CANON_PROBE
+    assert t.closes >= 1
 
 
 # ==========================================================================

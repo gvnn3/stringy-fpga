@@ -84,6 +84,12 @@ VEC_D_ENTRIES = (struct.pack("<QQII", 1, 3, 0, 0) +
 VEC_D_PAYLOAD = _hx("00 02  00 00  00 00 00 00") + VEC_D_ENTRIES
 VEC_D = _hx("50 01 04 00  00 01  00 00 00 02  00 38  00 00") + VEC_D_PAYLOAD
 
+# (e) STATUS/ERROR (R78.10(e), v2.2.3): the ID stub's reply to MATCH_REQUEST (c) —
+#     kind 0x05, echoes slot=1, seq=2, length=4, payload code=PYRO_E_NOT_RESIDENT (7).
+VEC_E_PAYLOAD = _hx("00 00 00 07")  # code = 7 (BE)
+VEC_E = _hx("50 01 05 00  00 01  00 00 00 02  00 04  00 00") + VEC_E_PAYLOAD
+PYRO_E_NOT_RESIDENT = 7  # R38
+
 
 # ==========================================================================
 # encode_frame — byte-exact against every normative vector (R78.10 / R86.2).
@@ -116,6 +122,31 @@ def test_encode_match_reply_matches_vector_d():  # AC-2b-1 (R78.7/R78.10/R86.2)
     assert out[10:12] == (56).to_bytes(2, "big"), "length must be 0x0038 = 56 (R78.10d)"
 
 
+def test_encode_status_error_matches_vector_e():  # AC-2b-1 (R78.8/R78.10(e)/R86.2)
+    """R78.10(e) (v2.2.3): the ID stub's STATUS/ERROR PYRO_E_NOT_RESIDENT reply to
+    MATCH_REQUEST (c) — kind 0x05, slot/seq echoed, length 4, code=7 (BE)."""
+    _need_pdev()
+    out = pdev.encode_frame(STATUS_ERROR, 1, 2, VEC_E_PAYLOAD)
+    assert out == VEC_E, f"{out.hex()} != {VEC_E.hex()}"
+    assert out[2] == 0x05, "kind must be STATUS/ERROR 0x05 (R78.10e)"
+    assert out[10:12] == (4).to_bytes(2, "big"), "length must be 0x0004 = 4 (R78.10e)"
+
+
+def test_decode_status_error_vector_e_fields_and_code():  # AC-2b-1 (R78.8/R78.10(e)/R86.3)
+    """Decoding (e) recovers the echoed slot/seq and the PYRO_E_NOT_RESIDENT code."""
+    _need_pdev()
+    res = pdev.decode_frame(VEC_E)
+    assert _field(res, "kind") == STATUS_ERROR
+    assert _field(res, "slot") == 1
+    assert _field(res, "seq") == 2
+    assert _field(res, "length") == 4
+    payload = bytes(_field(res, "payload"))
+    assert payload == VEC_E_PAYLOAD
+    code = int.from_bytes(payload[0:4], "big")  # R78.8: code is 4 bytes BE
+    assert code == PYRO_E_NOT_RESIDENT == 7, (
+        "STATUS/ERROR code must be PYRO_E_NOT_RESIDENT (7) (R38/R78.10e)")
+
+
 def test_encode_sets_frozen_header_fields():  # AC-2b-1 (R78.3/R86.2)
     """magic=0x50, version=0x01, flags=0, reserved=0 are frozen for version 1."""
     _need_pdev()
@@ -145,8 +176,9 @@ def test_encode_header_fields_are_big_endian():  # AC-2b-1 (R78.2/R78.3/R86.2)
         (VEC_B, ID_REPLY, 0, 1, 12, VEC_B_PAYLOAD),
         (VEC_C, MATCH_REQUEST, 1, 2, 18, VEC_C_PAYLOAD),
         (VEC_D, MATCH_REPLY, 1, 2, 56, VEC_D_PAYLOAD),
+        (VEC_E, STATUS_ERROR, 1, 2, 4, VEC_E_PAYLOAD),
     ],
-    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY"],
+    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR"],
 )
 def test_decode_recovers_named_fields(vec, kind, slot, seq, length, payload):
     # AC-2b-1 (R78.3/R78.10/R86.3)
