@@ -1,10 +1,10 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.0.5
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1a in progress)
+- **Version:** 2.1.0
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow beginning on `phase1-pyro`)
 - **Owner:** Spec Writer
-- **Date:** 2026-07-05
+- **Date:** 2026-07-06
 
 ---
 
@@ -933,7 +933,7 @@ synthesis time and identified via the identity block (R47a).
   identical regardless of whether L4 reaches the circuit over the QDMA char-dev
   binding or the raw-Ethernet binding; only the mechanism of MMIO/DMA differs.
   In the Ethernet binding, CSR writes and buffer transfers are encapsulated in a
-  defined control-frame format (specified at Phase 1 §10.1) but the register
+  defined control-frame format (**deferred; see §10.1 and R76**) but the register
   meanings are unchanged. PR reconfiguration (loading a bitstream artifact) uses
   the platform PR mechanism (ICAP/PCAP via the shell, or a vendor PR flow), which
   is out of band from the scan datapath.
@@ -1000,6 +1000,201 @@ synthesis time and identified via the identity block (R47a).
   `circuits_resident`, `circuits_evicted`, and `pr_loads`. Counters MUST be
   monotonic (except gauges `circuits_synthesizing`/`circuits_resident`) and
   thread-safe (R32). Stats MUST be observable without perturbing routing.
+
+### 7.6 Real-toolchain (Vivado) adapter contract (Phase 2)
+
+This subsection is the **normative contract for the real synthesis flow** that the
+service (R63) selects, at the `MockToolchain` seam, in place of the mock toolchain
+(R63b) when the operator opts in. It exists because Phase 2 begins on a host where
+**Vivado is present but the OpenNIC partial-reconfiguration (PR) build flow and an
+operable device are not** (§11 P1 is only partially satisfied; see R71). The
+rulings below make the Phase-2 ACs executable under exactly that reality: real
+out-of-context (OOC) synthesis + place-and-route is performed for the physical
+board's part, honest post-route metrics are recorded, and every clause that would
+require an absent prerequisite records a **SKIP** (never a PASS). The mock
+toolchain remains the default so Phase-0/Phase-1 behavior is byte-identical when no
+knob is set.
+
+- **R70 (toolchain-selection knobs).** Toolchain selection is governed by two
+  **spec-named** environment knobs, sampled at the R35a sampling points (import,
+  `install()`/`uninstall()`, `refresh_env()`) and NEVER on the per-call hot path
+  (R5/R35a); they are also registered in R68:
+  - `PYRO_TOOLCHAIN` — one of `mock` | `vivado`. **Default `mock`.** `mock`
+    selects `MockToolchain` (R63b) — the Phase-0/1 behavior, unchanged. `vivado`
+    selects the real OOC adapter (this subsection). Any unrecognized value is
+    **invalid** and MUST be treated as `mock` (fail safe: never silently attempt a
+    real flow the operator did not name), optionally surfaced via stats/diagnostics.
+  - `PYRO_VIVADO` — the Vivado **install directory** (e.g. `/usr/local/cad/Vivado/
+    2023.1`). **No default and NO scanning of the filesystem, `PATH`, or
+    `XILINX_VIVADO` by library code**: if `PYRO_TOOLCHAIN=vivado` and `PYRO_VIVADO`
+    is unset or does not resolve to a working Vivado, the adapter is **unavailable**
+    (`toolchain_present == false`, R71) and the affected AC clauses SKIP. Requiring
+    an explicit install dir keeps toolchain selection deterministic and auditable
+    and prevents a stray Vivado on `PATH` from perturbing results.
+  - **R70a (config crosses the process boundary).** The sampled selection MUST be
+    carried into the out-of-process worker (R63) via the existing
+    `ToolchainConfig` (a frozen, picklable dataclass). `ToolchainConfig` is
+    extended **additively** with at least: a toolchain **kind** (`mock`|`vivado`),
+    the resolved **vivado install directory**, the target **part**
+    (`xcu250-figd2104-2L-e`, the physical U250's part — R71), the target
+    **clock** in MHz (R73), and the **per-job timeout** (R77). All new fields carry
+    defaults that reproduce the mock behavior, so a `ToolchainConfig()` with no
+    overrides is byte-identical to the pre-2.1.0 default. The worker constructs the
+    named toolchain from this config; the service/queue/dedup/isolation machinery
+    (R63a–R63e) is unchanged.
+
+- **R71 (partial-P1 live/SKIP matrix — normative).** Phase 2's prerequisite P1 is
+  only **partially** satisfied on this host, so the Phase-2 ACs (AC-2-1..AC-2-6)
+  are evaluated against three **availability predicates**, each decided only by
+  **probing the environment** (never assumed):
+  - `toolchain_present` — `PYRO_TOOLCHAIN=vivado` AND `PYRO_VIVADO` resolves to a
+    Vivado that synthesizes + places + routes the target part (R70). *Established
+    true for Vivado 2023.1 at `/usr/local/cad/Vivado/2023.1`, part
+    `xcu250-figd2104-2L-e`, no license error.*
+  - `pr_flow_present` — an OpenNIC PR-partition floorplan (`pblock` + fixed
+    static/reconfigurable interface, §7.4) AND a PR-bitstream generation flow exist
+    that emit a **genuine loadable partial bitstream** (`payload_kind ==
+    "pr_bitstream"`, R72). *Established **false** (no such floorplan or flow
+    exists).*
+  - `device_usable` — a PYRO-controllable OpenNIC device with PR-load rights
+    (ICAP/PCAP/JTAG or `/dev/qdma*`) that PYRO is permitted to reconfigure.
+    *Established **false**: the physical U250 runs another user's live OpenNIC NIC
+    image in production; there is no root, no JTAG right, no `/dev/qdma*`, and the
+    device MUST NOT be reprogrammed or perturbed.*
+
+  **SKIP discipline (normative).** A clause that requires an **absent** predicate
+  MUST record a **SKIP whose reason names the missing prerequisite** (e.g.
+  `SKIP: pr_flow_present=false — no OpenNIC PR partition/bitstream flow`,
+  `SKIP: device_usable=false — third-party live NIC, must not perturb`). A SKIP
+  MUST NEVER be recorded as PASS. A **PASS MUST come only from real execution** of
+  the clause with its predicate satisfied. The following matrix binds each AC-2-*
+  clause (see also the per-AC amendments in §10):
+
+  | AC clause | Requires | Disposition on this host |
+  |-----------|----------|--------------------------|
+  | AC-2-1 real OOC synth+P&R, honest manifest metrics fit budget + met timing, cache warm-reload | `toolchain_present` | **LIVE** |
+  | AC-2-1 loadable **PR bitstream** produced | `pr_flow_present` | **SKIP** (pr_flow absent) |
+  | AC-2-2 on-device harness/identity/scan over ≥1 MiB | `device_usable` ∧ `pr_flow_present` | **SKIP** (device + pr_flow absent) — model-side correctness is AC-1-3 |
+  | AC-2-3 cold→warm real synth is minutes, async, never caller-blocking | `toolchain_present` | **LIVE** |
+  | AC-2-3 warm→resident PR-load timing + resident dispatch **on device** | `device_usable` | **SKIP** (device absent); async/non-blocking still asserted on model |
+  | AC-2-4 estimator-vs-real P&R within the R74 margin; estimate-pass→synth-fail→permanent fallback on the real path | `toolchain_present` | **LIVE** |
+  | AC-2-5 resident-circuit throughput **on hardware** (R1) | `device_usable` | **SKIP** (device absent); routing R3–R5/R3b asserted on model |
+  | AC-2-6 single-tenant PR arbitration **on hardware** | `device_usable` ∧ `pr_flow_present` | **SKIP** (device + pr_flow absent); eviction policy asserted on model |
+
+  When `toolchain_present == false` (the default, mock-only configuration), **all**
+  real-toolchain clauses (AC-2-1 LIVE row, AC-2-3 LIVE row, AC-2-4) additionally
+  SKIP with reason `toolchain_present=false`; the model-side clauses of AC-2-3/2-5/
+  2-6 still run. A single shared availability probe SHOULD expose these three
+  predicates so every gated assertion cites the same source of truth.
+
+- **R72 (real-toolchain artifact payload honesty).** Because no PR bitstream can be
+  produced (`pr_flow_present == false`, R71), the **vivado** toolchain's artifact
+  payload remains the **`PYROART1` container** (`pyro.synth.artifact`, FORMAT_VERSION
+  1) that the software model harness executes — consistent with the device-free
+  model-dispatch ruling (R51b). It is **not** a device bitstream, and the manifest
+  MUST say so plainly, so nothing downstream can make a false hardware claim.
+  - **R72a (least-invasive honest mechanism: a manifest `payload_kind` field).**
+    The honest indication is a new **manifest** field `payload_kind` (a string),
+    added **additively** to the R47b `Manifest` dataclass with a **default** so the
+    JSON round-trip is preserved (an on-disk manifest lacking the key deserializes
+    to the default; a real Vivado flow could later populate it without changing the
+    host-side contract). The **C-side `PYROART1` artifact header is ABI-frozen and
+    MUST NOT change** (this is a JSON-sidecar field only); ABI 2.0.0 and artifact
+    FORMAT_VERSION 1 are untouched. Normative values:
+    - `"mock_stub"` — mock toolchain (R63b); metrics are **configured, not
+      measured**; not a device bitstream. **This is the default value**, so every
+      pre-2.1.0 manifest (all mock) deserializes to exactly what it is.
+    - `"ooc_metrics"` — real Vivado OOC synth+P&R; the manifest's `luts`, `ffs`,
+      `fmax_mhz`, and `met_timing` are **genuine post-route values** from the real
+      reports (R73), but the payload is the model-exec `PYROART1` container, **NOT**
+      a loadable device bitstream.
+    - `"pr_bitstream"` — a genuine loadable partial-reconfiguration bitstream.
+      **Reserved; not produced until `pr_flow_present` becomes true.**
+  - **R72b (loader honesty).** The PR loader (`pyro_circuit_load`, R40) MUST treat
+    an artifact as an on-device-loadable bitstream **only if** its manifest
+    `payload_kind == "pr_bitstream"`; any other value means "no device bitstream
+    exists," so on hardware the pattern is served by the model/fallback path and the
+    on-device residency clauses SKIP (R71). On a device-free/model host this is moot:
+    the model executes the `PYROART1` container regardless of `payload_kind` (R51b),
+    and tier/residency bookkeeping is unchanged.
+  - **R72c (metric honesty).** A `"ooc_metrics"` manifest MUST record the genuine
+    post-route `luts`, `ffs`, `fmax_mhz`, and `met_timing` parsed from the real
+    Vivado utilization/timing reports; it MUST NOT copy the estimator's numbers and
+    MUST NOT claim `payload_kind == "pr_bitstream"`. Fabricating or estimating these
+    fields on the `vivado` path is a defect.
+
+- **R73 (AC-2-1 "meets timing" — the Phase-2 proxy).** The Phase-2 proxy for
+  meeting the OpenNIC 250 MHz user-box clock (F4) is a **250 MHz (4.000 ns) clock
+  constraint applied to the OOC-synthesized `pyro_circuit`**. The `vivado` adapter
+  MUST constrain the circuit clock to 250 MHz, run place-and-route, and set the
+  manifest fields from `report_timing_summary`:
+  - `met_timing := (post-route worst negative slack WNS ≥ 0 ns)` at the 250 MHz
+    constraint;
+  - `fmax_mhz := 1000 / (4.000 − WNS_ns)` (the achieved Fmax implied by the WNS at
+    the 4 ns target).
+  A circuit with `met_timing == false` fails synthesis for AC-2-1/R12 purposes and
+  the pattern becomes **permanently fallback-only** (R65). This proxy is a stand-in
+  for a real in-shell timing closure and is superseded when `pr_flow_present`
+  becomes true (the real static+dynamic timing then governs).
+
+- **R74 (AC-2-4 pre-registered calibration margin — normative constant).** The
+  resource estimator's agreement with real P&R (AC-2-4) is judged against a margin
+  **pre-registered here before any calibration data exists**, so tests cite a fixed
+  constant rather than a number fit to the data. Define `ESTIMATOR_CALIBRATION_MARGIN`:
+  for **every** pattern `p` in the calibration corpus that synthesizes successfully
+  on the real (`vivado`) path, letting `est_luts/est_ffs` be the L2 estimator's
+  numbers (R11/R12) and `real_luts/real_ffs` the genuine post-route utilization
+  (R72c), the estimator is **calibrated/valid** iff all four hold:
+  1. `real_luts ≤ est_luts` (the estimate never under-counts LUTs — conservative),
+  2. `real_ffs ≤ est_ffs` (the estimate never under-counts FFs — conservative),
+  3. `est_luts ≤ 10 × max(1, real_luts)` (not absurdly loose), and
+  4. `est_ffs ≤ 10 × max(1, real_ffs)` (not absurdly loose),
+  evaluated **per pattern** over the corpus (the AC fails if any successfully-
+  synthesized pattern violates any clause). Rationale: the estimator's job is to
+  reject over-budget patterns **before** synthesis, so it MUST be a conservative
+  **over**-estimate (clauses 1–2 guarantee it never green-lights a circuit that
+  then overflows); the 10× ceiling (clauses 3–4) keeps it from rejecting patterns
+  that would in fact fit. The `max(1, ·)` guards the degenerate `real == 0` case.
+  Independently, a pattern that **passes** the estimate (is enqueued) but then
+  **fails real synthesis** (does-not-fit, `met_timing == false` per R73, tool error,
+  or the R77 timeout) MUST become permanently fallback-only with a diagnostic and
+  no caller-visible error (R65) — this transition is LIVE on the real path and also
+  drivable via `pyro.testing.inject_synth_failure` (R67).
+
+- **R75 (`toolchain_version` encoding).** The `vivado` toolchain MUST report a
+  `toolchain_version` (R47b manifest / R4 key) that encodes the **actual Vivado
+  version**, distinct from the mock's `0x00000100`. Encoding (packed 32-bit):
+  `(YY << 24) | (RR << 16) | build`, where `YY` is the two-digit release year and
+  `RR` the point release; for **Vivado 2023.1** this is `0x17010000`
+  (`YY=23=0x17`, `RR=1`, `build=0`). The adapter SHOULD derive `YY`/`RR` from the
+  tool's own version report rather than hard-coding, but MUST pin to the recorded
+  install. `SHELL_VERSION` (the target shell / PR-region identifier) **remains the
+  model-harness value** (`0x0A000001`) until a real PR flow exists
+  (`pr_flow_present == true`), because no real shell/PR-region has been targeted.
+  - **R75a (cache-key separation falls out of R4).** Because `toolchain_version` is
+    a component of the R4 bitstream-cache key (and the R47b manifest key), a mock
+    artifact (`0x00000100`) and a vivado artifact (`0x17010000`) for the same
+    pattern occupy **distinct keys** and never collide — the separation is a direct
+    consequence of the existing key, requiring no new mechanism. Switching
+    `PYRO_TOOLCHAIN` therefore never serves a mock stub where a real-metrics
+    artifact is expected, or vice versa.
+
+- **R77 (`vivado` per-job timeout — the adapter kills its own process tree).** The
+  client-side service reaper (R63e) is **bookkeeping only**: it marks a key failed
+  and unblocks the residency gauge, but it does **not** kill a hung worker's Vivado
+  subprocess. Therefore the `vivado` toolchain MUST enforce **its own** subprocess
+  timeout: it MUST launch Vivado with a deadline, and on expiry MUST **kill the
+  entire Vivado process tree** (Vivado plus any children) and raise
+  `SynthesisFailed`, which maps to the permanent-fallback semantics of R65. The
+  default is `VIVADO_JOB_TIMEOUT = 1800 s` (30 min), overridable via the
+  `ToolchainConfig` per-job-timeout field (R70a). This adapter-level kill is the
+  authoritative one; the R63e reaper remains a backstop. The R63 asynchrony
+  guarantees are unchanged: the timeout runs entirely inside the out-of-process
+  worker and never blocks or slows any caller (a caller is served by fallback the
+  whole time).
+
+  > *Numbering note.* R76 is assigned in §10.1 (the deferred Ethernet
+  > control-frame format), keeping that ruling adjacent to the material it governs.
 
 ---
 
@@ -1200,6 +1395,13 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     persistent **bitstream cache** (R4). If unset, the runtime chooses a default
     location. Codified here so test harnesses can isolate and assert cache
     hygiene (cold→warm persistence across process restart, no residue).
+  - `PYRO_TOOLCHAIN` (**NEW obligation, v2.1.0**) — `mock` | `vivado`, selecting the
+    synthesis toolchain (default `mock`); full semantics in R70. An unrecognized
+    value is treated as `mock` (fail safe).
+  - `PYRO_VIVADO` (**NEW obligation, v2.1.0**) — the Vivado install directory used
+    when `PYRO_TOOLCHAIN=vivado`; no default and no filesystem/`PATH` scanning by
+    library code (R70). Unset/unresolvable ⇒ the real toolchain is unavailable
+    (`toolchain_present=false`, R71).
   These knobs MUST NOT be read on the per-call hot path (R35a/R5).
 - **R69 (device-free ABI-conformance scope — blessing/clarification).** The
   `pyro_generate` descriptor (R40/R40a) is an **L2-private serialized-automaton
@@ -1321,36 +1523,67 @@ Every AC below is testable **without hardware**.
 
 ### Phase 2 — Real Vivado flow + on-hardware bring-up
 
-Deliver the **real** synthesis flow (generated RTL → Vivado synthesis + P&R → PR
-bitstream + manifest, R47b) integrated into the synthesis service, and bring up a
-generated circuit in the OpenNIC PR region on the physical device over the chosen
-transport. Requires the toolchain and transport prerequisites (§11 P1/P2); ACs
-gated on hardware are SKIP (never PASS) when unavailable.
+Deliver the **real** synthesis flow (generated RTL → Vivado OOC synthesis + P&R →
+honest post-route manifest, R47b/R72) integrated into the synthesis service at the
+`MockToolchain` seam, selected by `PYRO_TOOLCHAIN=vivado` (R70). On the current
+host **P1 is only partially satisfied** (§11 P1; R71): Vivado is present and
+synthesizes the target part, but **no OpenNIC PR-partition floorplan / PR-bitstream
+flow exists** and **the physical device is a third party's live NIC that MUST NOT
+be perturbed**. Accordingly the real OOC-synthesis, honest-metrics, calibration,
+and real-synth-failure clauses are **LIVE**, while every clause requiring a
+loadable PR bitstream or an operable device records a **SKIP** (never PASS) whose
+reason names the absent prerequisite — the live/SKIP matrix is normative in **R71**.
+Requires the toolchain and transport prerequisites (§11 P1/P2).
 
-- **AC-2-1.** With the real toolchain present, a HW-eligible pattern synthesizes
-  to a PR bitstream whose manifest fits the PR-region budget and meets timing;
-  the artifact populates the bitstream cache and reloads warm across restarts.
-  If the toolchain is absent → SKIP. (R11, R47b, R63, P1)
+- **AC-2-1.** With the real toolchain present (`toolchain_present`, R70/R71), a
+  HW-eligible pattern is synthesized by **real Vivado OOC synth + place-and-route**
+  for the target part; the resulting manifest records **genuine post-route**
+  utilization fitting the PR-region budget (R11) and `met_timing` at the 250 MHz
+  proxy clock (R73), carries `payload_kind == "ooc_metrics"` (R72), and the
+  artifact populates the bitstream cache and reloads **warm** across restarts
+  (R4/R63d) — all **LIVE**. The production of a genuine **loadable PR bitstream**
+  (`payload_kind == "pr_bitstream"`) requires `pr_flow_present` and → **SKIP** with
+  that reason (R71/R72). If `toolchain_present == false` → the whole AC SKIPs with
+  reason `toolchain_present=false`. (R11, R47b, R63, R70–R75, P1)
 - **AC-2-2.** A synthesized circuit loaded into the PR region passes the harness
   contract on the physical device: identity block verifies (R47a), scans produce
   sound/complete candidate windows re-verified to byte-identical CPython results
-  over a ≥ 1 MiB corpus. Absent hardware → SKIP. (R16, R17, R19, R47a, F5)
-- **AC-2-3.** Cold→warm→resident timing on hardware matches R4's model:
-  synthesis is minutes (async, never caller-blocking), warm PR load is
-  ~O(100 ms), resident dispatch is immediate. Absent hardware → SKIP; the
-  async/non-blocking property is still asserted against the model. (R4, R63)
-- **AC-2-4.** Bounded-repeat expansion respects `MAX_REPEAT` and the resource
-  estimator agrees with real P&R utilization within a stated margin; a pattern
-  that passes the estimate but fails real synthesis becomes permanently
-  fallback-only with a diagnostic and no caller-visible error. (R11–R13, R65)
+  over a ≥ 1 MiB corpus. This clause requires `device_usable` ∧ `pr_flow_present`
+  (R71), both **false** on this host → **SKIP** with reason
+  `device_usable=false — third-party live NIC, must not perturb; pr_flow_present=false`.
+  The equivalent byte-identical correctness over a ≥ 1 MiB corpus is covered on the
+  software model by AC-1-3. (R16, R17, R19, R47a, R71, F5)
+- **AC-2-3.** Cold→warm→resident timing matches R4's model. With
+  `toolchain_present` (R71), the **cold→warm** leg is **LIVE**: real Vivado
+  synthesis genuinely takes minutes, runs out of process, and **never blocks or
+  slows a caller** (calls are served by fallback throughout, R63). The
+  **warm→resident** PR-load timing (~O(100 ms)) and immediate resident dispatch
+  require `device_usable` → **SKIP** with reason `device_usable=false`. The
+  async/non-blocking property is additionally asserted against the model in all
+  cases. (R4, R63, R71, R77)
+- **AC-2-4.** Bounded-repeat expansion respects `MAX_REPEAT` (R11–R13, model-side,
+  LIVE). With `toolchain_present` (R71), the resource estimator agrees with real
+  P&R utilization within the **pre-registered `ESTIMATOR_CALIBRATION_MARGIN`**
+  (R74), evaluated per pattern over the calibration corpus — **LIVE**; and a
+  pattern that passes the estimate but **fails real synthesis** (does-not-fit,
+  `met_timing==false` per R73, tool error, or the R77 timeout) becomes permanently
+  fallback-only with a diagnostic and no caller-visible error (R65) — **LIVE** on
+  the real path, and also drivable via `pyro.testing.inject_synth_failure` (R67).
+  If `toolchain_present == false` → the estimator-vs-real and real-synth-fail
+  clauses SKIP with reason `toolchain_present=false`; the injected-failure and
+  `MAX_REPEAT` clauses still run. (R11–R13, R65, R73, R74, R77)
 - **AC-2-5.** Throughput of a resident circuit meets R1 on hardware (≥ 1 GiB/s
-  floor, 5 GiB/s target), or records SKIP without hardware; routing thresholds
-  (R3–R5) and the relative loss-regime bound (R3b) hold in all cases. (R1, R2,
-  R3, R59)
+  floor, 5 GiB/s target). This requires `device_usable` (R71) → **SKIP** with
+  reason `device_usable=false`. Routing thresholds (R3–R5) and the relative
+  loss-regime bound (R3b) hold in all cases and are asserted against the model.
+  (R1, R2, R3, R59, R71)
 - **AC-2-6.** Single-tenant PR arbitration on hardware: loading a second
   pattern's circuit evicts the first per R64; results remain byte-identical
-  across evict/reload cycles. Absent hardware → SKIP; policy asserted on model.
-  (R64, R53)
+  across evict/reload cycles. This requires `device_usable` ∧ `pr_flow_present`
+  (R71) → **SKIP** with reason
+  `device_usable=false — third-party live NIC, must not perturb; pr_flow_present=false`.
+  The eviction policy and byte-identical results across evict/reload are asserted
+  on the model. (R64, R53, R71)
 
 ### Phase 3 — Transparent interposition + benchmarks
 
@@ -1376,6 +1609,26 @@ automatic tier-based dispatch and prewarming.
   and synthesis-failure injection increment the correct counters without altering
   results. (R52, R61, R65, R66)
 
+### 10.1 Deferred: Ethernet control-frame format
+
+- **R76 (control-frame format — deferred, not yet specified).** R50 and P2 refer to
+  a "defined control-frame format" for the raw-Ethernet transport binding that
+  encapsulates CSR writes and buffer transfers over `enp175s0f0`/`f1` (F3). That
+  format is **not specified in this document.** The forward reference in earlier
+  drafts ("specified at Phase 1 §10.1") pointed at a subsection that never existed;
+  this ruling records the **disposition** and repairs the dangling reference rather
+  than inventing the frame format now. **The frame format is deferred to
+  Phase-2b/Phase-3 hardware enablement** — the point at which `device_usable`
+  (R71) becomes true and a raw-Ethernet path to a PYRO-controllable device is
+  actually built. Deferring it is safe for Phase 2 because **every device-dependent
+  clause SKIPs** on the current host (R71: `device_usable == false`,
+  `pr_flow_present == false`), so no Phase-2 AC exercises the raw-Ethernet
+  transport. When enablement begins, this subsection MUST be filled with the
+  normative frame layout (EtherType, control/data framing, register-address
+  encoding, sequencing, and MTU/fragmentation handling) under a version bump, and
+  R50/P2 updated to cite it. Until then the raw-Ethernet binding is **not a
+  Phase-2 deliverable** and MUST NOT be assumed by any AC.
+
 ---
 
 ## 11. Prerequisites, risks, and open items
@@ -1386,16 +1639,23 @@ automatic tier-based dispatch and prewarming.
   **critical path for Phase 2** (not an optional add-on). Required: Vivado
   matching the OpenNIC shell version; a floorplanned PR partition for the 250 MHz
   user box with a fixed static/reconfigurable interface (`pblock` + the harness
-  contract, §7.4); and a PR bitstream generation flow. All of this is currently
-  absent (F5). **Phase 0 and Phase 1 MUST proceed entirely without it** via the
-  software model and mock toolchain (R7/R63b); Phase 2 ACs are conditional on its
-  availability (AC-2-1..2-6 SKIP when absent).
+  contract, §7.4); and a PR bitstream generation flow. **Status at Phase-2 start
+  (R71):** the Vivado half is now **present** — Vivado 2023.1
+  (`/usr/local/cad/Vivado/2023.1`) synthesizes, places, and routes the target part
+  `xcu250-figd2104-2L-e` with no license error — but the OpenNIC **PR floorplan and
+  PR-bitstream flow remain absent**, and the physical device is a third party's
+  live NIC that MUST NOT be perturbed. P1 is therefore **partially satisfied**: real
+  OOC synthesis is LIVE (R70–R75), while PR-bitstream and on-device clauses SKIP.
+  **Phase 0 and Phase 1 MUST proceed entirely without any of it** via the software
+  model and mock toolchain (R7/R63b); Phase 2 clauses are gated by the R71 live/SKIP
+  matrix (a SKIP names the absent prerequisite; a PASS comes only from real
+  execution).
 - **P2 (transport enablement).** The performance-target QDMA char-dev binding
   requires the QDMA PF/queue setup and `/dev/qdma*` (or equivalent) char devices,
   which do not currently exist (F5). Until then, the **raw-Ethernet-frame
   binding** to `enp175s0f0`/`f1` (F3) is the functional transport; it needs a
-  defined control-frame format (Phase 1 §10.1, R50) and likely `CAP_NET_RAW`/root
-  or an `AF_XDP`/`AF_PACKET` path.
+  defined control-frame format (**deferred; see §10.1 and R76**, R50) and likely
+  `CAP_NET_RAW`/root or an `AF_XDP`/`AF_PACKET` path.
 - **P3 (privilege).** MMIO/DMA and raw-frame transport typically require root or
   specific capabilities. The runtime MUST detect insufficient privilege and fall
   back to the model/CPU with a clear diagnostic rather than crashing (R52).
@@ -1503,6 +1763,53 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.1.0** (2026-07-06) — *Phase-2 real-Vivado rulings (MINOR — added
+  requirements), spec-writer.* Makes the Phase-2 ACs executable on a host where P1
+  is only **partially** satisfied (Vivado present; no OpenNIC PR flow; the physical
+  U250 is a third party's live NIC that MUST NOT be perturbed). No interface/AC
+  break: the C ABI 2.0.0 and the `PYROART1` artifact header (FORMAT_VERSION 1) are
+  untouched; the mock toolchain stays the default so Phase-0/1 behavior is
+  byte-identical when unset. Added §7.6 (real-toolchain adapter contract) and §10.1:
+  - **R70/R70a (toolchain-selection knobs).** `PYRO_TOOLCHAIN=mock|vivado` (default
+    `mock`) and `PYRO_VIVADO=<install dir>` (no default, no library-side scanning),
+    sampled at the R35a points and registered in R68; the selection crosses the
+    worker boundary via an **additively** extended `ToolchainConfig` (kind, vivado
+    dir, part, target clock, per-job timeout) with mock-preserving defaults.
+  - **R71 (partial-P1 live/SKIP matrix).** Three probed predicates
+    (`toolchain_present`, `pr_flow_present`, `device_usable`) with a normative
+    per-clause matrix. Real OOC synth + honest metrics + cache warm-reload + AC-2-4
+    calibration are **LIVE**; every PR-bitstream / on-device clause **SKIPs** with a
+    reason naming the absent prerequisite. SKIP is never PASS; PASS only from real
+    execution.
+  - **R72/R72a–c (payload honesty).** The `vivado` payload stays the model-exec
+    `PYROART1` container (R51b), and honesty is carried by a new **manifest**
+    `payload_kind` field (`mock_stub` default | `ooc_metrics` | reserved
+    `pr_bitstream`) — a JSON-sidecar addition with a default that preserves the
+    round-trip and leaves the ABI-frozen artifact header untouched. `ooc_metrics`
+    manifests MUST record genuine post-route metrics; the loader treats only
+    `pr_bitstream` as an on-device-loadable bitstream.
+  - **R73 (AC-2-1 timing proxy).** A 250 MHz (4.000 ns) OOC clock constraint;
+    `met_timing := (post-route WNS ≥ 0)`, `fmax_mhz := 1000/(4.000 − WNS_ns)`.
+  - **R74 (AC-2-4 pre-registered margin).** Normative `ESTIMATOR_CALIBRATION_MARGIN`
+    fixed **before** calibration data exists: per successfully-synthesized pattern,
+    `real_luts ≤ est_luts`, `real_ffs ≤ est_ffs`, `est_luts ≤ 10·max(1,real_luts)`,
+    `est_ffs ≤ 10·max(1,real_ffs)`.
+  - **R75/R75a (`toolchain_version` encoding).** `vivado` reports
+    `(YY<<24)|(RR<<16)|build` (2023.1 ⇒ `0x17010000`), distinct from the mock's
+    `0x00000100`; `SHELL_VERSION` stays the model-harness value until a real PR flow
+    exists. Cache-key separation between mock and vivado artifacts falls out of the
+    existing R4 key.
+  - **R76 (§10.1 deferral).** The R50/P2 "control-frame format (Phase 1 §10.1)"
+    dangling reference is dispositioned: the frame format is **deferred to
+    Phase-2b/3 hardware enablement** (safe because all device clauses SKIP);
+    §10.1 stub added and R50/P2 references repaired.
+  - **R77 (`vivado` per-job timeout).** The adapter MUST enforce its own subprocess
+    timeout and **kill the Vivado process tree** on expiry → `SynthesisFailed`/R65
+    (default 30 min, overridable via `ToolchainConfig`); the R63e reaper is a
+    bookkeeping backstop; R63 asynchrony unchanged.
+  - Amended AC-2-1..AC-2-6, the Phase-2 intro, and §11 P1 to bind the R71 matrix.
+    **New implementation obligations:** R70/R70a, R72a (`payload_kind`), R73, R74,
+    R75, R77; R71/R76 are dispositions/rulings; R76 repairs a dangling reference.
 - **2.0.5** (2026-07-05) — *Testability rulings (PATCH), Phase 1 acceptance-suite
   author.* Several ACs were only verifiable by reading internals, contradicting
   §9's "tests MUST NOT read the implementation" premise. Added **§9.1 public

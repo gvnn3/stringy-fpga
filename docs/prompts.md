@@ -449,3 +449,70 @@ Relevant files: `/home/gn262/Repos/Yale/stringy-fpga/pyro/_circuit_model.py`, `/
 <summary>Background command "Final full acceptance run (506 tests)" completed (exit code 0)</summary>
 </task-notification>
 
+## 2026-07-05 23:15:45
+
+Explain Phase 2
+
+## 2026-07-05 23:27:56
+
+Carry out Phase 2 and then Phase 3.
+
+## 2026-07-05 23:29:18
+
+Carry out Phase 2 using all the agents as well as /knuthramasant
+
+## 2026-07-05 23:53:01
+
+<task-notification>
+<task-id>bos2rorek</task-id>
+<tool-use-id>toolu_01FGiFokBBJwwCUT7jKBR5BE</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/bos2rorek.output</output-file>
+<status>completed</status>
+<summary>Background command "Probe xcu250 part+license in Vivado 2023.1 and 2025.2 with libtinfo shim" completed (exit code 0)</summary>
+</task-notification>
+
+## 2026-07-06 00:00:56
+
+<task-notification>
+<task-id>a7b944a27850c40eb</task-id>
+<tool-use-id>toolu_018TBbtsp8RQBugVxsHATq1G</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/a7b944a27850c40eb.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec-writer: Phase 2 rulings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The spec is amended, internally consistent, and version-bumped. Here is the summary of every ruling for briefing the coder and test-developer.
+
+## Deliverable
+`/home/gn262/Repos/Yale/stringy-fpga/specs/python-regex-offload.md` — bumped **2.0.5 → 2.1.0** (MINOR: added requirements, no interface/AC break). New content: **§7.6** (rulings R70–R77 except R76), **§10.1** (R76), amended **AC-2-1..AC-2-6**, the Phase-2 intro, **R50/P2**, **R68**, **§11 P1**, and a **§14 changelog** entry.
+
+## Rulings
+
+- **R70 / R70a — toolchain-selection knobs.** `PYRO_TOOLCHAIN=mock|vivado` (default `mock`; unrecognized ⇒ `mock`, fail-safe) and `PYRO_VIVADO=&lt;install dir&gt;` (no default, no library-side `PATH`/filesystem/`XILINX_VIVADO` scanning; unset/unresolvable ⇒ `toolchain_present=false`). Both sampled at the R35a points, never on the hot path; also registered in R68. Selection crosses the worker boundary via **additive** `ToolchainConfig` fields (kind, vivado dir, part `xcu250-figd2104-2L-e`, target clock MHz, per-job timeout), all with mock-preserving defaults so `ToolchainConfig()` is byte-identical to pre-2.1.0.
+
+- **R71 — partial-P1 live/SKIP matrix (normative).** Three probed predicates: `toolchain_present` (true here), `pr_flow_present` (false), `device_usable` (false — third-party live NIC). Normative per-clause table. **LIVE:** real OOC synth+P&amp;R, honest manifest metrics, cache warm-reload, AC-2-4 calibration, real-synth-failure→permanent-fallback. **SKIP** (reason names the absent prerequisite): every PR-bitstream and on-device clause. SKIP is never PASS; PASS only from real execution. A single shared availability probe should expose the three predicates.
+
+- **R72 / R72a–c — payload honesty.** The `vivado` payload stays the model-exec `PYROART1` container (per R51b). Honesty mechanism = **new manifest `payload_kind` string field** (JSON-sidecar only; the ABI-frozen `PYROART1` header and FORMAT_VERSION 1 are untouched). Values: `"mock_stub"` (**default** — preserves JSON round-trip for existing manifests), `"ooc_metrics"` (real post-route metrics, not a device bitstream), reserved `"pr_bitstream"`. The PR loader treats **only** `pr_bitstream` as device-loadable. `ooc_metrics` manifests MUST carry genuine post-route `luts/ffs/fmax_mhz/met_timing` (not the estimator's numbers).
+  - *Judgment call:* chose a manifest field over a `circ_flags` bit because `circ_flags` is baked into the frozen artifact header and `CIRC_FLAGS` register; a JSON field is strictly additive and defaulted, so it is the least invasive honest mechanism.
+
+- **R73 — AC-2-1 timing proxy.** 250 MHz (4.000 ns) OOC clock constraint on `pyro_circuit`; `met_timing := (post-route WNS ≥ 0)`, `fmax_mhz := 1000/(4.000 − WNS_ns)` from `report_timing_summary`. `met_timing==false` ⇒ synthesis failure ⇒ R65 permanent fallback.
+
+- **R74 — AC-2-4 pre-registered margin.** Constant `ESTIMATOR_CALIBRATION_MARGIN`, fixed before calibration data: per successfully-synthesized pattern, `real_luts ≤ est_luts` AND `real_ffs ≤ est_ffs` AND `est_luts ≤ 10·max(1,real_luts)` AND `est_ffs ≤ 10·max(1,real_ffs)`.
+  - *Judgment call:* used **10×** (per the task ruling) rather than the plan's 8×; the task text is authoritative and 10× is the looser, safer ceiling for pre-registration.
+
+- **R75 / R75a — `toolchain_version` encoding.** `vivado` reports `(YY&lt;&lt;24)|(RR&lt;&lt;16)|build`; 2023.1 ⇒ `0x17010000`, distinct from mock `0x00000100`. `SHELL_VERSION` stays the model-harness value `0x0A000001` until a real PR flow exists. Mock/vivado cache-key separation falls directly out of the existing R4 key (no new mechanism).
+
+- **R76 — §10.1 disposition.** The R50/P2 "control-frame format (Phase 1 §10.1)" dangling reference is dispositioned as **deferred to Phase-2b/3 hardware enablement** (safe because all device clauses SKIP). Added §10.1 stub; repaired R50 and P2 to cite it. Frame format deliberately **not invented** now.
+
+- **R77 — `vivado` per-job timeout.** The adapter enforces its own subprocess timeout and **kills the Vivado process tree** on expiry ⇒ `SynthesisFailed` ⇒ R65; default `VIVADO_JOB_TIMEOUT = 1800 s` (30 min), overridable via `ToolchainConfig`. The R63e service reaper remains a bookkeeping backstop; R63 asynchrony unchanged.
+
+## AC wording amendments
+AC-2-1 (real OOC synth LIVE; PR-bitstream sub-clause SKIP), AC-2-2 (full SKIP, device+pr_flow; correctness covered by AC-1-3 on model), AC-2-3 (cold→warm LIVE, warm→resident SKIP), AC-2-4 (cites R74/R73/R77, LIVE), AC-2-5 (SKIP device; routing on model), AC-2-6 (SKIP device+pr_flow; policy on model). Each SKIP reason names the missing predicate.
+
+## Notes for downstream
+- **coder:** implement R70/R70a (knobs + `ToolchainConfig` extension), the `vivado` adapter (R72c/R73/R75/R77), and `payload_kind` on `Manifest` (R72a, default `"mock_stub"`). Do not touch the ABI or `PYROART1` header.
+- **test-developer:** derive from R71's matrix and the amended AC-2-* clauses; build the shared availability probe (three predicates); assert SKIP-reasons name the absent prerequisite and that no SKIP is recorded as PASS. R74's constant and R73's `met_timing`/`fmax_mhz` formulas are citable directly.
+
+Context hygiene: this spec-amendment task is a natural checkpoint. Recommend **/compact** before the next task (delegating R70–R77 to coder and test-developer builds directly on this).</result>
+<usage><subagent_tokens>102245</subagent_tokens><tool_uses>26</tool_uses><duration_ms>407519</duration_ms></usage>
+</task-notification>
+
