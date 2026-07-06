@@ -1,8 +1,8 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.2.1
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
+- **Version:** 2.2.2
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
 
@@ -899,7 +899,15 @@ synthesis time and identified via the identity block (R47a).
     met-timing boolean) from P&R;
   - the **over-approximation classes** the circuit uses and, where feasible, an
     estimated false-positive rate (R19c; empty set for an exact circuit);
-  - a **CRC-32/hash of the bitstream payload** for integrity.
+  - a **CRC-32/hash of the bitstream payload** for integrity;
+  - **`pr_verified: bool`** (added additively, v2.2.2; **default `false`**, JSON
+    round-trip preserved exactly like `payload_kind`, R72a): `true` **iff** Vivado
+    `pr_verify` ran and passed for this artifact (R82c). It MUST be `false`/absent for
+    `mock_stub` and `ooc_metrics` payloads, and MUST be `true` whenever
+    `payload_kind == "pr_bitstream"` (the two are consistent by R82c). This is the
+    **independent, observable seam** for `pr_verify` success (closing the AC-2b-3
+    observability gap: tests read `pr_verified` directly rather than inferring it from
+    `payload_kind`).
   Before a PR load (R40 `pyro_circuit_load`), the host MUST verify the manifest's
   shell/PR-region identifier matches the live device, the bitstream integrity
   hash, and the R47a identity; on any of these failing it MUST refuse the load
@@ -1096,6 +1104,19 @@ knob is set.
     other Vivado on `PYRO_VIVADO` MAY be used at the operator's risk but is not the
     pinned/validated release; the same-release rule (R82a) binds the static shell
     and all partials to whatever release built the locked static DCP.
+  - **R70a-pin.2 (`PINNED_VIVADO_DIR` constant vs. `ToolchainConfig.vivado_dir`
+    default — normative, v2.2.2).** The pin above is a **documented module constant**
+    `PINNED_VIVADO_DIR == "/usr/local/cad/2025.2/Vivado"`, **not** a default value of
+    `ToolchainConfig.vivado_dir`. `ToolchainConfig.vivado_dir` **MUST keep its
+    default `None`**: R70 forbids library code from resolving `PYRO_VIVADO` by
+    scanning the filesystem/`PATH`, and R70a requires a `ToolchainConfig()` with no
+    overrides to be byte-identical to the **mock** toolchain (a non-`None` vivado_dir
+    default would silently name a real install). The `vivado` synthesis path
+    therefore still requires an explicit `PYRO_VIVADO` (R70); `PINNED_VIVADO_DIR` is
+    the **documented resolution source for the JTAG loader** (`load_partial`,
+    R86.5) — i.e. where the pinned `hw_server`/`vivado` binaries are found when the
+    device config does not override it. This confirms the coder's reading: the pin is
+    a constant, not a config default. R70/R70a are unchanged in substance.
 
 - **R71 (partial-P1 live/SKIP matrix — normative).** Phase 2's prerequisite P1 is
   only **partially** satisfied on this host, so the Phase-2 ACs (AC-2-1..AC-2-6)
@@ -1494,6 +1515,21 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     when `PYRO_TOOLCHAIN=vivado`; no default and no filesystem/`PATH` scanning by
     library code (R70). Unset/unresolvable ⇒ the real toolchain is unavailable
     (`toolchain_present=false`, R71).
+  - `PYRO_DEVICE_IFACE` (**NEW obligation, v2.2.2**) — the `onic` netdev name the
+    device transport (R86) binds for the AF_PACKET path. **Default `enp175s0f0`**
+    (F3). Registered as a knob because the interface name is host/operator-specific.
+  - `PYRO_HW_SERVER` (**NEW obligation, v2.2.2**) — the Vivado `hw_server` URL the
+    JTAG loader (R85/R86.5) connects to. **Default `TCP:localhost:3121`** (the
+    stock `hw_server` port). Registered as a knob because the server location is
+    operator-specific.
+  Both device knobs are sampled at the R35a points and carried on the device config
+  (R86); the library MUST NOT read them ad hoc. **Spec-fixed (NOT knobs):** the
+  expected shell identity `PYRO_SHELL_SPEC16` (`0x0202`, compiled-in per R81), the
+  probe/JTAG timeouts (`PYRO_PROBE_TIMEOUT`, `PYRO_JTAG_LOAD_TIMEOUT`, R84), and all
+  R78 frame constants are **spec-fixed**; a device config MAY override them for
+  tests (R86.6) but they are not operator env knobs. This resolves the R86 sampling
+  note: only `PYRO_DEVICE_IFACE`/`PYRO_HW_SERVER` are env-sampled; every other device
+  parameter is a spec constant.
   These knobs MUST NOT be read on the per-call hot path (R35a/R5).
 - **R69 (device-free ABI-conformance scope — blessing/clarification).** The
   `pyro_generate` descriptor (R40/R40a) is an **L2-private serialized-automaton
@@ -1719,21 +1755,28 @@ clauses, the flashed PR shell and validated PR flow (P1).
   `ID_REPLY` whose `static_shell_id` high half matches `PYRO_SHELL_SPEC16` within
   `PYRO_PROBE_TIMEOUT`; it returns `(True, …)` only then **and** with `CAP_NET_RAW`
   present, else `(False, <R83 canonical reason>)`. When `CAP_NET_RAW` is absent it
-  MUST return `(False, …)` **without** raising `PermissionError` or requiring
-  privilege (R86.4). The **privilege-free `(False, reason)`** path is **LIVE** and
-  testable on this host now; the **`(True, …)` / `device_usable` flip** requires the
-  flashed PR shell + `CAP_NET_RAW` → **SKIP** until the probe answers. (R78, R81,
-  R83, R84, R86)
+  MUST return `(False, <exact R86.4 non-elided two-condition literal>)` **without**
+  raising `PermissionError` or requiring privilege (R86.4). The no-privilege /
+  timeout / `SPEC16`-mismatch / valid-`ID_REPLY` paths are all driven **without
+  hardware** through the R86.6 `DeviceConfig` seams (`cap_check` /
+  `transport_factory`), so the **privilege-free `(False, reason)`** and injected-reply
+  paths are **LIVE** and testable on this host now; the real **`(True, …)` /
+  `device_usable` flip against a physical board** requires the flashed PR shell +
+  `CAP_NET_RAW` → **SKIP** until the probe answers. (R78, R81, R83, R84, R86)
 - **AC-2b-3.** A per-pattern PYRO circuit is implemented in-context against the
-  **locked static DCP** (R82), `pr_verify` passes, and the emitted manifest carries
-  `payload_kind == "pr_bitstream"` (R72/R82) with the real shell/PR-region
+  **locked static DCP** (R82), `pr_verify` passes and is recorded as the independent
+  manifest field **`pr_verified == true`** (R47b/R82c), and the emitted manifest
+  carries `payload_kind == "pr_bitstream"` (R72/R82) with the real shell/PR-region
   `SHELL_VERSION`; the partial bitstream loads into `pyro_rp` via JTAG/`hw_server`
   without disturbing the PCIe link (R85), after which the loaded circuit answers
   `ID_REPLY` with a non-zero `rp_child_id` and serves `MATCH_REQUEST`. Requires
   `pr_flow_present` ∧ `device_usable` → **SKIP** on this host (no validated PR flow,
   device not usable); flips to LIVE when both predicates flip true. The JTAG load is
   performed by `pyro.device.load_partial(config, path)`, which raises `PyroLoadError`
-  on any JTAG/`hw_server` failure (R85/R86.5). (R72, R80, R82, R83, R85, R86)
+  on any JTAG/`hw_server` failure or `PYRO_JTAG_LOAD_TIMEOUT` expiry (R84/R85/R86.5) —
+  drivable without hardware via the R86.6 `load_runner` seam. The `pr_verified`
+  manifest consistency (R47b/R82c) is checkable on the host without a device.
+  (R47b, R72, R80, R82, R83, R85, R86)
 
 ### Phase 3 — Transparent interposition + benchmarks
 
@@ -2001,7 +2044,13 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     `payload_kind == "pr_bitstream"` (R72). If `pr_verify` was not run or does not
     pass, the manifest MUST NOT claim `pr_bitstream` — it stays `ooc_metrics` (R72,
     honest metrics, no device claim) or the job fails (R65). Fabricating a
-    `pr_bitstream` claim without a passing `pr_verify` is a defect (R72c honesty).
+    `pr_bitstream` claim without a passing `pr_verify` is a defect (R72c honesty). A
+    passing `pr_verify` MUST be recorded in the **independent manifest field
+    `pr_verified: bool`** (R47b, v2.2.2): `pr_verified == true` iff `pr_verify`
+    passed, and `pr_verified` MUST be consistent with `payload_kind` (`true` exactly
+    when `payload_kind == "pr_bitstream"`; `false`/absent for `mock_stub` and
+    `ooc_metrics`). This gives tests a specced seam to verify `pr_verify` ran without
+    inferring it from `payload_kind` alone (AC-2b-3).
   - **R82d (`pr_flow_present` artifacts).** `pr_flow_present` (R71/R83) is the
     conjunction of: the locked static DCP (R82b) present and validated on the host,
     a `pyro_rp` floorplan (`Pblock` + `HD.RECONFIGURABLE`, R80 boundary), and a
@@ -2052,6 +2101,15 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     the adapter selects the PR default when the job targets `payload_kind ==
     "pr_bitstream"`, else the R77 default. Neither timeout ever blocks or slows a
     caller (R63/R77 asynchrony unchanged).
+  - **`PYRO_JTAG_LOAD_TIMEOUT = 600 s` (10 min) — normative constant, v2.2.2.** The
+    deadline for the R85 JTAG `program_hw_devices` step in `load_partial` (R86.5),
+    which is distinct from and much shorter than the synthesis-job timeouts above (it
+    programs an already-built bitstream, not a P&R run). On expiry the loader MUST
+    apply **R77 kill discipline** — terminate the `hw_server`/programming process
+    tree — and raise `PyroLoadError` (R86.1/R86.5). Overridable via the device config
+    (R86.6) for tests; the default is the spec constant. A JTAG-load timeout is a
+    load failure (transient, → `PYRO_E_NOT_RESIDENT`/fallback via R47c), **not** a
+    permanent synthesis failure (R65).
 
 - **R85 (Phase-2b PR-load path is JTAG; ICAP/MCAP deferred).** In Phase 2b,
   `pyro_circuit_load` on hardware (R40) for a `pr_bitstream` artifact (R72/R82) is
@@ -2073,10 +2131,14 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
   test-developer derive the device-plumbing surface from this spec independently. It
   is **PYRO-specific** and MUST NOT appear on the standard `re` namespace when
   interposing (§7.2), mirroring R31/R62/§9.1. All four functions are **config-in with
-  no ad-hoc environment reads**: every environment-derived value (netdev name,
-  expected `PYRO_SHELL_SPEC16`, probe-timeout override, Vivado/`hw_server` locations)
-  is carried on the passed config, which was sampled at the R35a points (R5/R35a
-  discipline; the functions MUST NOT read `os.environ` themselves).
+  no ad-hoc environment reads**: the two operator-environment values — the netdev
+  name (`PYRO_DEVICE_IFACE`) and the `hw_server` URL (`PYRO_HW_SERVER`) — are the
+  **only** env-sampled inputs (R68, sampled at the R35a points) and are carried on
+  the passed device config; every other device parameter (expected
+  `PYRO_SHELL_SPEC16` per R81, the R84 timeouts, all R78 frame constants) is a
+  **spec-fixed constant** with the literal default the coder used, overridable on the
+  config for tests only (R86.6). The functions MUST NOT read `os.environ` themselves
+  (R5/R35a discipline).
   - **R86.1 (exception taxonomy).** The module defines a base
     **`PyroDeviceError(Exception)`** and subclasses **`PyroFrameError(PyroDeviceError)`**
     (malformed frame in encode/decode) and **`PyroLoadError(PyroDeviceError)`**
@@ -2094,7 +2156,10 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     `bytes`; `flags` MUST be `0` in version 1. It sets `magic=0x50`, `version=0x01`,
     `length=len(payload)`, `reserved=0`, encoding all header fields **big-endian**
     (R78.2/R78.3). It MUST raise `PyroFrameError` if `len(payload) > 1486` (R78.9),
-    if `kind` is not an R78.4 value, or if `flags != 0`.
+    if `flags != 0`, or if `kind` is not a **sendable** kind. The **sendable kinds
+    are exactly `0x01`–`0x05`** (R78.4). **`0x00` is `reserved` and is NOT a message
+    kind** — `encode_frame` MUST reject it (confirming the coder's reading, v2.2.2);
+    likewise any value `> 0x05` or otherwise undefined in R78.4 is rejected.
   - **R86.3 (`decode_frame`).** `decode_frame(data: bytes) -> result` parses the PYRO
     control header + payload (the same slice `encode_frame` returns) and returns a
     structured result whose fields are named exactly for the R78 header:
@@ -2117,8 +2182,12 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     **R83 canonical `device_usable=false — …` enumeration** of the unmet conditions.
     **`probe_device` MUST NEVER require elevated privilege to return `(False,
     reason)`:** if `CAP_NET_RAW` is absent it MUST detect that **before** attempting
-    any privileged `AF_PACKET` operation and return `(False, "device_usable=false —
-    …transport: CAP_NET_RAW absent")` — it MUST NOT raise `PermissionError` or crash.
+    any privileged `AF_PACKET` operation and MUST NOT raise `PermissionError` or
+    crash. When `CAP_NET_RAW` is absent the probe cannot send `ID_REQUEST`, so
+    **both** R83 conditions are unmet and the returned reason MUST be the exact,
+    **non-elided** two-condition canonical literal (converged with R83's current-host
+    string):
+    `device_usable=false — probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch), transport: CAP_NET_RAW absent`.
     It returns, never raises, for any "not usable" condition (including timeout and
     `SPEC16` mismatch); it MAY raise `PyroFrameError` only on a genuinely malformed
     reply frame, which the caller treats as not-usable.
@@ -2131,7 +2200,44 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     R72b/R82) is enforced by `pyro_circuit_load` (R40) upstream; `load_partial`
     performs the JTAG mechanism and surfaces mechanism failures as `PyroLoadError`
     (mapping, in the residency manager, to the R47c not-resident / R65 semantics as
-    appropriate).
+    appropriate). It MUST bound the `program_hw_devices` step by
+    `PYRO_JTAG_LOAD_TIMEOUT` (R84) and, on expiry, kill the programming process tree
+    and raise `PyroLoadError`.
+  - **R86.6 (`DeviceConfig` type + spec-sanctioned private test seams — NEW, v2.2.2).**
+    The device functions take a public **`pyro.device.DeviceConfig`** — a frozen
+    dataclass whose fields are **config-in with no env reads**, each **defaulted from
+    a spec constant** so `DeviceConfig()` is fully usable without introspection:
+    - `iface: str` — netdev name, default from `PYRO_DEVICE_IFACE` (R68) sampled at
+      R35a, spec default `"enp175s0f0"` (F3);
+    - `hw_server: str` — default from `PYRO_HW_SERVER` (R68), spec default
+      `"TCP:localhost:3121"`;
+    - `expected_spec16: int` — default `PYRO_SHELL_SPEC16` = `0x0202` (R81);
+    - `probe_timeout_s: float` — default `PYRO_PROBE_TIMEOUT` = `0.5` (R84);
+    - `probe_attempts: int` — default `3` (R84);
+    - `jtag_load_timeout_s: float` — default `PYRO_JTAG_LOAD_TIMEOUT` = `600.0` (R84);
+    - `vivado_dir: str` — default `PINNED_VIVADO_DIR` (R70a-pin.2) for locating the
+      pinned `hw_server`/`vivado` used by `load_partial`.
+
+    Only `iface`/`hw_server` derive from env knobs; the rest are spec constants a test
+    MAY override on the config. **Spec-sanctioned private test seams:** because R67's
+    `pyro.testing` scope covers only model/synth fault injection, the device paths are
+    made hardware-free-testable via **three private, defaulted `DeviceConfig` seam
+    fields** the **test-developer MAY use normatively**:
+    - `cap_check: Callable[[], bool]` — overrides the `CAP_NET_RAW` detection
+      (exercises the no-privilege `(False, reason)` path, R86.4);
+    - `transport_factory: Callable[..., Transport]` — supplies a fake frame
+      transport (exercises timeout / `SPEC16`-mismatch / valid-`ID_REPLY` paths
+      without a NIC);
+    - `load_runner: Callable[..., None]` — supplies a fake JTAG runner (exercises
+      `PyroLoadError` / timeout without `hw_server`).
+    Each MUST **default to the real production implementation** so a `DeviceConfig()`
+    with no overrides is byte-identical to production behavior (mirroring R63b's mock
+    seam and R70a's mock-preserving defaults). These seams need **no**
+    `PYRO_ENABLE_TEST_HOOKS` gate (they are explicit config injection, not ambient
+    process-wide hooks, so there is no production foot-gun); passing a non-default
+    value is the deliberate act. They are the specced way to drive the
+    no-privilege / timeout / `SPEC16`-mismatch / load-failure paths of AC-2b-1..2b-3
+    without hardware.
 
 ---
 
@@ -2271,6 +2377,46 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.2.2** (2026-07-06) — *`pyro.device` dispositions (PATCH — clarifications +
+  small additive fields), spec-writer.* Resolves five coder notes and three
+  test-developer notes against v2.2.1's R86; no interface/AC break, no renumbering,
+  frozen invariants untouched (C ABI 2.0.0, `PYROART1` FORMAT_VERSION 1,
+  `SHELL_VERSION 0x0A000001` semantics, all existing AC numbers). Additive manifest
+  field only (`pr_verified`, back-compat JSON round-trip like `payload_kind`).
+  - **R70a-pin.2 (coder note 1 — confirmed).** The 2025.2 pin is a documented module
+    constant `PINNED_VIVADO_DIR`, **not** a `ToolchainConfig.vivado_dir` default:
+    `vivado_dir` keeps default `None` (R70 forbids library-side `PYRO_VIVADO`
+    resolution; R70a requires `ToolchainConfig()` ≡ mock). `PINNED_VIVADO_DIR` is the
+    R86.5 JTAG-loader resolution source. Confirms the coder's reading.
+  - **R86.6 (coder note 2 + test-dev note B — `DeviceConfig` + private seams).** Named
+    the public frozen `pyro.device.DeviceConfig` (fields all defaulted from spec
+    constants; config-in, no env reads). Blessed three **spec-sanctioned private
+    `DeviceConfig` seam fields** — `cap_check` / `transport_factory` / `load_runner`
+    — that default to production impls and that the test-developer MAY use normatively
+    to drive the no-privilege / timeout / `SPEC16`-mismatch / load-failure paths
+    without hardware; no `PYRO_ENABLE_TEST_HOOKS` gate needed (explicit config
+    injection, not ambient hooks).
+  - **R68 device knobs (coder note 3).** Registered `PYRO_DEVICE_IFACE` (default
+    `enp175s0f0`, F3) and `PYRO_HW_SERVER` (default `TCP:localhost:3121`) as the
+    **only** env-sampled device inputs (R35a). Ruled `PYRO_SHELL_SPEC16`, the R84
+    timeouts, and R78 frame constants **spec-fixed** (config-overridable for tests,
+    not env knobs). Reconciled R86's blanket sampling note accordingly.
+  - **R84 `PYRO_JTAG_LOAD_TIMEOUT = 600 s` (coder note 4).** New normative constant
+    for the R85 `program_hw_devices` step (distinct from the synthesis-job timeouts);
+    R77 kill discipline on expiry → `PyroLoadError`; a load timeout is transient
+    (`PYRO_E_NOT_RESIDENT`/fallback), not permanent (R65). Wired into R86.5/R86.6.
+  - **R86.2 (coder note 5 + test-dev note).** Confirmed `0x00` is `reserved` and **not
+    a sendable message kind**: `encode_frame` sendable kinds are exactly `0x01`–`0x05`
+    (R78.4); `0x00` and any undefined value raise `PyroFrameError`.
+  - **R86.4 (test-dev note A).** Replaced the elided reason example with the exact,
+    **non-elided** two-condition canonical literal (converged with R83's current-host
+    string), so the literal is normative.
+  - **R47b/R82c `pr_verified: bool` (test-dev note C).** Added an additive manifest
+    field (default `false`, JSON round-trip preserved) that is `true` **iff**
+    `pr_verify` passed, consistent with `payload_kind` (`true` exactly for
+    `pr_bitstream`; `false`/absent for `mock_stub`/`ooc_metrics`) — an independent,
+    host-observable seam closing the AC-2b-3 `pr_verify` observability gap. Updated
+    AC-2b-2/AC-2b-3.
 - **2.2.1** (2026-07-06) — *Vivado re-pin to 2025.2 + `pyro.device` API surface
   (MINOR — added requirement + toolchain re-pin), spec-writer.* Two items; no frozen
   invariant touched (C ABI 2.0.0, `PYROART1` FORMAT_VERSION 1, `SHELL_VERSION
