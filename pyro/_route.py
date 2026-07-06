@@ -100,6 +100,20 @@ _ENV_LOCK = threading.Lock()          # serializes samplers (R35d thread-safety)
 _TEST_HOOKS = False
 _N_SYNTH = None
 
+# R70 cached toolchain selection — sampled at the SAME R35a points, never per
+# call.  _TOOLCHAIN is "mock" | "vivado" (any unrecognized PYRO_TOOLCHAIN value
+# is treated as "mock", fail safe); _VIVADO_DIR is the raw PYRO_VIVADO install
+# dir (no PATH/XILINX_VIVADO scanning in library code — R70).  This snapshot is
+# refreshed at every R35a sampling point; pyro.synth.residency reads it when it
+# first BUILDS the residency manager and pins the resulting ToolchainConfig for
+# that manager's lifetime (the out-of-process worker is spawned with it).  A
+# mid-process PYRO_TOOLCHAIN switch therefore reaches a *freshly built* manager
+# (e.g. after reset_manager), not an already-running one — see get_manager's
+# docstring for why the toolchain is pinned at construction rather than
+# live-swapped (orphaned-subprocess safety).
+_TOOLCHAIN = "mock"
+_VIVADO_DIR = None
+
 
 def _parse_n_synth(raw):
     """Validate a PYRO_N_SYNTH value: a positive int, else ``None`` (default)."""
@@ -119,13 +133,19 @@ def sample_env() -> None:
     Thread-safe and idempotent; publishes a new snapshot with a single atomic
     rebind so in-flight decisions are unaffected (R35d).
     """
-    global _ENV, _TEST_HOOKS, _N_SYNTH
+    global _ENV, _TEST_HOOKS, _N_SYNTH, _TOOLCHAIN, _VIVADO_DIR
     with _ENV_LOCK:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
         _ENV = (disabled, force)
         _TEST_HOOKS = os.environ.get("PYRO_ENABLE_TEST_HOOKS") not in _UNSET_VALUES
         _N_SYNTH = _parse_n_synth(os.environ.get("PYRO_N_SYNTH"))
+        # R70: toolchain selection.  Unrecognized PYRO_TOOLCHAIN => "mock" (fail
+        # safe: never silently attempt a real flow the operator did not name).
+        _tc = os.environ.get("PYRO_TOOLCHAIN")
+        _TOOLCHAIN = "vivado" if _tc == "vivado" else "mock"
+        _vd = os.environ.get("PYRO_VIVADO")
+        _VIVADO_DIR = _vd if _vd else None
     # Push the freshly-sampled launch threshold onto the live residency manager
     # (R68).  Done outside the _ENV_LOCK and only if the synth subsystem is
     # already imported, so package init / the fallback hot path never pull it in.
@@ -145,6 +165,16 @@ def test_hooks_enabled() -> bool:
 def n_synth_override():
     """Cached PYRO_N_SYNTH launch-threshold override, or ``None`` (R68)."""
     return _N_SYNTH
+
+
+def toolchain_selection():
+    """Cached (kind, vivado_dir) toolchain selection (R70).
+
+    ``kind`` is ``"mock"`` or ``"vivado"`` (unrecognized => ``"mock"``);
+    ``vivado_dir`` is the raw PYRO_VIVADO install dir or ``None``.  Sampled only
+    at R35a points; read by :mod:`pyro.synth.residency` when it builds the
+    residency manager's ToolchainConfig (never on the per-call hot path)."""
+    return (_TOOLCHAIN, _VIVADO_DIR)
 
 
 # Sample once at first import of this module (R35a.1: package initialization).

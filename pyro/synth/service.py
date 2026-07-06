@@ -32,7 +32,9 @@ import time
 from typing import Callable, Dict, Optional, Tuple
 
 from .cache import BitstreamCache, BitstreamKey, key_digest
-from .toolchain import MockToolchain, SynthJob, SynthesisFailed, ToolchainConfig
+from .toolchain import (
+    MockToolchain, SynthJob, SynthesisFailed, ToolchainConfig, VivadoToolchain,
+)
 
 # Result records pushed from the worker back to the client.
 STATUS_OK = "ok"
@@ -50,6 +52,22 @@ def _pick_context():
     return _mp.get_context()
 
 
+def _make_toolchain(config: ToolchainConfig):
+    """Construct the toolchain the worker runs, selected by ``config.kind`` (R70).
+
+    ``vivado`` selects the real OOC adapter (R70-R77); anything else selects the
+    mock (R63b) — the Phase-0/1 default.  Note (R70/R71 fail-safe): when
+    ``kind == "vivado"`` but PYRO_VIVADO does not resolve to a runnable Vivado,
+    the mock is **NOT** silently substituted — :class:`VivadoToolchain` is still
+    constructed and its ``run`` raises :class:`SynthesisFailed` (toolchain
+    absent), so a vivado synth request fails safe to permanent fallback (R65)
+    under its own R75a cache key rather than being served a mock stub.
+    """
+    if config.kind == "vivado":
+        return VivadoToolchain(config)
+    return MockToolchain(config)
+
+
 def _worker_main(job_q, result_q, cache_root: str, config: ToolchainConfig) -> None:
     """Worker-process entry point (top-level so it is picklable under 'spawn').
 
@@ -59,7 +77,7 @@ def _worker_main(job_q, result_q, cache_root: str, config: ToolchainConfig) -> N
     that could affect the caller.
     """
     cache = BitstreamCache(cache_root)
-    toolchain = MockToolchain(config)
+    toolchain = _make_toolchain(config)
     while True:
         item = job_q.get()
         if item is None:                      # shutdown sentinel

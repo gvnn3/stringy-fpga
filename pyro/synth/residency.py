@@ -45,7 +45,8 @@ from . import artifact as _artifact
 from .cache import BitstreamCache, BitstreamKey, make_key, key_digest
 from .service import SynthesisService, STATUS_OK, STATUS_FAILED
 from .toolchain import (
-    TOOLCHAIN_VERSION, SHELL_VERSION, SynthJob, ToolchainConfig,
+    TOOLCHAIN_VERSION, VIVADO_TOOLCHAIN_VERSION, SHELL_VERSION, SynthJob,
+    ToolchainConfig,
 )
 
 # Launch-policy threshold (R4a): dispatch count at/above which a hot pattern's
@@ -116,10 +117,22 @@ class ResidencyManager:
         }
 
     # -- key construction (canonical, R4b) ---------------------------------
+    def _toolchain_version(self) -> int:
+        """The R4/R47b toolchain_version for the configured kind (R75/R75a).
+
+        mock => 0x00000100, vivado => 0x17010000 (pinned 2023.1).  Because this
+        is a component of the R4 bitstream-cache key, a mock artifact and a
+        vivado artifact for the same pattern occupy **distinct keys** and never
+        collide (R75a) — switching PYRO_TOOLCHAIN never serves a mock stub where
+        real metrics are expected, or vice versa."""
+        if getattr(self._toolchain_config, "kind", "mock") == "vivado":
+            return VIVADO_TOOLCHAIN_VERSION
+        return TOOLCHAIN_VERSION
+
     def bitstream_key(self, pattern, flags: int, enc: Optional[int] = None
                       ) -> BitstreamKey:
         dk = _identity.descriptor_key(pattern, flags, hdl.GENERATOR_VERSION)
-        return make_key(dk, TOOLCHAIN_VERSION, SHELL_VERSION)
+        return make_key(dk, self._toolchain_version(), SHELL_VERSION)
 
     # -- service lifecycle -------------------------------------------------
     def _ensure_service(self) -> SynthesisService:
@@ -238,6 +251,14 @@ class ResidencyManager:
         if entry is None:
             return False
         manifest = entry.manifest
+        # R72b (loader honesty): a genuine on-*device* PR load requires
+        # manifest.is_device_loadable() (payload_kind == "pr_bitstream").  On
+        # this device-free host no such artifact exists ("mock_stub"/"ooc_metrics"
+        # are model-exec containers, not device bitstreams), so what follows is
+        # the *model-resident standin* for the device lifecycle (see the module
+        # design note, R7/R51b): the software model executes the PYROART1
+        # container regardless of payload_kind, and tier/residency bookkeeping is
+        # unchanged.  The on-device residency clauses SKIP until pr_flow_present.
         # R47b: refuse a load whose shell/PR-region + harness are incompatible, or
         # whose bitstream integrity hash does not match (treated as fallback, not
         # a device error).
@@ -421,12 +442,61 @@ def apply_n_synth() -> None:
             _GLOBAL._n_synth = _effective_n_synth()
 
 
+def _effective_toolchain_config() -> ToolchainConfig:
+    """Build the worker's :class:`ToolchainConfig` from the sampled R70 toolchain
+    selection (``PYRO_TOOLCHAIN`` / ``PYRO_VIVADO``).
+
+    The selection is read from :mod:`pyro._route`'s cached snapshot, which is
+    (re)sampled from ``os.environ`` at the R35a sampling points (import,
+    install/uninstall, refresh_env) — never on the per-call hot path.  The
+    residency manager reads this snapshot **once, when it is first created**, and
+    pins the toolchain for its lifetime (see :func:`get_manager`).  Defaults
+    reproduce the mock behavior, so with no knob set this returns a byte-identical
+    ``ToolchainConfig()`` (kind ``"mock"``) and Phase-0/1 behavior is unchanged
+    (R70a)."""
+    from .. import _route
+    kind, vivado_dir = _route.toolchain_selection()
+    if kind == "vivado":
+        return ToolchainConfig(kind="vivado", vivado_dir=vivado_dir)
+    return ToolchainConfig()
+
+
+def _effective_timeout(config: ToolchainConfig) -> float:
+    """The client-side service-reaper (R63e) timeout for a given toolchain.
+
+    R77: the reaper is *bookkeeping only* and a **backstop** to the vivado
+    adapter's own authoritative process-tree kill (job_timeout_s).  A backstop
+    that fires *before* the authoritative timeout would spuriously mark every
+    minutes-long real Vivado job as failed, so for the vivado kind the reaper
+    window must sit strictly beyond the adapter's own deadline.  For the mock
+    kind the Phase-0/1 default (30 s) is preserved byte-for-byte."""
+    if getattr(config, "kind", "mock") == "vivado":
+        # adapter kills at job_timeout_s; give the backstop a generous margin for
+        # Vivado startup + report writing + result plumbing.
+        return float(config.job_timeout_s) + 300.0
+    return 30.0
+
+
 def get_manager() -> ResidencyManager:
     """The process-wide residency manager (lazily created).
 
     Its persistent cache defaults to the user cache area (``default_root``); a
     test may point it at a temp directory via ``PYRO_CACHE_DIR`` + ``reset_manager``.
     Its launch threshold honors the sampled ``PYRO_N_SYNTH`` override (R68).
+
+    Toolchain selection (R70).  The ``PYRO_TOOLCHAIN`` / ``PYRO_VIVADO`` knobs are
+    re-sampled into :mod:`pyro._route`'s cached snapshot at every R35a sampling
+    point (import, install/uninstall, refresh_env).  This manager reads that
+    snapshot **once, at first creation**, and pins the resulting
+    :class:`ToolchainConfig` (and its R77 reaper timeout) for its lifetime — the
+    out-of-process worker is spawned with that config.  A mid-process switch of
+    ``PYRO_TOOLCHAIN`` therefore takes effect for a **freshly created** manager
+    (e.g. after :func:`reset_manager`), NOT for an already-running one; this is
+    intentional — live-swapping the toolchain of a manager with an in-flight
+    real-Vivado job would orphan that job's subprocess tree (its R77 self-kill
+    cannot run once the worker is torn down).  Unlike the scalar ``PYRO_N_SYNTH``
+    (consulted per dispatch and pushed live by :func:`apply_n_synth`), the
+    toolchain governs a spawned subprocess and so is pinned at construction.
     """
     global _GLOBAL
     mgr = _GLOBAL
@@ -434,7 +504,15 @@ def get_manager() -> ResidencyManager:
         return mgr
     with _GLOBAL_LOCK:
         if _GLOBAL is None:
-            _GLOBAL = ResidencyManager(n_synth=_effective_n_synth())
+            # R70a: the sampled toolchain selection crosses into the worker via
+            # the ToolchainConfig built here (mock by default; vivado when the
+            # operator opted in at the last R35a sampling point).  The service
+            # reaper timeout tracks the toolchain (R77 backstop vs. mock default).
+            _cfg = _effective_toolchain_config()
+            _GLOBAL = ResidencyManager(
+                toolchain_config=_cfg,
+                n_synth=_effective_n_synth(),
+                timeout=_effective_timeout(_cfg))
         return _GLOBAL
 
 

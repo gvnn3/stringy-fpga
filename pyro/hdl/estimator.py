@@ -43,10 +43,40 @@ PR_DSPS = 768
 PR_PARTITIONS = 1  # single-tenant region (R64)
 
 # Linear cost model (LUTs/FFs) — see module docstring.
-_HARNESS_LUTS = 2_000       # CSR block, DMA sequencing, result-ring writer
-_HARNESS_FFS = 2_000
-_LUTS_PER_STATE = 8
-_LUTS_PER_EDGE = 4
+#
+# R74 recalibration (Phase 2, AC-2-4).  The pre-2.1.0 constants (base 2000
+# LUTs/2000 FFs) predated any real synthesis and over-counted the fixed harness
+# by ~10x, violating R74's `est <= 10 * real` for small patterns.  These
+# constants are fit to genuine post-route (`report_utilization`) data from real
+# Vivado 2023.1 OOC synth+P&R of `pyro_circuit` for the physical U250 part
+# (`xcu250-figd2104-2L-e`), 250 MHz constraint, all met timing:
+#
+#   pattern                              n_states  byte_edges  real_LUTs  real_FFs
+#   rb"abc"                                     4         3        197       427
+#   rb"[a-z]+[0-9]{2,4}"                        9         6        197       430
+#   rb"(?:GET|POST|PUT) /[a-z/]* HTTP"        24        18        221       441
+#   rb"^ERROR: .*$"                           12         8        226       431
+#   rb"[A-Za-z0-9]{60}"                        62        60        228       484
+#   rb"[A-Za-z0-9]{200}"                      202       200        410       626
+#
+# Observations: (1) the ~200-LUT / ~430-FF floor (CSR mux, control FSM, 64-bit
+# byte-index/offset counters, result-ring writer) dominates small patterns; (2)
+# real FFs grow at almost exactly 1/state (the one-hot state vector is NSTATES
+# bits by construction), with a strikingly stable intercept `real_ffs - n_states`
+# of 417-424; (3) real LUTs grow only ~1 per (state≈edge).  The coefficients
+# below deliberately over-count the *slope* (LUTs ~6/state combined, i.e. several
+# times the observed ~1/state) so the estimate stays a conservative over-estimate
+# for automata larger than the corpus (R74 clauses 1-2, `real <= est`), while the
+# modest bases keep every corpus point within the 10x ceiling (R74 clauses 3-4):
+# measured est/real ratios are 1.4-3.6x (LUTs) and ~1.05x (FFs).  MAX_STATES
+# (=1024) remains the *binding* eligibility constraint (see the budget comment
+# above): even a MAX_STATES-sized automaton estimates ~6.4k LUTs / ~1.5k FFs,
+# far under PR_LUTS/PR_FFS, so no classifier-eligible pattern is rejected for
+# resources and no classification flips.
+_HARNESS_LUTS = 256         # CSR block, DMA sequencing, result-ring writer
+_HARNESS_FFS = 448
+_LUTS_PER_STATE = 4
+_LUTS_PER_EDGE = 2
 _FFS_PER_STATE = 1
 
 
