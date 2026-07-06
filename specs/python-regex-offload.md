@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.1.1
+- **Version:** 2.1.2
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
@@ -1069,6 +1069,19 @@ knob is set.
     overrides is byte-identical to the pre-2.1.0 default. The worker constructs the
     named toolchain from this config; the service/queue/dedup/isolation machinery
     (R63a–R63e) is unchanged.
+  - **R70b (toolchain selection is pinned at manager construction).** Although the
+    R35a snapshot of `PYRO_TOOLCHAIN`/`PYRO_VIVADO` is refreshed at every sampling
+    point (import, `install()`/`uninstall()`, `refresh_env()`), a residency/
+    synthesis manager **pins its `ToolchainConfig` at construction**, so a
+    re-sampled toolchain change takes effect only in a manager built **after** the
+    sampling point (a fresh process, or an explicit manager reset) — not by live
+    re-push into an already-running manager. Rationale (consistent with R35b's
+    deferred-refresh discipline): unlike a per-dispatch scalar such as
+    `PYRO_N_SYNTH` (R68), the toolchain governs a **spawned subprocess**, and
+    tearing down a manager mid-flight to swap it would SIGTERM an in-flight
+    real-Vivado worker and orphan its process tree, bypassing the R77 in-worker
+    kill — strictly worse than deferred pickup. This deferral is intentional and
+    MUST be documented (R35b).
 
 - **R71 (partial-P1 live/SKIP matrix — normative).** Phase 2's prerequisite P1 is
   only **partially** satisfied on this host, so the Phase-2 ACs (AC-2-1..AC-2-6)
@@ -1805,6 +1818,16 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.1.2** (2026-07-06) — *Toolchain-selection pinning (PATCH — clarification),
+  spec-writer.* Surfaced by code review + coder analysis; no interface/AC break, no
+  new implementation obligation. Added **R70b**: a residency/synthesis manager
+  **pins its `ToolchainConfig` at construction**, so a mid-process re-sample of
+  `PYRO_TOOLCHAIN`/`PYRO_VIVADO` takes effect only in a manager built after the
+  sampling point (fresh process or explicit reset), not by live re-push. Rationale
+  (consistent with R35b deferred-refresh): the toolchain governs a spawned
+  subprocess, so tearing a manager down mid-flight would SIGTERM an in-flight
+  Vivado worker and orphan its process tree, bypassing the R77 in-worker kill —
+  strictly worse than deferred pickup.
 - **2.1.1** (2026-07-06) — *Phase-2 test-author adjudications (PATCH —
   clarifications), spec-writer.* Three ambiguities surfaced by the test-developer
   against v2.1.0; no interface/AC break, no new implementation obligation.

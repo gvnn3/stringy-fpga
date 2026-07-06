@@ -609,3 +609,245 @@ Context hygiene: this was a follow-up adjudication on the same spec, a natural c
 <usage><subagent_tokens>114610</subagent_tokens><tool_uses>12</tool_uses><duration_ms>121583</duration_ms></usage>
 </task-notification>
 
+## 2026-07-06 01:24:22
+
+<task-notification>
+<task-id>ab66a6fd744f605a7</task-id>
+<tool-use-id>toolu_01DB9UvMcQZe3F67Frxa1XFN</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/ab66a6fd744f605a7.output</output-file>
+<status>completed</status>
+<summary>Agent "Coder: Vivado toolchain adapter" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All work is complete and verified. The `tests/acceptance/conftest.py` change is the test-developer's parallel work (env isolation for the new knobs) — I did not touch `tests/`.
+
+## Summary
+
+Implemented the Phase-2 real-Vivado toolchain per spec v2.1.0. All changes are in six `pyro/` files.
+
+### Files changed
+- **`/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/toolchain.py`** — `ToolchainConfig` extended additively (R70a: `kind`, `vivado_dir`, `part`, `target_clock_mhz`, `job_timeout_s`, all mock-preserving defaults); new `VivadoToolchain` (R70–R77); `VIVADO_TOOLCHAIN_VERSION=0x17010000` / `VIVADO_JOB_TIMEOUT=1800`; `MockToolchain` now sets `payload_kind="mock_stub"`; libtinfo.so.5 shim (`_libtinfo5_shim`) contained to the Vivado subprocess; process-tree kill (`_kill_process_tree`, `start_new_session=True`+`os.killpg`).
+- **`/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/service.py`** — `_make_toolchain(config)` selects on `config.kind` at the seam (R70); vivado-absent is never silently mocked (fail-safe).
+- **`/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/manifest.py`** — `payload_kind` field (R72a, default `"mock_stub"`, missing-key JSON round-trip) + `is_device_loadable()` (R72b).
+- **`/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/residency.py`** — cache key uses per-kind toolchain_version (R75a); worker `ToolchainConfig` built from sampled knobs (R70a); reaper timeout backstop for vivado (R77); loader-honesty note in `_promote_to_resident` (R72b).
+- **`/home/gn262/Repos/Yale/stringy-fpga/pyro/_route.py`** — `PYRO_TOOLCHAIN`/`PYRO_VIVADO` sampled at R35a points only, `toolchain_selection()` accessor (R70; unrecognized⇒mock; no PATH scanning).
+- **`/home/gn262/Repos/Yale/stringy-fpga/pyro/hdl/estimator.py`** — R74 recalibration.
+
+### Key decisions / notable findings
+1. **`str.format` bug (caught by smoke + AC tests):** the flow Tcl contains literal `{…}` braces (`if {…}`), so I emit it via a `@PART@` sentinel + `str.replace`, not `.format`.
+2. **R77 reaper vs. adapter timeout (integration bug I had to fix):** the service's client-side R63e reaper defaults to 30 s, which would mark every minutes-long real Vivado job failed before it finishes. Per R77 the reaper is a *backstop* to the adapter's authoritative kill, so for the vivado kind I set the reaper window to `job_timeout_s + 300`; the mock kind keeps 30 s byte-identically.
+3. **WNS parsing:** flow runs `report_utilization`/`report_timing_summary` to files (audit trail) and emits a machine-readable `PYRO_METRIC:WNS:` marker from `get_timing_paths` (robust); `fmax = 1000/(4.000−WNS)`.
+4. No spec ambiguities forced an invented behavior. One assumption to fold back: BRAM/DSP manifest fields on the vivado path carry the estimator's fixed values (the datapath uses 0 BRAM/0 DSP); R72c only enumerates luts/ffs/fmax/met_timing as genuine, which are parsed for real.
+
+### R74 calibration (real Vivado 2023.1 OOC P&amp;R, xcu250-figd2104-2L-e, 250 MHz, all met timing)
+New constants: `_HARNESS_LUTS=256, _LUTS_PER_STATE=4, _LUTS_PER_EDGE=2, _HARNESS_FFS=448, _FFS_PER_STATE=1`.
+
+| pattern | states | edges | real L | est L | L ratio | real F | est F | F ratio |
+|---|---|---|---|---|---|---|---|---|
+| `abc` | 4 | 3 | 197 | 278 | 1.41 | 427 | 452 | 1.06 |
+| `[a-z]+[0-9]{2,4}` | 9 | 6 | 197 | 304 | 1.54 | 430 | 457 | 1.06 |
+| `(?:GET\|POST\|PUT) /[a-z/]* HTTP` | 24 | 18 | 221 | 388 | 1.76 | 441 | 472 | 1.07 |
+| `^ERROR: .*$` | 12 | 8 | 226 | 320 | 1.42 | 431 | 460 | 1.07 |
+| `[A-Za-z0-9]{60}` | 62 | 60 | 228 | 624 | 2.74 | 484 | 510 | 1.05 |
+| `[A-Za-z0-9]{200}` | 202 | 200 | 410 | 1464 | 3.57 | 626 | 650 | 1.04 |
+
+All four R74 clauses hold per pattern (`real≤est≤10·real`). I added the two high-state anchors (`{60}`,`{200}`) to bound the slope. At MAX_STATES=1024 the estimate is ~6.4k LUTs/~1.5k FFs (≪ PR budget), so MAX_STATES stays the binding eligibility constraint and no classification flips.
+
+### Smoke check (`/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/bf00e5ea-8a98-497f-9ce5-cd681605263f/scratchpad/smoke_vivado.py`)
+`PYRO_TOOLCHAIN=vivado PYRO_VIVADO=/usr/local/cad/Vivado/2023.1`, pattern `rb"abc"` through generate→SynthJob→`VivadoToolchain.run`→promote→model exec:
+```
+payload_kind='ooc_metrics'  met_timing=True  luts/ffs=197/427  fmax=626.96
+toolchain_version=0x17010000  shell_version=0x0a000001  is_device_loadable=False
+promoted to resident (model standin)=True  model scan found 1 window; span=(2,5)  PASS
+```
+
+### Test results
+- `pytest tests/unit -q` → **519 passed**
+- `pytest tests/acceptance/test_ac2_1_real_synthesis.py test_ac2_3_tier_timing.py` (real synths) → **10 passed, 2 skipped** (device-gated), 37 min
+- Full `pytest tests/acceptance -q` (with recalibrated estimator; ac2_2/4/5/6 included) → **515 passed, 10 skipped**; the only failures were the 7 ac2_1/ac2_3 LIVE tests, both root-caused (the `.format` and reaper-timeout bugs) and now green in the rerun. The two fixes applied after that full run are gated on `kind=="vivado"`, so the 515 mock/model tests are unaffected.
+- `gmake lib abi-check` → **ABI OK (2.0.0)**, frozen ABI/PYROART1 untouched.
+
+This completes the Phase-2 toolchain task (a natural checkpoint). Recommend **/compact** before the next task if it builds on this (e.g. code-review triage or docs), or **/clear** if unrelated.</result>
+<usage><subagent_tokens>150185</subagent_tokens><tool_uses>101</tool_uses><duration_ms>4901429</duration_ms></usage>
+</task-notification>
+
+## 2026-07-06 01:33:41
+
+<task-notification>
+<task-id>aa1e186603ce5ef8b</task-id>
+<tool-use-id>toolu_011pmxnjyvevpkF2ThYfPHMM</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/aa1e186603ce5ef8b.output</output-file>
+<status>completed</status>
+<summary>Agent "Code-review Phase 2 diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have completed my review. No test suite or Vivado job was run, per instructions; findings are from static analysis, the spec, and quick in-process checks (manifest round-trip verified empirically).
+
+---
+
+## Review: Phase-2 Vivado toolchain + AC-2 suite
+
+Overall this is careful, honest, well-cited work. The subprocess handling, fail-safe semantics, and payload/metric honesty are largely correct and match §7.6. I found **no BLOCKER-level correctness or UB defect**. The issues below are provenance/consistency and robustness matters.
+
+### MAJOR
+
+**1. `pyro/_route.py:106-108` and `pyro/synth/residency.py` docstrings claim a toolchain switch "takes effect at the next sampling point" — it does not.**
+`sample_env()` (`_route.py:145-153`) only pushes `apply_n_synth()` onto the live manager. There is **no** equivalent live re-push for toolchain selection, and `get_manager()` (`residency.py:485-497`) builds `_GLOBAL` **once** as a lazy singleton. After the manager exists, re-sampling `PYRO_TOOLCHAIN`/`PYRO_VIVADO` via `refresh_env()` updates `_route._TOOLCHAIN` but the manager keeps its original `ToolchainConfig` and service. The comment "threaded into the worker's ToolchainConfig by pyro.synth.residency when it **(re)builds** the residency manager, so a switch takes effect at the next sampling point (R35a)" is factually wrong — there is no rebuild path, diverging silently from the `n_synth` precedent it appears to mirror. Functional impact on the suite is nil (vivado work runs only in fresh out-of-process workers that re-sample at import; the parent manager stays mock and never synthesizes), but the normatively-cited claim must either be implemented or corrected to state "toolchain selection is pinned at manager creation (process-lifetime), sampled at import."
+
+### MINOR
+
+**2. Cache-key `toolchain_version` (pinned) can diverge from the manifest `toolchain_version` (probed).**
+`ResidencyManager._toolchain_version()` (`residency.py:120-130`) uses the static `VIVADO_TOOLCHAIN_VERSION` (0x17010000) for the R4 key, while `VivadoToolchain._resolve_toolchain_version()` (`toolchain.py:210-231`) writes the value probed from `vivado -version` into the manifest. `cache.py` never cross-checks the manifest's `toolchain_version` against the key (verify checks shell+harness only). On this host both are 0x17010000 so there is no live bug, but for any non-2023.1 install an artifact would be stored under the 2023.1 key yet recorded as another version — a latent R75/R75a inconsistency. Prefer deriving both from one source, or assert the probe equals the pin.
+
+**3. `tests/acceptance/phase2_support.py:225-258` — the session-scoped `vivado_corpus` fixture is all-or-nothing.**
+The loop calls `run_phase2_worker(...)`, which raises `AssertionError` on any worker `returncode != 0` (`phase2_support.py:189-192`). A worker **crash** (OOM, Vivado launch failure mid-corpus) on one calibration pattern therefore turns *every* dependent LIVE test in AC-2-1/2-3/2-4 into an ERROR rather than isolating to that pattern. (Ordinary synth *failures* are handled gracefully — the worker still returns rc=0 with `synth_failed`, and AC-2-4 SKIPs per-pattern on a missing `ooc_metrics` manifest.) Consider capturing per-pattern exceptions into the entry dict so per-pattern tests fail/skip individually.
+
+**4. `pyro/synth/toolchain.py:_FLOW_TCL` WNS marker is not parse-robust.**
+`_RE_WNS = r"^PYRO_METRIC:WNS:\s*(-?\d+(?:\.\d+)?)"` (`toolchain.py:194`) does not accept exponent or non-finite formatting from Tcl `get_property SLACK` (e.g. `1e-05`, `-0.0`). A legitimately-timed design whose slack stringifies oddly would miss the regex and raise `SynthesisFailed` → permanent fallback (R65-safe, but a spurious false negative). Emit a fixed format in the Tcl: `puts "PYRO_METRIC:WNS:[format %.4f $_wns]"`.
+
+**5. `pyro/synth/toolchain.py:170-176` — `run()` catches `BaseException`.**
+`except BaseException as exc: raise SynthesisFailed(...)` converts `KeyboardInterrupt`/`SystemExit` into a synthesis failure (permanent fallback), which can impede worker interruption/shutdown. R63e wants job containment, but consider `except Exception` and re-raising `KeyboardInterrupt`/`SystemExit`.
+
+**6. `pyro/synth/toolchain.py:277-278` — `bram_kb`/`dsps` on an `ooc_metrics` manifest are estimator values, not parsed reports.**
+They come from `job.bram_kb`/`job.dsps`. R72c only enumerates `luts/ffs/fmax_mhz/met_timing` as required-genuine, so this is spec-permitted, but the manifest gives no signal that these two fields are estimated while the others are measured. Worth a one-line comment noting they remain model-derived on the vivado path (they happen to be honest: 16 KiB / 0 DSP).
+
+### NITS
+
+**7. `pyro/synth/toolchain.py:263` — `fmax_mhz = 1000.0 / (period_ns - wns)` divides by zero if `WNS == period_ns` exactly** (caught by the `run()` wrapper → false `SynthesisFailed`). Physically negligible.
+
+**8. `pyro/synth/toolchain.py:_FLOW_TCL` empty setup-path branch sets `_wns 0.0` → `met_timing True`.** For a design with no `-setup` paths this reports a pass at 250 MHz. Harmless for these always-sequential automaton circuits, but it silently green-lights an unconstrained design.
+
+**9. `pyro/synth/residency.py:446-459` — `_effective_toolchain_config` uses a bare `except Exception: pass`** to fall back to mock; `toolchain_selection()` cannot raise, so the guard is broader than needed (Rams: honesty). Narrow it or drop it.
+
+**10. Calibration FF headroom is thin.** The recalibration provenance corpus (`estimator.py:54-60`) differs from the acceptance corpus (`phase2_support.py:217-222`), and `_HARNESS_FFS = 448` sits only ~24 FFs above the observed `real_ffs − n_states` intercept (417-424). An acceptance-corpus pattern with richer per-state logic (e.g. a bounded-repeat counter not modeled as 1 FF/state) could violate R74 clause 1 (`real_ffs ≤ est_ffs`) and FAIL AC-2-4 live. Not a code defect — a margin risk the live run will expose.
+
+### Confirmed correct (verified)
+
+- **R72a JSON round-trip back-compat**: empirically verified — a manifest lacking `payload_kind` deserializes to `"mock_stub"`; `to_json` includes the field; `is_device_loadable()` correct.
+- **Estimator recalibration is deterministic, conservative, and flips no classifications**: the budget check (`estimator.py:159-166`) never bound before or after (a MAX_STATES=1024 automaton estimates ~6.4k LUTs ≪ PR_LUTS=216k); lowering the constants only widens headroom, and eligibility is owned by `_classify` (MAX_STATES binding). Provenance comment is literate and honest.
+- **Fail-safe (R70)**: unrecognized `PYRO_TOOLCHAIN` → `"mock"` (`_route.py:142`); `VivadoToolchain._vivado_exe` raises `SynthesisFailed` when `PYRO_VIVADO` is absent/unresolved; `_make_toolchain` never silently substitutes mock under a vivado key.
+- **Tcl injection**: no `shell=True` anywhere; `@PART@` is a fixed constant (not env-derived); `str.replace` over `str.format` is correctly justified by the literal `{llength …}` braces. No injection hazard from current config.
+- **Process-tree kill (R77)**: `start_new_session=True` makes the child a group leader; `killpg` + second `communicate` reaps the tree; tempdir cleaned in `finally`. Correct, with only the edge-case fd/zombie leaks on unexpected exception types noted above.
+- **R77 reaper window / mock byte-identical**: mock → 30.0 s (unchanged), vivado → `job_timeout_s + 300` (backstop sits beyond the adapter's authoritative kill).
+- **R35a hot-path discipline**: no per-call `os.environ` reads added; `toolchain_selection()` reads cached globals only, consulted solely at manager creation.
+- **Frozen surfaces**: no C files in the diff — ABI 2.0.0 and the `PYROART1` header/FORMAT_VERSION 1 are untouched; the vivado payload reuses the identical `_stub_payload` container.
+- **Test SKIP-never-PASS discipline (R71)**: every device/pr-flow-gated clause SKIPs with a prerequisite-naming reason and guards the unreachable path with `raise AssertionError`; the AC-2-5 R3b→R3c SKIP correctly records the measured ratio, matching spec R3c (lines 193-206).
+- **conftest env isolation**: `_ENV_KEYS` extended with `PYRO_TOOLCHAIN`/`PYRO_VIVADO`; per-test save/pop/refresh/restore keeps `PYRO_TOOLCHAIN` popped (mock) during every test body, so the parent manager never launches real Vivado.
+
+---
+
+## Verdict: **fix-then-ship**
+
+No blocker; the LIVE path is sound and honest. Before shipping, correct the false "switch takes effect at the next sampling point" provenance claim (#1) — either implement the live re-push or reword to the process-lifetime/import-pinned reality — and address the key-vs-manifest version divergence (#2) and the fixture all-or-nothing robustness (#3). The remaining items are MINOR/NIT and can follow. The estimator recalibration is the one item whose *live* correctness (thin FF margin, #10) I could not verify statically; the AC-2-4 run will be the proof.
+
+Relevant files:
+- `/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/toolchain.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/residency.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/pyro/_route.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/pyro/hdl/estimator.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/manifest.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/service.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/phase2_support.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/phase2_workers.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_5_throughput.py`
+
+This finishes the review task (a natural checkpoint). Reminder: run **/clear** before the next task if it is unrelated to this Phase-2 review, or **/compact** if you will continue working on these same changes.</result>
+<usage><subagent_tokens>101973</subagent_tokens><tool_uses>32</tool_uses><duration_ms>507370</duration_ms></usage>
+</task-notification>
+
+## 2026-07-06 01:38:51
+
+<task-notification>
+<task-id>aeebb0373209777f8</task-id>
+<tool-use-id>toolu_01EJssn8KyCExDG6CYCp3SaR</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/aeebb0373209777f8.output</output-file>
+<status>completed</status>
+<summary>Agent "Test-developer: AC-2 acceptance tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All green. Both follow-ups are complete.
+
+## Changes made (file:line)
+
+**1. Fixture crash-isolation (the MINOR finding)**
+- `tests/acceptance/phase2_support.py:243-259` — wrapped the per-pattern `run_phase2_worker` call in `try/except`; a worker crash (nonzero rc / timeout) is now captured into `entry["worker_error"]` instead of raising out of the session fixture. Graceful synth failures (rc==0, `synth_failed&gt;0`) are unchanged (`worker_error=None`, `manifest=None`).
+- `tests/acceptance/phase2_support.py:271-280` — added `first_ran_pattern(corpus)`: returns the first pattern whose worker actually ran, else `None`.
+- `tests/acceptance/test_ac2_1_real_synthesis.py:16-24` — added `_primary(corpus)` (picks first healthy pattern; `pytest.fail` if all crashed); `:70,80,96,113` switched the five manifest/worker tests from the fixed `PATTERN` to `_primary(...)`; `:81,97,114` added `man is not None` guards so a graceful no-synth FAILS cleanly rather than erroring; `:141-145` warm-reload now uses `first_ran_pattern`.
+- `tests/acceptance/test_ac2_3_tier_timing.py:24-32` — added `_primary(corpus)`; `:58,78,92` switched the three LIVE tests off the fixed `PATTERN`.
+- `tests/acceptance/test_ac2_4_estimator_calibration.py:52-55` — per-pattern test now `pytest.skip`s a single param when *that* pattern's worker crashed (isolated), so one crash no longer errors the whole parametrization.
+
+**2. Conformance to v2.1.1 wording (reasons/comments only — assertions unchanged, per your note that R3b/R74/R64a already match)**
+- `tests/acceptance/test_ac2_5_throughput.py:10-19` (docstring) and `:120-134` (R3b skip branch) — reworded to cite **R3c**: the skip reason now states the measured ratio *and* that "native routing hot path not yet in place / §8 R51 routing decision served at Python level, R3a governs, hard PASS only at AC-3-3." Verified live: `SKIPPED ... R3c: native routing hot path not yet in place — ... ratio 4.53× ...`.
+- `tests/acceptance/test_ac2_4_estimator_calibration.py:57-60` — no-manifest skip reason now cites the **R74 empty-success-set** ruling ("SKIP, never a FAIL, R74, v2.1.1").
+- `tests/acceptance/test_ac2_6_arbitration.py:11-19` (docstring) — cites **R64a**: device-free residency bookkeeping is REQUIRED/firm/non-vacuous. The assertion body is unchanged (already matches R64a).
+
+## Sanity check (cheap non-Vivado subset only; did not run Vivado-gated tests)
+- `test_ac2_2 / test_ac2_5 / test_ac2_6`: **3 passed, 4 skipped**; all skip reasons name their missing prerequisite (R71). The R3b skip cites R3c with the measured ratio.
+- All three Vivado-gated files still collect cleanly (19 tests); AC-2-4 MAX_REPEAT + injected-synth-failure + AC-2-3 model-async: **4 passed**.
+
+No `pyro/` source was read; I did not run the Vivado-gated tests (leaving those for your central run after the coder's parallel fixes land).</result>
+<usage><subagent_tokens>187688</subagent_tokens><tool_uses>26</tool_uses><duration_ms>242966</duration_ms></usage>
+</task-notification>
+
+## 2026-07-06 01:44:51
+
+<task-notification>
+<task-id>ab66a6fd744f605a7</task-id>
+<tool-use-id>toolu_018fsTmcc6vNoAPR5F5Nih8Z</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/ab66a6fd744f605a7.output</output-file>
+<status>completed</status>
+<summary>Agent "Coder: Vivado toolchain adapter" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The smoke check passes end-to-end after the review fixes: real Vivado 2023.1 OOC synth+P&amp;R still yields `ooc_metrics`, met_timing, 197/427 LUTs/FFs, fmax 627 MHz, version-assert clean (probe==pin), WNS parsed via the new `%.4f` marker.
+
+## Code-review fixes applied
+
+All in `pyro/`; `tests/` untouched. Per finding:
+
+1. **MAJOR — false provenance claim (chose option b, with evidence).** The spec (§7.6 R70 + R35b, v2.1.1) requires the knobs to be *re-sampled into the cached snapshot* at R35a points — which `_route.sample_env` already does — but is silent on residency-manager lifecycle. I chose (b): reworded the docstrings to the truth rather than implementing live re-push, because a live teardown of a manager with an in-flight real-Vivado job would **orphan the Vivado process tree** (the worker's own R77 self-kill lives *inside* `run()` and cannot execute once the worker is SIGTERM'd), a strictly worse defect than deferred pickup. Unlike scalar `PYRO_N_SYNTH` (consulted per-dispatch, safely pushed live), the toolchain governs a spawned subprocess. Reworded `pyro/_route.py:107-118`, `residency.py` `get_manager` docstring (`:481`) and `_effective_toolchain_config` (`:449`). The snapshot IS refreshed at every R35a point; the manager pins at construction; a switch reaches a freshly-built manager (e.g. after `reset_manager`).
+
+2. **MINOR — version divergence (fixed).** `pyro/synth/toolchain.py:376-388` now asserts the probed `vivado -version` equals the pinned `VIVADO_TOOLCHAIN_VERSION` used by the cache key; a mismatch raises `SynthesisFailed` with a clear diagnostic. Key (static pin) and manifest (probed) can no longer diverge — on success they are provably equal.
+
+3. **MINOR — WNS robustness + no-setup-paths (both fixed).** `_FLOW_TCL` now emits `puts "PYRO_METRIC:WNS:[format %.4f $_wns]"` (fixed-point, no exponent) and a distinct `PYRO_METRIC:WNS:NONE` sentinel when there are zero setup paths. `_RE_WNS`/`_RE_WNS_NONE` (`:194-199`) parse these; no-setup-paths now maps to `SynthesisFailed` (R65 fail-safe) instead of fabricating `met_timing=True` — justified because a clocked `pyro_circuit` always has registered setup paths, so their absence is anomalous.
+
+4. **MINOR — exception breadth (fixed).** `run()` (`toolchain.py:337-343`) now catches `Exception`, so `KeyboardInterrupt`/`SystemExit` (BaseException) propagate untouched.
+
+5. **NIT — fmax div-by-zero (fixed).** `toolchain.py` fmax now uses `1000.0 / max(period_ns - wns, 1e-6)` — finite and JSON-serializable even at the WNS→period limit.
+
+6. **NIT — bram/dsp honesty comment (added).** `toolchain.py` manifest block now documents that R72c enumerates only luts/ffs/fmax/met_timing as genuine, and bram/dsp remain honest (0 DSP datapath, fixed 16 KiB harness BRAM reserve).
+
+7. **NIT — dead try/except (dropped).** `_effective_toolchain_config` (`residency.py:456-461`) no longer wraps `_route.toolchain_selection()` in a bare `except Exception`; `_route` is always imported by then and the call cannot meaningfully raise.
+
+## Verification
+- `python3 -m pytest tests/unit -q` → **519 passed**
+- `gmake lib abi-check` → **ABI OK (2.0.0)**
+- Vivado smoke check → **PASS** (above)
+
+Per your instruction I did not run the acceptance suite. Changed files: `/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/toolchain.py`, `/home/gn262/Repos/Yale/stringy-fpga/pyro/synth/residency.py`, `/home/gn262/Repos/Yale/stringy-fpga/pyro/_route.py`.
+
+Note for the spec-writer: R70/R35b are silent on residency-manager live-reconfiguration; I documented toolchain-pinning-at-construction as the intended semantics (finding 1b). If the spec-writer wants a genuine mid-process switch, it needs a ruling on in-flight-job disposition (abandon vs. drain) so the adapter's R77 subprocess kill isn't bypassed.</result>
+<usage><subagent_tokens>176088</subagent_tokens><tool_uses>18</tool_uses><duration_ms>618080</duration_ms></usage>
+</task-notification>
+
+## 2026-07-06 01:45:55
+
+<task-notification>
+<task-id>a7b944a27850c40eb</task-id>
+<tool-use-id>toolu_01LZXDAdExUkzG78TaC114N2</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/a7b944a27850c40eb.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec-writer: Phase 2 rulings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The ruling is amended into v2.1.2.
+
+## Ruling: R70b — toolchain selection is pinned at manager construction
+
+Placed as a new sub-bullet of R70a in §7.6, and recorded in the §14 changelog (2.1.2). Spec file: `/home/gn262/Repos/Yale/stringy-fpga/specs/python-regex-offload.md`.
+
+### Exact sentence added (the normative core of R70b)
+
+&gt; **R70b (toolchain selection is pinned at manager construction).** Although the R35a snapshot of `PYRO_TOOLCHAIN`/`PYRO_VIVADO` is refreshed at every sampling point (import, `install()`/`uninstall()`, `refresh_env()`), a residency/synthesis manager **pins its `ToolchainConfig` at construction**, so a re-sampled toolchain change takes effect only in a manager built **after** the sampling point (a fresh process, or an explicit manager reset) — not by live re-push into an already-running manager. Rationale (consistent with R35b's deferred-refresh discipline): unlike a per-dispatch scalar such as `PYRO_N_SYNTH` (R68), the toolchain governs a **spawned subprocess**, and tearing down a manager mid-flight to swap it would SIGTERM an in-flight real-Vivado worker and orphan its process tree, bypassing the R77 in-worker kill — strictly worse than deferred pickup. This deferral is intentional and MUST be documented (R35b).
+
+Version bumped **2.1.1 → 2.1.2** (PATCH — clarification; no interface/AC break, no new implementation obligation). It codifies the already-implemented semantics and ties them to the existing R35b deferred-refresh discipline and the R77 in-worker kill.
+
+This completes the follow-up rulings. This is a clean checkpoint — recommend **/compact** before the next task, since the coder and test-developer can now finalize against v2.1.2 which builds directly on this Phase-2 spec work.</result>
+<usage><subagent_tokens>117622</subagent_tokens><tool_uses>3</tool_uses><duration_ms>36880</duration_ms></usage>
+</task-notification>
+
