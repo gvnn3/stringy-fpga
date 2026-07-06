@@ -127,6 +127,15 @@ _HW_SERVER_DEFAULT = "TCP:localhost:3121"
 _DEVICE_IFACE = _DEVICE_IFACE_DEFAULT
 _HW_SERVER = _HW_SERVER_DEFAULT
 
+# R68 PR-substrate knobs (v2.2.4) — sampled at the SAME R35a points, never per
+# call.  PYRO_PR_STATIC_DCP -> ToolchainConfig.static_dcp (R82b locked static),
+# PYRO_PR_REFERENCE_DCP -> reference_dcp (R82c/R82d pr_verify reference).  **No
+# default, fail-loud** (R88): if a pr_bitstream job is requested and either is
+# unset/unresolvable, synthesis is SynthesisFailed (never a silent ooc downgrade).
+# Unset here => None; the residency service passes them through to the worker.
+_PR_STATIC_DCP = None
+_PR_REFERENCE_DCP = None
+
 
 def _parse_n_synth(raw):
     """Validate a PYRO_N_SYNTH value: a positive int, else ``None`` (default)."""
@@ -147,7 +156,7 @@ def sample_env() -> None:
     rebind so in-flight decisions are unaffected (R35d).
     """
     global _ENV, _TEST_HOOKS, _N_SYNTH, _TOOLCHAIN, _VIVADO_DIR
-    global _DEVICE_IFACE, _HW_SERVER
+    global _DEVICE_IFACE, _HW_SERVER, _PR_STATIC_DCP, _PR_REFERENCE_DCP
     with _ENV_LOCK:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
@@ -166,6 +175,12 @@ def sample_env() -> None:
         _DEVICE_IFACE = _di if _di else _DEVICE_IFACE_DEFAULT
         _hs = os.environ.get("PYRO_HW_SERVER")
         _HW_SERVER = _hs if _hs else _HW_SERVER_DEFAULT
+        # R68 PR-substrate knobs (v2.2.4): no default (fail-loud is enforced by the
+        # toolchain when a pr_bitstream job needs an absent path, R88).
+        _psd = os.environ.get("PYRO_PR_STATIC_DCP")
+        _PR_STATIC_DCP = _psd if _psd else None
+        _prd = os.environ.get("PYRO_PR_REFERENCE_DCP")
+        _PR_REFERENCE_DCP = _prd if _prd else None
     # Push the freshly-sampled launch threshold onto the live residency manager
     # (R68).  Done outside the _ENV_LOCK and only if the synth subsystem is
     # already imported, so package init / the fallback hot path never pull it in.
@@ -210,6 +225,16 @@ def hw_server_url():
     JTAG loader (default ``TCP:localhost:3121``).  Sampled only at R35a points;
     read by :mod:`pyro.device`'s ``DeviceConfig`` for its ``hw_server`` default."""
     return _HW_SERVER
+
+
+def pr_substrate_dcps():
+    """Cached (static_dcp, reference_dcp) PR substrate paths (R68/R88, v2.2.4).
+
+    From PYRO_PR_STATIC_DCP / PYRO_PR_REFERENCE_DCP; ``None`` when unset (no
+    default — fail-loud is enforced by the toolchain when a pr_bitstream job needs
+    an absent path, R88).  Sampled only at R35a points; read by
+    :mod:`pyro.synth.residency` when it builds the worker's ToolchainConfig."""
+    return (_PR_STATIC_DCP, _PR_REFERENCE_DCP)
 
 
 # Sample once at first import of this module (R35a.1: package initialization).

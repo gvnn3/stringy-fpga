@@ -58,8 +58,15 @@ VIVADO_TOOLCHAIN_VERSION = 0x19020000
 # dir from the sampled ToolchainConfig.vivado_dir (None => unavailable).
 PINNED_VIVADO_DIR = "/usr/local/cad/2025.2/Vivado"
 
-# R77: default per-job Vivado timeout (30 min); overridable via ToolchainConfig.
+# R77: default per-job Vivado timeout (30 min, OOC); overridable via ToolchainConfig.
 VIVADO_JOB_TIMEOUT = 1800.0
+
+# R84 (v2.2.2): the per-job timeout for a **pr_bitstream** job (60 min).  A PR job
+# includes a full in-context place-and-route link against the locked static plus
+# pr_verify, and is heavier than the OOC-only job governed by R77 — hence the
+# distinct, larger default.  The R77 kill-the-process-tree discipline applies to
+# PR jobs verbatim.  Overridable via ToolchainConfig.pr_job_timeout_s.
+VIVADO_PR_JOB_TIMEOUT = 3600.0
 
 
 class SynthesisFailed(Exception):
@@ -120,7 +127,23 @@ class ToolchainConfig:
     vivado_dir: Optional[str] = None  # Vivado install dir (PYRO_VIVADO); None=absent
     part: str = "xcu250-figd2104-2L-e"    # target U250 part (R71)
     target_clock_mhz: float = 250.0   # OOC clock constraint (R73 proxy)
-    job_timeout_s: float = VIVADO_JOB_TIMEOUT  # per-job Vivado timeout (R77)
+    job_timeout_s: float = VIVADO_JOB_TIMEOUT  # per-job OOC timeout (R77)
+    # -- PR (pr_bitstream) mode + its R82d substrate (v2.2.3/v2.2.4, additive) --
+    # R88 (v2.2.4) blesses this mechanism: `pr_bitstream` is the explicit,
+    # construction-pinned (R70b) request for the R82 PR link flow.  When True the
+    # adapter REQUIRES the R82d substrate paths below — an absent/unresolvable path
+    # is a loud SynthesisFailed (R88/R82c/R65), NEVER a silent fall-back to
+    # ooc_metrics (R88/R70a honesty).  static_dcp/reference_dcp are populated from
+    # the R68 env knobs PYRO_PR_STATIC_DCP/PYRO_PR_REFERENCE_DCP (v2.2.4), sampled
+    # at the R35a points and passed through by the residency service.
+    pr_bitstream: bool = False        # R88: request the R82 pr_bitstream flow
+    static_dcp: Optional[str] = None  # R82b/R88 locked static DCP (linking substrate)
+    reference_dcp: Optional[str] = None  # R82c/R82d/R88 reference routed DCP for pr_verify
+    rp_cell: str = "pyro_rp"          # reconfigurable-partition cell name (R80 boundary)
+    # R84 (v2.2.4) names BOTH per-job timeout fields: job_timeout_s (OOC, 1800 s,
+    # R77) above and pr_job_timeout_s (PR, 3600 s) here; the adapter selects the PR
+    # field when pr_bitstream == True (R88), else the OOC field.
+    pr_job_timeout_s: float = VIVADO_PR_JOB_TIMEOUT  # per-job PR timeout (R84)
 
 
 class MockToolchain:
@@ -224,6 +247,8 @@ _RE_CLB_FFS = re.compile(r"^\|\s*CLB Registers\s*\|\s*(\d+)\s*\|", re.MULTILINE)
 # matched separately and mapped to SynthesisFailed (R65).
 _RE_WNS = re.compile(r"^PYRO_METRIC:WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
 _RE_WNS_NONE = re.compile(r"^PYRO_METRIC:WNS:NONE\s*$", re.MULTILINE)
+# R82c: emitted only after pr_verify -full_check passes (the PR flow's hard gate).
+_RE_PR_VERIFY_PASS = re.compile(r"^PYRO_METRIC:PR_VERIFY:PASS\s*$", re.MULTILINE)
 # `vivado -version` first line: "vivado v2025.2 (64-bit)" (R70a-pin).  The
 # regex is release-agnostic (major.minor), so it also parses the retired 2023.1.
 _RE_VIVADO_VER = re.compile(r"v(\d+)\.(\d+)")
@@ -261,6 +286,70 @@ class VivadoToolchain:
         "    set _wns [get_property SLACK [lindex $_p 0]]\n"
         "    puts \"PYRO_METRIC:WNS:[format %.4f $_wns]\"\n"
         "}\n"
+        "puts \"PYRO_METRIC:DONE\"\n"
+    )
+
+    # R82 DFX partial-bitstream (pr_bitstream) link flow.  Substitution uses
+    # @SENTINEL@ + str.replace (NOT str.format): the Tcl body has literal braces.
+    #   1. OOC-synth the wrapped RP child (pyro_rp instantiating the engine).
+    #   2. Open the LOCKED static DCP (R82b substrate); black-box + read the RM
+    #      into the reconfigurable cell (R80), implement in-context.
+    #   3. Timing (R73) via the same WNS marker as the OOC flow.
+    #   4. pr_verify against the reference routed DCP (R82c) — HARD GATE: a
+    #      failure errors the job (non-zero exit) => SynthesisFailed (R65).
+    #   5. write_bitstream -cell => the partial .bit (R85 loadable artifact).
+    _PR_FLOW_TCL = (
+        "read_verilog -sv design.v\n"
+        "read_verilog -sv pyro_rp.sv\n"
+        "synth_design -top @RPCELL@ -part @PART@ -mode out_of_context "
+        "-verilog_define PYRO_BUILD16=0\n"
+        "write_checkpoint -force rm_synth.dcp\n"
+        "close_design\n"
+        "open_checkpoint @STATIC_DCP@\n"
+        # S8: quote the REF_NAME/ORIG_REF_NAME filter values.
+        "set _rp [get_cells -hierarchical -filter "
+        "{ORIG_REF_NAME == \"@RPCELL@\" || REF_NAME == \"@RPCELL@\"}]\n"
+        "if {[llength $_rp] != 1} {\n"
+        "    error \"PYRO_PR: expected exactly one @RPCELL@ cell, found: $_rp\"\n"
+        "}\n"
+        "update_design -cell $_rp -black_box\n"
+        "read_checkpoint -cell $_rp rm_synth.dcp\n"
+        "opt_design\n"
+        "place_design\n"
+        "route_design\n"
+        # W3: scope utilization to the RM cell so PR manifests report the PATTERN's
+        # resources (consistent with the OOC path / R74), not static+RM whole-device.
+        "report_utilization -cells $_rp -file util.rpt\n"
+        "report_timing_summary -file timing.rpt\n"
+        "set _p [get_timing_paths -max_paths 1 -nworst 1 -setup]\n"
+        "if {[llength $_p] == 0} {\n"
+        "    puts \"PYRO_METRIC:WNS:NONE\"\n"
+        "} else {\n"
+        "    set _wns [get_property SLACK [lindex $_p 0]]\n"
+        "    puts \"PYRO_METRIC:WNS:[format %.4f $_wns]\"\n"
+        "}\n"
+        "write_checkpoint -force config_routed.dcp\n"
+        # W6: pr_verify gate hardened — not merely catch{}.  Write the report,
+        # then REQUIRE an explicit compatibility statement AND reject on any
+        # failure/critical token, so a non-raising failure value or a CRITICAL
+        # WARNING can never yield a false PASS (R82c honesty).
+        "if {[catch {pr_verify -full_check -file pr_verify.rpt "
+        "@REFERENCE_DCP@ config_routed.dcp} _pv]} {\n"
+        "    error \"PYRO_PR: pr_verify raised: $_pv\"\n"
+        "}\n"
+        "set _fh [open pr_verify.rpt r]\n"
+        "set _rpt [read $_fh]\n"
+        "close $_fh\n"
+        "if {[regexp -nocase "
+        "{critical warning|not compatible|incompatible|mismatch|differ|fail} "
+        "$_rpt]} {\n"
+        "    error \"PYRO_PR: pr_verify report has failure/critical tokens (R82c)\"\n"
+        "}\n"
+        "if {![regexp -nocase {compatible} $_rpt]} {\n"
+        "    error \"PYRO_PR: pr_verify report lacks compatibility confirmation (R82c)\"\n"
+        "}\n"
+        "puts \"PYRO_METRIC:PR_VERIFY:PASS\"\n"
+        "write_bitstream -force -cell $_rp pyro_rp_partial.bit\n"
         "puts \"PYRO_METRIC:DONE\"\n"
     )
 
@@ -312,8 +401,15 @@ class VivadoToolchain:
         manifest) with genuine post-route metrics, or raise SynthesisFailed.
 
         NEVER lets an exception other than SynthesisFailed escape (R63e/R65).
+
+        Mode (R72/R82): ``config.pr_bitstream`` selects the R82 partial-bitstream
+        link flow (real device artifact); otherwise the OOC honest-metrics flow
+        (R72 ``ooc_metrics``) runs.  The mode is fixed on the config the manager
+        pinned at construction (R70b).
         """
         try:
+            if self.config.pr_bitstream:
+                return self._run_pr(job)
             return self._run(job)
         except SynthesisFailed:
             raise
@@ -457,6 +553,203 @@ class VivadoToolchain:
             return payload, manifest
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
+
+    # -- R82 partial-bitstream (pr_bitstream) link flow --------------------
+    def _run_pr(self, job: SynthJob) -> Tuple[bytes, Manifest]:
+        """Drive the R82 DFX partial-bitstream flow for ``job`` and return
+        (partial .bit bytes, ``pr_bitstream`` manifest), or raise SynthesisFailed.
+
+        Fail-loud (R70a/R82): the R82d substrate paths (locked static DCP + the
+        reference routed DCP) are REQUIRED.  An absent or non-existent path is a
+        SynthesisFailed — NEVER a silent fall-back to ``ooc_metrics`` (that would
+        serve a non-device artifact under a device-loadable claim).  pr_verify is
+        a HARD GATE (R82c): if it does not pass, no partial is written and the job
+        fails (permanent fallback, R65).
+        """
+        exe = self._vivado_exe()
+        cfg = self.config
+
+        # R82b/R82d fail-loud substrate check (before spending any tool time).
+        if not cfg.static_dcp:
+            raise SynthesisFailed(
+                "pr_bitstream requested but static_dcp (R82b locked static "
+                "substrate) is unset — refusing to fall back to ooc_metrics (R82)")
+        if not cfg.reference_dcp:
+            raise SynthesisFailed(
+                "pr_bitstream requested but reference_dcp (R82c/R82d pr_verify "
+                "reference) is unset — refusing to fall back to ooc_metrics (R82)")
+        if not os.path.isfile(cfg.static_dcp):
+            raise SynthesisFailed(
+                f"pr_bitstream: static_dcp not found: {cfg.static_dcp!r} (R82b)")
+        if not os.path.isfile(cfg.reference_dcp):
+            raise SynthesisFailed(
+                f"pr_bitstream: reference_dcp not found: {cfg.reference_dcp!r} (R82c)")
+
+        # The RP-child wrapper is the same for every pattern (params differ); the
+        # engine RTL is job.rtl.  Import lazily to keep the OOC path light.
+        from ..hdl.rp_wrapper import generate_rp_child
+
+        workdir = tempfile.mkdtemp(prefix="pyro_vivado_pr_")
+        try:
+            with open(os.path.join(workdir, "design.v"), "w") as f:
+                f.write(job.rtl)                       # generated engine (pyro_circuit)
+            with open(os.path.join(workdir, "pyro_rp.sv"), "w") as f:
+                f.write(generate_rp_child(job.pattern_hash))  # RP-child wrapper (R80)
+            flow = (self._PR_FLOW_TCL
+                    .replace("@RPCELL@", cfg.rp_cell)
+                    .replace("@PART@", cfg.part)
+                    .replace("@STATIC_DCP@", os.path.abspath(cfg.static_dcp))
+                    .replace("@REFERENCE_DCP@", os.path.abspath(cfg.reference_dcp)))
+            with open(os.path.join(workdir, "flow.tcl"), "w") as f:
+                f.write(flow)
+
+            env = dict(os.environ)   # 2025.2 needs no shim (R70a-pin)
+
+            # R75/R75a: same pinned-version consistency guard as the OOC flow —
+            # a partial and the static it links against MUST be the same release
+            # (R82a); a mismatch fails rather than key an artifact under the wrong
+            # toolchain_version.
+            tool_ver = self._resolve_toolchain_version(exe, env)
+            if tool_ver != VIVADO_TOOLCHAIN_VERSION:
+                raise SynthesisFailed(
+                    f"vivado version 0x{tool_ver:08x} does not match the pinned "
+                    f"toolchain_version 0x{VIVADO_TOOLCHAIN_VERSION:08x} "
+                    f"(same-release rule R82a; cache-key/manifest consistency R75)")
+
+            # R84: PR jobs use VIVADO_PR_JOB_TIMEOUT (3600 s) not R77's 1800 s;
+            # the R77 kill-the-process-tree discipline applies verbatim.
+            cmd = [exe, "-mode", "batch", "-source", "flow.tcl",
+                   "-nojournal", "-log", "vivado.log"]
+            proc = subprocess.Popen(
+                cmd, cwd=workdir, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, start_new_session=True)
+            try:
+                out, _ = proc.communicate(timeout=float(cfg.pr_job_timeout_s))
+            except subprocess.TimeoutExpired:
+                _kill_process_tree(proc)               # R77 (via R84)
+                try:
+                    out, _ = proc.communicate(timeout=30)
+                except (subprocess.SubprocessError, OSError):
+                    out = ""
+                raise SynthesisFailed(
+                    f"vivado pr_bitstream job exceeded per-job timeout "
+                    f"({cfg.pr_job_timeout_s:g}s); process tree killed (R84/R77)")
+            out = out or ""
+            if proc.returncode != 0:
+                # A pr_verify failure raises `error` in Tcl → non-zero exit → here.
+                raise SynthesisFailed(
+                    f"vivado pr_bitstream flow failed (exit {proc.returncode}): "
+                    f"synth/link/pr_verify error — see log (R82c/R65)")
+
+            # R82c HARD GATE: the partial is honest only if pr_verify passed.  The
+            # marker is emitted solely on a passing pr_verify; its absence (even
+            # with exit 0) means we MUST NOT claim pr_bitstream.
+            if _RE_PR_VERIFY_PASS.search(out) is None:
+                raise SynthesisFailed(
+                    "pr_verify did not pass (no PR_VERIFY:PASS marker) — refusing "
+                    "to claim payload_kind=pr_bitstream (R82c/R72c honesty)")
+            # W6 defense-in-depth: independently re-read the pr_verify report and
+            # require an explicit compatibility statement with no failure/critical
+            # token, so a false PASS cannot slip past the marker alone.
+            _validate_pr_verify_report(os.path.join(workdir, "pr_verify.rpt"))
+
+            # Post-route metrics (R72c/R73), same parsing as the OOC flow.
+            util_path = os.path.join(workdir, "util.rpt")
+            try:
+                with open(util_path) as f:
+                    util_txt = f.read()
+            except OSError as exc:
+                raise SynthesisFailed(
+                    f"vivado pr_bitstream produced no utilization report: {exc}")
+            luts = _parse_first_int(_RE_CLB_LUTS, util_txt)
+            ffs = _parse_first_int(_RE_CLB_FFS, util_txt)
+            if luts is None or ffs is None:
+                raise SynthesisFailed(
+                    "could not parse CLB LUTs / CLB Registers from PR util report")
+            period_ns = 1000.0 / float(cfg.target_clock_mhz)
+            if _RE_WNS_NONE.search(out):
+                raise SynthesisFailed(
+                    "no post-route setup timing paths in PR link — cannot verify "
+                    "timing (R65)")
+            m = _RE_WNS.search(out)
+            if m is None:
+                raise SynthesisFailed(
+                    "could not parse post-route WNS from PR vivado output")
+            wns = float(m.group(1))
+            met_timing = wns >= 0.0
+            fmax_mhz = 1000.0 / max(period_ns - wns, 1e-6)
+            if not met_timing:
+                raise SynthesisFailed(
+                    f"PR link timing not met at {cfg.target_clock_mhz:g} MHz: "
+                    f"WNS={wns:.3f} ns (R73)")
+
+            # Payload = the REAL partial bitstream bytes (R72/R85 device artifact).
+            bit_path = os.path.join(workdir, "pyro_rp_partial.bit")
+            try:
+                with open(bit_path, "rb") as f:
+                    payload = f.read()
+            except OSError as exc:
+                raise SynthesisFailed(
+                    f"pr_verify passed but no partial bitstream was written: {exc} "
+                    f"(R82c)")
+            if not payload:
+                raise SynthesisFailed("partial bitstream is empty (R82c)")
+
+            manifest = Manifest(
+                pattern_hash=job.pattern_hash,
+                encoding=job.encoding,
+                effective_flags=job.effective_flags,
+                circ_flags=job.circ_flags,
+                generator_version=job.generator_version,
+                harness_version=job.harness_version,
+                toolchain_version=tool_ver,          # R75/R82a: pinned 2025.2
+                shell_version=SHELL_VERSION,          # unchanged (R75a/R81 note)
+                luts=luts,                            # R72c: genuine post-route
+                ffs=ffs,
+                bram_kb=job.bram_kb,
+                dsps=job.dsps,
+                fmax_mhz=fmax_mhz,                    # R73
+                met_timing=met_timing,                # R73
+                over_approx_classes=list(job.over_approx_classes),
+                estimated_fp_rate=job.estimated_fp_rate,
+                integrity_hash=payload_crc32(payload),  # over the real .bit (R47b)
+                payload_len=len(payload),
+                payload_kind="pr_bitstream",          # R72: device-loadable artifact
+                pr_verified=True,                     # R47b/R82c: pr_verify passed
+            )
+            return payload, manifest
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+# W6: pr_verify report failure/critical tokens and the required compatibility token.
+_RE_PR_VERIFY_FAIL = re.compile(
+    r"critical warning|not compatible|incompatible|mismatch|differ|fail",
+    re.IGNORECASE)
+_RE_PR_VERIFY_OK = re.compile(r"compatible", re.IGNORECASE)
+
+
+def _validate_pr_verify_report(path: str) -> None:
+    """W6: independently confirm ``pr_verify`` success from its report file.
+
+    Raises :class:`SynthesisFailed` unless the report exists, contains an explicit
+    compatibility statement, and carries no failure/critical-warning token — so a
+    non-raising ``pr_verify`` failure value can never yield a false ``pr_bitstream``
+    claim (R82c honesty), independent of the in-Tcl gate.
+    """
+    try:
+        with open(path) as f:
+            rpt = f.read()
+    except OSError as exc:
+        raise SynthesisFailed(
+            f"pr_verify report missing/unreadable: {exc} (R82c)")
+    if _RE_PR_VERIFY_FAIL.search(rpt):
+        raise SynthesisFailed(
+            "pr_verify report contains failure/critical tokens (R82c)")
+    if _RE_PR_VERIFY_OK.search(rpt) is None:
+        raise SynthesisFailed(
+            "pr_verify report lacks an explicit compatibility statement (R82c)")
 
 
 def _parse_first_int(regex, text: str) -> Optional[int]:

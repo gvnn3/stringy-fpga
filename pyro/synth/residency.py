@@ -457,7 +457,15 @@ def _effective_toolchain_config() -> ToolchainConfig:
     from .. import _route
     kind, vivado_dir = _route.toolchain_selection()
     if kind == "vivado":
-        return ToolchainConfig(kind="vivado", vivado_dir=vivado_dir)
+        # R88 (v2.2.4): carry the sampled PR-substrate paths through to the worker
+        # (PYRO_PR_STATIC_DCP/PYRO_PR_REFERENCE_DCP, R68) so a pr_bitstream job can
+        # find them.  pr_bitstream itself stays construction-pinned (default False,
+        # R70b/R88): there is no env knob to request it — a caller/test constructs
+        # the manager with a pr_bitstream config.  When both DCPs are unset (this
+        # host) they pass through as None and any pr_bitstream request fails loud.
+        static_dcp, reference_dcp = _route.pr_substrate_dcps()
+        return ToolchainConfig(kind="vivado", vivado_dir=vivado_dir,
+                               static_dcp=static_dcp, reference_dcp=reference_dcp)
     return ToolchainConfig()
 
 
@@ -465,15 +473,20 @@ def _effective_timeout(config: ToolchainConfig) -> float:
     """The client-side service-reaper (R63e) timeout for a given toolchain.
 
     R77: the reaper is *bookkeeping only* and a **backstop** to the vivado
-    adapter's own authoritative process-tree kill (job_timeout_s).  A backstop
-    that fires *before* the authoritative timeout would spuriously mark every
-    minutes-long real Vivado job as failed, so for the vivado kind the reaper
-    window must sit strictly beyond the adapter's own deadline.  For the mock
-    kind the Phase-0/1 default (30 s) is preserved byte-for-byte."""
+    adapter's own authoritative process-tree kill.  A backstop that fires *before*
+    the authoritative timeout would spuriously mark every minutes-long real Vivado
+    job as failed, so for the vivado kind the reaper window must sit strictly
+    beyond the adapter's own deadline.  That deadline is **mode-dependent** (R84):
+    a ``pr_bitstream`` job kills at ``pr_job_timeout_s`` (3600 s) — much larger
+    than an OOC job's ``job_timeout_s`` (1800 s) — so the backstop tracks whichever
+    the pinned config selects.  For the mock kind the Phase-0/1 default (30 s) is
+    preserved byte-for-byte."""
     if getattr(config, "kind", "mock") == "vivado":
-        # adapter kills at job_timeout_s; give the backstop a generous margin for
-        # Vivado startup + report writing + result plumbing.
-        return float(config.job_timeout_s) + 300.0
+        # adapter kills at the mode-correct deadline; give the backstop a generous
+        # margin for Vivado startup + report writing + result plumbing.
+        if getattr(config, "pr_bitstream", False):
+            return float(config.pr_job_timeout_s) + 300.0   # R84 PR job (3600 s)
+        return float(config.job_timeout_s) + 300.0          # R77 OOC job (1800 s)
     return 30.0
 
 

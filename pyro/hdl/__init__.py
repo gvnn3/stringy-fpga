@@ -38,6 +38,11 @@ from .generator import (
     estimate_fp_rate,
     generate,
 )
+from .rp_wrapper import (
+    ENGINE_MODULE,
+    generate_rp_child,
+    rp_child_id_from_hash,
+)
 from . import identity
 
 __all__ = [
@@ -59,5 +64,8 @@ __all__ = [
     "GeneratedCircuit",
     "estimate_fp_rate",
     "generate",
+    "ENGINE_MODULE",
+    "generate_rp_child",
+    "rp_child_id_from_hash",
     "identity",
 ]
