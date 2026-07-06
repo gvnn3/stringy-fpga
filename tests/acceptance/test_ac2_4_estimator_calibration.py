@@ -53,6 +53,16 @@ def test_estimator_within_calibration_margin_per_pattern(vivado_corpus, pattern)
                     "(no ooc_metrics manifest); R74 is evaluated only over "
                     "successfully-synthesized patterns, and an empty success set "
                     "records a SKIP, never a FAIL (R74, v2.1.1)")
+    # R74a: calibration is toolchain-bound.  A PASS may be keyed ONLY to the
+    # current pinned toolchain_version (2025.2, 0x19020000); a 2023.1 (0x17010000)
+    # artifact is NOT evidence for the 2025.2 pin and must not yield a PASS.
+    if "toolchain_version" in man and \
+            int(man["toolchain_version"]) != phase2_support.VIVADO_TOOLCHAIN_VERSION:
+        pytest.skip(
+            f"pattern {pattern!r} manifest toolchain_version "
+            f"{int(man['toolchain_version']):#010x} != pinned 2025.2 "
+            f"{phase2_support.VIVADO_TOOLCHAIN_VERSION:#010x}; stale-toolchain "
+            "evidence cannot key a calibration PASS (R74a)")
     est = entry["est"]
     est_luts, est_ffs = _est_val(est, "luts"), _est_val(est, "ffs")
     real_luts, real_ffs = int(man["luts"]), int(man["ffs"])

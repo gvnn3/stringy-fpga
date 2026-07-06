@@ -47,7 +47,11 @@ _ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
              # saved/cleared/restored per test so the Phase-2 vivado probe
              # (phase2_support.toolchain_present) can pin them for a single test
              # without leaking the vivado toolchain into Phase-0/1 mock-only tests.
-             "PYRO_TOOLCHAIN", "PYRO_VIVADO")
+             "PYRO_TOOLCHAIN", "PYRO_VIVADO",
+             # R68 device knobs (v2.2.2): the onic netdev name and hw_server URL that
+             # seed DeviceConfig defaults (R86.6), sampled at R35a points. Saved/
+             # cleared/restored per test so knob-sampling tests leave no env residue.
+             "PYRO_DEVICE_IFACE", "PYRO_HW_SERVER")
 
 
 def pytest_configure(config):

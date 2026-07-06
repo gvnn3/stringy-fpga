@@ -5,7 +5,8 @@ LIVE clauses (require toolchain_present, R70/R71):
     target part; the manifest records payload_kind=="ooc_metrics" (R72a) with
     GENUINE post-route luts/ffs (>0) (R72c), met_timing True and fmax_mhz implied
     by met_timing at the 250 MHz proxy clock (R73), toolchain_version encoding the
-    real Vivado (0x17010000, != mock 0x00000100) (R75), fitting the R11 PR budget;
+    real Vivado 2025.2 (0x19020000, != mock 0x00000100) (R70a-pin/R75), fitting the
+    R11 PR budget;
   * the artifact populates the bitstream cache and reloads WARM across a simulated
     process restart sharing PYRO_CACHE_DIR (R4/R63d).
 
@@ -91,17 +92,21 @@ def test_real_ooc_met_timing_and_fmax_proxy(vivado_corpus):
 
 
 def test_real_toolchain_version_is_vivado_not_mock(vivado_corpus):
-    """LIVE: toolchain_version encodes the real Vivado (0x17010000) and differs
-    from the mock sentinel (0x00000100), so mock/vivado artifacts occupy distinct
-    cache keys (R75/R75a)."""
+    """LIVE: toolchain_version encodes the pinned real Vivado 2025.2 (0x19020000)
+    and differs from the mock sentinel (0x00000100), so mock/vivado artifacts
+    occupy distinct cache keys (R70a-pin/R75/R75a).  Per R74a the stale 2023.1
+    encoding (0x17010000) is NOT accepted as 2025.2 evidence."""
     man = _primary(vivado_corpus)["manifest"]
     assert man is not None, "no ooc_metrics manifest — real synthesis did not succeed (R72c)"
     tv = int(man["toolchain_version"])
     assert tv != phase2_support.MOCK_TOOLCHAIN_VERSION, (
         "vivado manifest must NOT report the mock toolchain_version (R75)")
-    assert tv == phase2_support.VIVADO_2023_1_TOOLCHAIN_VERSION, (
-        f"toolchain_version {tv:#010x} != Vivado 2023.1 encoding "
-        f"{phase2_support.VIVADO_2023_1_TOOLCHAIN_VERSION:#010x} (R75)")
+    assert tv != phase2_support.VIVADO_2023_1_TOOLCHAIN_VERSION, (
+        "vivado manifest must NOT report the stale 2023.1 toolchain_version "
+        "(0x17010000) — not valid 2025.2 evidence (R74a)")
+    assert tv == phase2_support.VIVADO_TOOLCHAIN_VERSION, (
+        f"toolchain_version {tv:#010x} != pinned Vivado 2025.2 encoding "
+        f"{phase2_support.VIVADO_TOOLCHAIN_VERSION:#010x} (R70a-pin/R75)")
     # SHELL_VERSION stays the model-harness value until a real PR flow exists.
     if "shell_version" in man:
         assert int(man["shell_version"]) == phase2_support.SHELL_VERSION_MODEL, (

@@ -20,7 +20,6 @@ names asserted (payload_kind, luts, ffs, fmax_mhz, met_timing, toolchain_version
 shell_version) are NORMATIVE in the spec (R47b / R72 / R73 / R75), not scraped
 from the implementation.
 """
-import glob
 import json
 import os
 import subprocess
@@ -31,17 +30,23 @@ import pytest
 # --------------------------------------------------------------------------
 # Spec constants (cited, not derived from the implementation).
 # --------------------------------------------------------------------------
-# This host's pinned toolchain (R71 / §11 P1: Vivado 2023.1 present, synthesizes
-# the target part with no license error).  The spec forbids *library code* from
-# scanning the filesystem/PATH for Vivado (R70); the test harness MAY locate this
-# known install to pin the env for the acceptance run.
-KNOWN_VIVADO_INSTALL = "/usr/local/cad/Vivado/2023.1"
+# This host's pinned toolchain (R70a-pin / R71 / §11 P1, v2.2.1: Vivado 2025.2
+# present at /usr/local/cad/2025.2/Vivado, synthesizes the target part with no
+# license error).  The spec forbids *library code* from scanning the filesystem/
+# PATH for Vivado (R70); the test harness MAY locate this known install to pin the
+# env for the acceptance run.
+KNOWN_VIVADO_INSTALL = "/usr/local/cad/2025.2/Vivado"
 VIVADO_PART = "xcu250-figd2104-2L-e"          # physical U250 part (R70a / R71)
 PROXY_CLOCK_MHZ = 250                          # R73 proxy clock (F4 250 MHz user box)
 PROXY_CLOCK_PERIOD_NS = 4.000                  # R73 4.000 ns constraint
 MOCK_TOOLCHAIN_VERSION = 0x00000100            # R72a / R75 mock sentinel
-VIVADO_2023_1_TOOLCHAIN_VERSION = 0x17010000   # R75 (YY=0x17=23, RR=1, build=0)
+# R75 pinned toolchain_version for Vivado 2025.2 (YY=25=0x19, RR=2, build=0).
+VIVADO_TOOLCHAIN_VERSION = 0x19020000          # R70a-pin / R75 (v2.2.1 normative pin)
+# 2023.1's 0x17010000 is retained by the spec only as a historical example and is
+# NOT valid 2025.2 evidence (R74a); kept here to assert artifacts do NOT carry it.
+VIVADO_2023_1_TOOLCHAIN_VERSION = 0x17010000   # historical (R74a/R75 stale-pin)
 SHELL_VERSION_MODEL = 0x0A000001               # R75 model-harness shell version
+PYRO_SHELL_SPEC16 = 0x0202                      # R81: (spec_MAJOR<<8)|spec_MINOR for 2.2
 ESTIMATOR_CALIBRATION_MARGIN = 10              # R74 pre-registered constant (10x ceiling)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -96,45 +101,68 @@ def toolchain_present():
 
 
 def pr_flow_present():
-    """R71: an OpenNIC PR-partition floorplan + a PR-bitstream generation flow
-    that emit a genuine loadable partial bitstream (payload_kind=="pr_bitstream").
-    Established FALSE on this host — no such floorplan or flow exists (R71/§11 P1).
+    """R71/R82d/R83: the conjunction of (i) a host-validated locked static DCP with
+    pyro_rp as HD.RECONFIGURABLE (R82b), (ii) a pyro_rp Pblock/HD.RECONFIGURABLE
+    floorplan (R80 boundary), and (iii) a PR-generation flow that emits a genuine
+    loadable partial bitstream with a passing pr_verify (R82c).  Established FALSE
+    on this host — none of the R82d artifacts exist (R71/§11 P1).
 
-    Probed honestly: a real PR flow would advertise itself via a
-    PYRO_PR_FLOW / OpenNIC PR floorplan pointer; absent that, this is the
-    documented always-false-with-reason placeholder mandated by R71.
+    R83 canonical reason: `pr_flow_present=false — <first missing R82d artifact>`.
+    The first missing artifact here is the locked static DCP (nothing is built yet).
+
+    Probed honestly: a real PR flow would advertise itself via a PYRO_PR_FLOW /
+    OpenNIC PR floorplan pointer; absent that, this is the documented
+    always-false-with-reason placeholder mandated by R71/R83.
     """
     flow = os.environ.get("PYRO_PR_FLOW")
     if flow and os.path.isdir(flow):
         # Reserved for a future host where the PR flow exists; never true here.
         return (True, "")
     return (False,
-            "pr_flow_present=false — no OpenNIC PR partition floorplan / "
-            "PR-bitstream flow on this host (R71)")
+            "pr_flow_present=false — locked static DCP (pyro_rp "
+            "HD.RECONFIGURABLE) not built/validated on this host (R82d)")
+
+
+# R83 canonical unmet-condition phrases (fixed order, comma-separated).
+_R83_PROBE_UNMET = ("probe: no valid ID_REPLY (no reply within "
+                    "PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)")
+_R83_TRANSPORT_UNMET = "transport: CAP_NET_RAW absent"
+
+
+def has_cap_net_raw():
+    """Read-only, non-perturbing check for CAP_NET_RAW (bit 13) in this process's
+    effective capability set (R83 gate (ii) / P2/P3).  False on the current host."""
+    try:
+        with open("/proc/self/status", "r", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("CapEff:"):
+                    return bool(int(line.split()[1], 16) & (1 << 13))
+    except Exception:
+        pass
+    return False
 
 
 def device_usable():
-    """R71: a PYRO-controllable OpenNIC device that PYRO can load and drive.
-    Established FALSE on this host for technical reasons only (spec v2.1.3):
-    no loadable PR artifact exists (the flashed shell is not PR-capable), no
-    PYRO-usable transport for this user (no /dev/qdma*, no CAP_NET_RAW), and
-    the one-time full reprogram to a PR shell needs root PCIe-rescan
-    cooperation.  The board is the owner's own and JTAG programming access is
-    verified working — neither is a blocker (R71, v2.1.3).
+    """R71/R83: `device_usable` flips true iff BOTH (i) a live probe receives a
+    valid ID_REPLY whose static_shell_id passes the R81 SPEC16 check within
+    PYRO_PROBE_TIMEOUT (R84) AND (ii) transport privilege CAP_NET_RAW is present
+    (R83).  Established FALSE on this host: the PR shell is not yet flashed (so no
+    valid ID_REPLY) and CAP_NET_RAW is not granted.
 
-    Probed READ-ONLY and non-perturbing: existence check of a PYRO-usable
-    transport only; we never open or touch the device.
+    R83 canonical reason (supersedes the v2.1.3 literal): `device_usable=false — `
+    followed by a comma-separated enumeration, in fixed order, of EXACTLY the unmet
+    conditions among the probe (i) and transport (ii) phrases.
+
+    Probed READ-ONLY and non-perturbing: we never open or touch the device; the
+    probe condition (i) is unmet here because no PR shell answers (pr_flow absent).
     """
-    if glob.glob("/dev/qdma*"):
-        # A qdma char device appearing is necessary but not sufficient: with
-        # no loadable PR artifact there is still nothing PYRO could drive.
-        return (False,
-                "device_usable=false — /dev/qdma* present but no loadable PR "
-                "artifact (pr_flow_present=false) (R71)")
-    return (False,
-            "device_usable=false — no loadable PR artifact "
-            "(pr_flow_present=false), no PYRO transport (no /dev/qdma*, no "
-            "CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation")
+    unmet = []
+    # (i) probe: no flashed PR shell on this host => no valid ID_REPLY.
+    unmet.append(_R83_PROBE_UNMET)
+    # (ii) transport privilege.
+    if not has_cap_net_raw():
+        unmet.append(_R83_TRANSPORT_UNMET)
+    return (False, "device_usable=false — " + ", ".join(unmet))
 
 
 # --------------------------------------------------------------------------
