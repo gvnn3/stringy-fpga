@@ -891,3 +891,56 @@ No spec gaps or ambiguities surfaced during this task — R70/R71/R72/R73/R74/R7
 <usage><subagent_tokens>73454</subagent_tokens><tool_uses>21</tool_uses><duration_ms>143774</duration_ms></usage>
 </task-notification>
 
+## 2026-07-06 03:15:56
+
+What was skipped?
+
+## 2026-07-06 03:16:53
+
+What is needed fro the pr-bitstream?
+
+## 2026-07-06 03:17:48
+
+This board is MINE.
+
+## 2026-07-06 03:22:58
+
+<task-notification>
+<task-id>a2008fd4b332ece55</task-id>
+<tool-use-id>toolu_01KazP4sZkDeifSE5VKMJ72u</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/a2008fd4b332ece55.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec-writer: correct device rationale" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. The spec at `/home/gn262/Repos/Yale/stringy-fpga/specs/python-regex-offload.md` is amended v2.1.2 → v2.1.3 (PATCH, factual rationale correction only — no semantic change to any predicate, AC, matrix disposition, or requirement). I incorporated your mid-task JTAG correction: JTAG is verified working and is explicitly listed as a non-blocker, never as a reason.
+
+## Final canonical SKIP reason wording
+
+```
+device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation
+```
+
+Align the test suite's `device_usable`-gated reason strings to exactly this (it names both `device_usable` and `pr_flow_present`, so it also serves the AC-2-2 / AC-2-6 compound clauses that require both predicates). The bare short-form `device_usable=false` used at AC-2-3 and AC-2-5 is unchanged and carries no rationale, so it needs no test alignment.
+
+## Line-level summary of edits
+
+1. **Line 4** — Version `2.1.2` → `2.1.3`.
+2. **§ R71 `device_usable` predicate definition (was 1101–1103, now 1101–1113)** — replaced the "runs another user's live OpenNIC NIC image… MUST NOT be reprogrammed or perturbed" rationale with the three technical blockers (a) no loadable PR artifact / non-PR-capable shell, (b) no `/dev/qdma*` and no `CAP_NET_RAW`, (c) one-time full-image reprogram needs root PCIe-rescan cooperation; plus the explicit statement that the U250 is the owner's own board and that ownership, permission-to-perturb, and JTAG access are all non-blockers, with the 2026-07-06 JTAG verification recorded. Predicate name and its `false` value unchanged.
+3. **R71 SKIP-discipline example (line 1118)** — `device_usable=false — third-party live NIC, must not perturb` → the canonical string.
+4. **Phase-2 intro (was 1576–1577)** — "physical device is a third party's live NIC that MUST NOT be perturbed" → "no PYRO-loadable artifact or PYRO-usable transport… JTAG access itself is available and is not a blocker."
+5. **AC-2-2 reason (line 1611)** — canonical string.
+6. **AC-2-6 reason (line 1646)** — canonical string.
+7. **§11 P1 (was 1701–1702)** — "physical device is a third party's live NIC that MUST NOT be perturbed" → the technical-blocker phrasing (no loadable artifact, no transport, full reprogram needs root PCIe-rescan; JTAG to the owner's board available and not a blocker).
+8. **§14 changelog** — added the new **2.1.3** entry at the top of the list, above 2.1.0, recording the ownership clarification, the lift-in-principle of the perturbation prohibition, the empirical JTAG verification (2026-07-06), the canonical wording, and the note that no predicate/AC/requirement semantics changed.
+
+## Deliberately left as historical record
+- The **2.1.0** changelog entry (now ~line 1896) still reads "the physical U250 is a third party's live NIC that MUST NOT be perturbed." Left verbatim per your instruction not to rewrite old entries' meaning.
+- Line 1786 "`regex` third-party module" is an unrelated out-of-scope engine reference — untouched.
+
+## One judgment call to flag
+Your suggested canonical string listed "no root/JTAG programming rights" as a blocker in the earlier message, then your follow-up removed JTAG as a blocker. I dropped JTAG entirely from every reason string and instead recorded it as a verified non-blocker. If you'd rather the SKIP string also mention JTAG explicitly as available (rather than omitting it), say so and I'll adjust — but I judged that a SKIP *reason* should list only actual blockers.
+
+This was a discrete task (a spec amendment). I'd suggest **/compact** if your next step is aligning the test suite's reason strings to the new canonical wording (builds on this), or **/clear** if you're moving to unrelated work.</result>
+<usage><subagent_tokens>38708</subagent_tokens><tool_uses>20</tool_uses><duration_ms>207865</duration_ms></usage>
+</task-notification>
+

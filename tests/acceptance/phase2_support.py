@@ -114,23 +114,27 @@ def pr_flow_present():
 
 
 def device_usable():
-    """R71: a PYRO-controllable OpenNIC device with PR-load rights that PYRO is
-    permitted to reconfigure.  Established FALSE on this host: the physical U250
-    runs a third party's live OpenNIC NIC in production; no root, no JTAG right,
-    no /dev/qdma*, and the device MUST NOT be perturbed (R71/F5).
+    """R71: a PYRO-controllable OpenNIC device that PYRO can load and drive.
+    Established FALSE on this host for technical reasons only (spec v2.1.3):
+    no loadable PR artifact exists (the flashed shell is not PR-capable), no
+    PYRO-usable transport for this user (no /dev/qdma*, no CAP_NET_RAW), and
+    the one-time full reprogram to a PR shell needs root PCIe-rescan
+    cooperation.  The board is the owner's own and JTAG programming access is
+    verified working — neither is a blocker (R71, v2.1.3).
 
     Probed READ-ONLY and non-perturbing: existence check of a PYRO-usable
     transport only; we never open or touch the device.
     """
     if glob.glob("/dev/qdma*"):
-        # A qdma char device exists, but on this host it is a third party's live
-        # NIC we lack rights to reconfigure and must not perturb.
+        # A qdma char device appearing is necessary but not sufficient: with
+        # no loadable PR artifact there is still nothing PYRO could drive.
         return (False,
-                "device_usable=false — /dev/qdma* present but third-party live "
-                "NIC, must not perturb; no PR-load rights (R71, F5)")
+                "device_usable=false — /dev/qdma* present but no loadable PR "
+                "artifact (pr_flow_present=false) (R71)")
     return (False,
-            "device_usable=false — third-party live NIC, must not perturb; "
-            "no /dev/qdma* and no PR-load rights (R71, F5)")
+            "device_usable=false — no loadable PR artifact "
+            "(pr_flow_present=false), no PYRO transport (no /dev/qdma*, no "
+            "CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation")
 
 
 # --------------------------------------------------------------------------

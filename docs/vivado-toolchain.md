@@ -28,9 +28,10 @@ even after a restart.
 
 This host satisfies only **half** of prerequisite P1 (§11): Vivado 2023.1
 synthesizes, places, and routes the target part, but there is **no OpenNIC
-partial-reconfiguration (PR) floorplan or PR-bitstream flow**, and the
-physical U250 is a third party's live NIC that PYRO **must not** perturb
-(R71). Concretely:
+partial-reconfiguration (PR) floorplan or PR-bitstream flow**, and no
+PYRO-loadable artifact or PYRO-usable transport exists for the physical U250
+(R71, v2.1.3 — the board is the owner's own and JTAG access is verified
+working; the blockers are purely technical). Concretely:
 
 - No `payload_kind == "pr_bitstream"` is ever produced — that value is
   **reserved** until an OpenNIC PR floorplan and PR-bitstream generation flow
@@ -163,9 +164,12 @@ predicates (R71) — never assumed:
   resolve to a working Vivado 2023.1 for `xcu250-figd2104-2L-e`.
 - `pr_flow_present` — **false**: no OpenNIC PR-partition floorplan or
   PR-bitstream generation flow exists.
-- `device_usable` — **false**: the physical U250 runs a third party's live
-  OpenNIC NIC image; there is no root, JTAG right, or `/dev/qdma*`, and the
-  device must not be reprogrammed or perturbed.
+- `device_usable` — **false**, for technical reasons only (v2.1.3): no
+  loadable PR artifact exists (the flashed shell is not PR-capable), no
+  PYRO-usable transport for this user (no `/dev/qdma*`, no `CAP_NET_RAW`),
+  and the one-time full reprogram to a PR-enabled shell needs root
+  PCIe-rescan cooperation. The board is the owner's own and JTAG programming
+  access is verified working (2026-07-06) — neither is a blocker.
 
 A SKIP always names the missing prerequisite; a PASS comes only from real
 execution with its predicate satisfied — a SKIP is never recorded as PASS.

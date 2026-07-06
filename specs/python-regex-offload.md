@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.1.2
+- **Version:** 2.1.3
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
@@ -1098,14 +1098,24 @@ knob is set.
     exists).*
   - `device_usable` — a PYRO-controllable OpenNIC device with PR-load rights
     (ICAP/PCAP/JTAG or `/dev/qdma*`) that PYRO is permitted to reconfigure.
-    *Established **false**: the physical U250 runs another user's live OpenNIC NIC
-    image in production; there is no root, no JTAG right, no `/dev/qdma*`, and the
-    device MUST NOT be reprogrammed or perturbed.*
+    *Established **false** for purely technical reasons on this host: (a) there is
+    **no loadable PYRO PR artifact** — the currently-flashed shell is not PR-capable
+    and no PR floorplan/flow exists (`pr_flow_present`, a separate predicate, is
+    false); (b) there is **no PYRO-usable transport** for the runtime user — no
+    `/dev/qdma*` char devices, and the raw-Ethernet binding needs `CAP_NET_RAW`,
+    which the user lacks; (c) the one-time **full-image reprogram** required to move
+    to a PR-enabled shell disturbs the PCIe link and needs root cooperation for
+    driver unbind / PCIe rescan (or a reboot). The physical U250 is the **owner's
+    own board**; ownership, permission-to-perturb, and JTAG access are all
+    **non-blockers** — JTAG programmability was verified empirically on 2026-07-06
+    (FT4232H USB-JTAG bridge attached, `hw_server` connects, chain enumerates
+    `xcu250_0`). Device bring-up (Phase-2b) becomes an available path once a
+    PR-enabled shell and PYRO transport exist.*
 
   **SKIP discipline (normative).** A clause that requires an **absent** predicate
   MUST record a **SKIP whose reason names the missing prerequisite** (e.g.
   `SKIP: pr_flow_present=false — no OpenNIC PR partition/bitstream flow`,
-  `SKIP: device_usable=false — third-party live NIC, must not perturb`). A SKIP
+  `SKIP: device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation`). A SKIP
   MUST NEVER be recorded as PASS. A **PASS MUST come only from real execution** of
   the clause with its predicate satisfied. The following matrix binds each AC-2-*
   clause (see also the per-AC amendments in §10):
@@ -1573,8 +1583,11 @@ honest post-route manifest, R47b/R72) integrated into the synthesis service at t
 `MockToolchain` seam, selected by `PYRO_TOOLCHAIN=vivado` (R70). On the current
 host **P1 is only partially satisfied** (§11 P1; R71): Vivado is present and
 synthesizes the target part, but **no OpenNIC PR-partition floorplan / PR-bitstream
-flow exists** and **the physical device is a third party's live NIC that MUST NOT
-be perturbed**. Accordingly the real OOC-synthesis, honest-metrics, calibration,
+flow exists** and **there is no PYRO-loadable artifact or PYRO-usable transport for
+the runtime user** (no `/dev/qdma*`, no `CAP_NET_RAW`; the one-time full-image
+reprogram to a PR-enabled shell needs root PCIe-rescan cooperation — JTAG access
+itself is available and is not a blocker). Accordingly the real OOC-synthesis,
+honest-metrics, calibration,
 and real-synth-failure clauses are **LIVE**, while every clause requiring a
 loadable PR bitstream or an operable device records a **SKIP** (never PASS) whose
 reason names the absent prerequisite — the live/SKIP matrix is normative in **R71**.
@@ -1595,7 +1608,7 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   sound/complete candidate windows re-verified to byte-identical CPython results
   over a ≥ 1 MiB corpus. This clause requires `device_usable` ∧ `pr_flow_present`
   (R71), both **false** on this host → **SKIP** with reason
-  `device_usable=false — third-party live NIC, must not perturb; pr_flow_present=false`.
+  `device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation`.
   The equivalent byte-identical correctness over a ≥ 1 MiB corpus is covered on the
   software model by AC-1-3. (R16, R17, R19, R47a, R71, F5)
 - **AC-2-3.** Cold→warm→resident timing matches R4's model. With
@@ -1630,7 +1643,7 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   pattern's circuit evicts the first per R64; results remain byte-identical
   across evict/reload cycles. This requires `device_usable` ∧ `pr_flow_present`
   (R71) → **SKIP** with reason
-  `device_usable=false — third-party live NIC, must not perturb; pr_flow_present=false`.
+  `device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation`.
   The eviction policy and byte-identical results across evict/reload are asserted
   on the model as a **firm, non-vacuous LIVE** clause: the device-free residency
   manager MUST exercise single-tenant residency and fire deterministic LRU eviction
@@ -1698,8 +1711,11 @@ automatic tier-based dispatch and prewarming.
   (R71):** the Vivado half is now **present** — Vivado 2023.1
   (`/usr/local/cad/Vivado/2023.1`) synthesizes, places, and routes the target part
   `xcu250-figd2104-2L-e` with no license error — but the OpenNIC **PR floorplan and
-  PR-bitstream flow remain absent**, and the physical device is a third party's
-  live NIC that MUST NOT be perturbed. P1 is therefore **partially satisfied**: real
+  PR-bitstream flow remain absent**, so there is no loadable PYRO artifact, and the
+  runtime user has no PYRO-usable transport (no `/dev/qdma*`, no `CAP_NET_RAW`); the
+  one-time full-image reprogram to a PR-enabled shell needs root PCIe-rescan
+  cooperation (JTAG access to the owner's own board is available and is not a
+  blocker). P1 is therefore **partially satisfied**: real
   OOC synthesis is LIVE (R70–R75), while PR-bitstream and on-device clauses SKIP.
   **Phase 0 and Phase 1 MUST proceed entirely without any of it** via the software
   model and mock toolchain (R7/R63b); Phase 2 clauses are gated by the R71 live/SKIP
@@ -1818,6 +1834,31 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.1.3** (2026-07-06) — *Board-ownership & device-blocker rationale correction
+  (PATCH — factual clarification), spec-writer.* The project owner clarified that the
+  Alveo U250 at PCI `af:00.0` is the **owner's own board** and that reprogramming it
+  is permitted; the earlier "third party's live NIC that MUST NOT be perturbed"
+  rationale for `device_usable == false` was factually wrong and is removed. **No
+  semantic change:** `device_usable` remains **false**, and every R71 predicate
+  definition, live/SKIP matrix disposition, AC, and requirement is unchanged. The
+  prohibition on perturbing the device is **lifted in principle** — device bring-up
+  (Phase-2b) is now an available path gated on technical prerequisites, not on
+  permission. Rewrote the rationale everywhere it appeared (the R71 `device_usable`
+  predicate definition, the R71 SKIP example, the Phase-2 intro, the AC-2-2/AC-2-6
+  SKIP reason strings, and §11 P1) to the **actual technical blockers**: (a) no
+  loadable PYRO PR artifact — the flashed shell is not PR-capable and no PR
+  floorplan/flow exists (`pr_flow_present`, a separate predicate, false); (b) no
+  PYRO-usable transport for the runtime user — no `/dev/qdma*` char devices and the
+  raw-Ethernet binding needs `CAP_NET_RAW`, which the user lacks; (c) the one-time
+  full-image reprogram to a PR-enabled shell disturbs the PCIe link and needs root
+  cooperation for driver unbind / PCIe rescan (or a reboot). **JTAG programmability
+  was verified empirically on 2026-07-06** (FT4232H USB-JTAG bridge attached,
+  `hw_server` connects, chain enumerates `xcu250_0`) — ownership,
+  permission-to-perturb, and JTAG access are all **non-blockers**. Canonical SKIP
+  reason wording set to `device_usable=false — no loadable PR artifact
+  (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full
+  reprogram needs root PCIe-rescan cooperation`. Historical changelog entries (e.g.
+  2.1.0) retain their original wording as record.
 - **2.1.2** (2026-07-06) — *Toolchain-selection pinning (PATCH — clarification),
   spec-writer.* Surfaced by code review + coder analysis; no interface/AC break, no
   new implementation obligation. Added **R70b**: a residency/synthesis manager
