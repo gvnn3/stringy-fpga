@@ -1,8 +1,8 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.1.3
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`)
+- **Version:** 2.2.1
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
 
@@ -947,10 +947,11 @@ synthesis time and identified via the identity block (R47a).
   identical regardless of whether L4 reaches the circuit over the QDMA char-dev
   binding or the raw-Ethernet binding; only the mechanism of MMIO/DMA differs.
   In the Ethernet binding, CSR writes and buffer transfers are encapsulated in a
-  defined control-frame format (**deferred; see §10.1 and R76**) but the register
-  meanings are unchanged. PR reconfiguration (loading a bitstream artifact) uses
-  the platform PR mechanism (ICAP/PCAP via the shell, or a vendor PR flow), which
-  is out of band from the scan datapath.
+  defined control-frame format (**specified in §10.1, R78**; the R76 deferral is
+  lifted as of v2.2.0) but the register meanings are unchanged. PR reconfiguration
+  (loading a bitstream artifact) uses the platform PR mechanism; in Phase 2b this
+  is **JTAG via `hw_server`** (R85), out of band from the scan datapath, with
+  ICAP/MCAP self-reconfiguration deferred (R85).
 
 ### 7.5 Synthesis service, prewarm, and diagnostics
 
@@ -1051,8 +1052,8 @@ knob is set.
     selects the real OOC adapter (this subsection). Any unrecognized value is
     **invalid** and MUST be treated as `mock` (fail safe: never silently attempt a
     real flow the operator did not name), optionally surfaced via stats/diagnostics.
-  - `PYRO_VIVADO` — the Vivado **install directory** (e.g. `/usr/local/cad/Vivado/
-    2023.1`). **No default and NO scanning of the filesystem, `PATH`, or
+  - `PYRO_VIVADO` — the Vivado **install directory** (e.g. `/usr/local/cad/2025.2/
+    Vivado`, the R70a-pinned install). **No default and NO scanning of the filesystem, `PATH`, or
     `XILINX_VIVADO` by library code**: if `PYRO_TOOLCHAIN=vivado` and `PYRO_VIVADO`
     is unset or does not resolve to a working Vivado, the adapter is **unavailable**
     (`toolchain_present == false`, R71) and the affected AC clauses SKIP. Requiring
@@ -1082,6 +1083,19 @@ knob is set.
     real-Vivado worker and orphan its process tree, bypassing the R77 in-worker
     kill — strictly worse than deferred pickup. This deferral is intentional and
     MUST be documented (R35b).
+  - **R70a-pin (pinned Vivado release — normative, v2.2.1).** The pinned `vivado`
+    toolchain is **Vivado 2025.2** installed at **`/usr/local/cad/2025.2/Vivado`**.
+    This **supersedes the v2.1.0 pin of 2023.1**, which segfaults at batch-process
+    exit on this host's upgraded OS (Ubuntu 24.04 / glibc 2.39, unsupported by
+    2023.1): the nonzero exit codes of successfully-completed `launch_runs` children
+    mark completed runs FAILED and violate the exit-code-integrity assumption
+    underlying R77's process discipline. 2025.2 exits cleanly with no shim,
+    officially supports the host OS, and is license-clean for
+    `xcu250-figd2104-2L-e` (the permanent `cmac_usplus` license, valid through
+    2027.06, covers it). The pinned `toolchain_version` is `0x19020000` (R75). Any
+    other Vivado on `PYRO_VIVADO` MAY be used at the operator's risk but is not the
+    pinned/validated release; the same-release rule (R82a) binds the static shell
+    and all partials to whatever release built the locked static DCP.
 
 - **R71 (partial-P1 live/SKIP matrix — normative).** Phase 2's prerequisite P1 is
   only **partially** satisfied on this host, so the Phase-2 ACs (AC-2-1..AC-2-6)
@@ -1089,8 +1103,11 @@ knob is set.
   **probing the environment** (never assumed):
   - `toolchain_present` — `PYRO_TOOLCHAIN=vivado` AND `PYRO_VIVADO` resolves to a
     Vivado that synthesizes + places + routes the target part (R70). *Established
-    true for Vivado 2023.1 at `/usr/local/cad/Vivado/2023.1`, part
-    `xcu250-figd2104-2L-e`, no license error.*
+    true for **Vivado 2025.2** at `/usr/local/cad/2025.2/Vivado` (the R70a pin;
+    v2.2.1), part `xcu250-figd2104-2L-e`, no license error. Vivado 2023.1 was the
+    original v2.1.0 pin but segfaults at batch-process exit on this host's upgraded
+    OS (Ubuntu 24.04 / glibc 2.39), corrupting exit-code integrity — see R70a and
+    the v2.2.1 changelog.*
   - `pr_flow_present` — an OpenNIC PR-partition floorplan (`pblock` + fixed
     static/reconfigurable interface, §7.4) AND a PR-bitstream generation flow exist
     that emit a **genuine loadable partial bitstream** (`payload_kind ==
@@ -1112,10 +1129,16 @@ knob is set.
     `xcu250_0`). Device bring-up (Phase-2b) becomes an available path once a
     PR-enabled shell and PYRO transport exist.*
 
+  **Predicate-flip semantics (v2.2.0).** The exact conditions under which
+  `pr_flow_present` and `device_usable` flip **true**, and the canonical SKIP-reason
+  string each emits while false, are defined normatively in **R83** (§10.2). The
+  literal SKIP strings below record the v2.1.3 disposition; from v2.2.0 the probe
+  emits the R83 canonical enumeration of whichever conditions are actually unmet.
+
   **SKIP discipline (normative).** A clause that requires an **absent** predicate
   MUST record a **SKIP whose reason names the missing prerequisite** (e.g.
-  `SKIP: pr_flow_present=false — no OpenNIC PR partition/bitstream flow`,
-  `SKIP: device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation`). A SKIP
+  `SKIP: pr_flow_present=false — no OpenNIC PR partition/bitstream flow`, or the
+  R83 canonical `device_usable=false — …` enumeration). A SKIP
   MUST NEVER be recorded as PASS. A **PASS MUST come only from real execution** of
   the clause with its predicate satisfied. The following matrix binds each AC-2-*
   clause (see also the per-AC amendments in §10):
@@ -1215,20 +1238,33 @@ knob is set.
   or the R77 timeout) MUST become permanently fallback-only with a diagnostic and
   no caller-visible error (R65) — this transition is LIVE on the real path and also
   drivable via `pyro.testing.inject_synth_failure` (R67).
+  - **R74a (calibration is toolchain-bound; re-validate under the 2025.2 pin —
+    transitional, v2.2.1).** Post-route utilization is a function of the Vivado
+    release (R75), so `ESTIMATOR_CALIBRATION_MARGIN` is calibrated **per
+    `toolchain_version`**. Any calibration data gathered under the superseded 2023.1
+    pin (`0x17010000`) is **not evidence** for the 2025.2 pin (`0x19020000`) and MUST
+    NOT be reused to claim AC-2-4 PASS. The AC-2-4 estimator-vs-real clause MAY claim
+    **PASS only from real syntheses executed under the pinned 2025.2 toolchain**;
+    until such a run exists it records the R74 **empty-success-set SKIP** (never a
+    stale PASS). The R4/R75a cache key enforces this mechanically — a
+    `0x17010000` artifact and a `0x19020000` artifact occupy distinct keys, so a
+    2023.1 result is never served where a 2025.2 result is required.
 
 - **R75 (`toolchain_version` encoding).** The `vivado` toolchain MUST report a
   `toolchain_version` (R47b manifest / R4 key) that encodes the **actual Vivado
   version**, distinct from the mock's `0x00000100`. Encoding (packed 32-bit):
   `(YY << 24) | (RR << 16) | build`, where `YY` is the two-digit release year and
-  `RR` the point release; for **Vivado 2023.1** this is `0x17010000`
-  (`YY=23=0x17`, `RR=1`, `build=0`). The adapter SHOULD derive `YY`/`RR` from the
-  tool's own version report rather than hard-coding, but MUST pin to the recorded
-  install. `SHELL_VERSION` (the target shell / PR-region identifier) **remains the
+  `RR` the point release. For the **pinned Vivado 2025.2** (R70a-pin, v2.2.1) this
+  is **`0x19020000`** (`YY=25=0x19`, `RR=2`, `build=0`) — the **normative pinned
+  value**. (Historical example: the superseded 2023.1 pin encoded to `0x17010000`,
+  `YY=23=0x17`, `RR=1`.) The adapter SHOULD derive `YY`/`RR` from the tool's own
+  version report rather than hard-coding, but MUST pin to the recorded install. `SHELL_VERSION` (the target shell / PR-region identifier) **remains the
   model-harness value** (`0x0A000001`) until a real PR flow exists
   (`pr_flow_present == true`), because no real shell/PR-region has been targeted.
   - **R75a (cache-key separation falls out of R4).** Because `toolchain_version` is
     a component of the R4 bitstream-cache key (and the R47b manifest key), a mock
-    artifact (`0x00000100`) and a vivado artifact (`0x17010000`) for the same
+    artifact (`0x00000100`) and a vivado artifact (`0x19020000`, or a
+    differently-versioned Vivado) for the same
     pattern occupy **distinct keys** and never collide — the separation is a direct
     consequence of the existing key, requiring no new mechanism. Switching
     `PYRO_TOOLCHAIN` therefore never serves a mock stub where a real-metrics
@@ -1248,8 +1284,9 @@ knob is set.
   worker and never blocks or slows any caller (a caller is served by fallback the
   whole time).
 
-  > *Numbering note.* R76 is assigned in §10.1 (the deferred Ethernet
-  > control-frame format), keeping that ruling adjacent to the material it governs.
+  > *Numbering note.* R76 and R78–R86 are assigned in §10.1/§10.2 (the Ethernet
+  > control-frame format, Phase-2b bring-up, and the `pyro.device` surface), keeping
+  > those rulings adjacent to the material they govern.
 
 ---
 
@@ -1607,10 +1644,13 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   contract on the physical device: identity block verifies (R47a), scans produce
   sound/complete candidate windows re-verified to byte-identical CPython results
   over a ≥ 1 MiB corpus. This clause requires `device_usable` ∧ `pr_flow_present`
-  (R71), both **false** on this host → **SKIP** with reason
-  `device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation`.
-  The equivalent byte-identical correctness over a ≥ 1 MiB corpus is covered on the
-  software model by AC-1-3. (R16, R17, R19, R47a, R71, F5)
+  (R71/R83), both **false** on this host → **SKIP** with the R83 canonical reason
+  (the combined `device_usable=false — …; pr_flow_present=false — …` enumeration of
+  unmet conditions). This clause **flips to LIVE** once the probe reports
+  `device_usable` true (valid `ID_REPLY` + `CAP_NET_RAW`, R81/R83) and
+  `pr_flow_present` true (R82). The equivalent byte-identical correctness over a
+  ≥ 1 MiB corpus is covered on the software model by AC-1-3. (R16, R17, R19, R47a,
+  R71, R81–R83, F5)
 - **AC-2-3.** Cold→warm→resident timing matches R4's model. With
   `toolchain_present` (R71), the **cold→warm** leg is **LIVE**: real Vivado
   synthesis genuinely takes minutes, runs out of process, and **never blocks or
@@ -1642,12 +1682,58 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
 - **AC-2-6.** Single-tenant PR arbitration on hardware: loading a second
   pattern's circuit evicts the first per R64; results remain byte-identical
   across evict/reload cycles. This requires `device_usable` ∧ `pr_flow_present`
-  (R71) → **SKIP** with reason
-  `device_usable=false — no loadable PR artifact (pr_flow_present=false), no PYRO transport (no /dev/qdma*, no CAP_NET_RAW), full reprogram needs root PCIe-rescan cooperation`.
+  (R71/R83) → **SKIP** with the R83 canonical reason (the combined
+  `device_usable=false — …; pr_flow_present=false — …` enumeration); it **flips to
+  LIVE** once both predicates flip true (R81–R83).
   The eviction policy and byte-identical results across evict/reload are asserted
   on the model as a **firm, non-vacuous LIVE** clause: the device-free residency
   manager MUST exercise single-tenant residency and fire deterministic LRU eviction
   (R64a). (R64, R64a, R53, R71)
+
+### Phase 2b — On-hardware bring-up (device probe + PR shell)
+
+Deliver the in-band Ethernet control-frame protocol (§10.1, R78/R79), the public
+`pyro.device` host surface — `encode_frame`/`decode_frame`/`probe_device`/
+`load_partial` (R86) — the host probe that flips `device_usable`/`pr_flow_present`
+(R81/R83), the PYRO-built OpenNIC PR shell with the `pyro_rp` reconfigurable
+partition and its default ID-stub child (§10.2, R80/R82), and the JTAG
+partial-bitstream load path (R85).
+The **host-side frame codec** is testable **without hardware** (LIVE); every
+on-device clause records a **SKIP** (never PASS) until the live probe answers
+(R71/R83). Requires the transport privilege (`CAP_NET_RAW`, P2/P3) and, for the PR
+clauses, the flashed PR shell and validated PR flow (P1).
+
+- **AC-2b-1.** The host-side control-frame codec `pyro.device.encode_frame`/
+  `decode_frame` (R78/R86) round-trips the **normative test vectors** byte-for-byte
+  on their PYRO-header-onward portion (R78 frame offset 14+): encoding an
+  `ID_REQUEST`, a `MATCH_REQUEST`, an `ID_REPLY`, and a `MATCH_REPLY` from their
+  field values produces **exactly** the R78.10 bytes, and decoding those bytes
+  recovers **exactly** the R78-named fields (big-endian PYRO header; little-endian
+  embedded `pyro_match` entries in `MATCH_REPLY`). The codec MUST raise
+  `PyroFrameError` (R86.1) on a frame whose `length` exceeds the MTU bound
+  (payload ≤ 1486) or whose `magic`/`version`/`kind`/`flags` is invalid, and MUST
+  ignore trailing zero-padding beyond `length`. This clause is **LIVE** (pure host
+  code, no device). (R78, R86)
+- **AC-2b-2.** The live device probe `pyro.device.probe_device(config)`
+  (R81/R83/R84/R86.4) sends an `ID_REQUEST` on the `onic` netdev and requires a valid
+  `ID_REPLY` whose `static_shell_id` high half matches `PYRO_SHELL_SPEC16` within
+  `PYRO_PROBE_TIMEOUT`; it returns `(True, …)` only then **and** with `CAP_NET_RAW`
+  present, else `(False, <R83 canonical reason>)`. When `CAP_NET_RAW` is absent it
+  MUST return `(False, …)` **without** raising `PermissionError` or requiring
+  privilege (R86.4). The **privilege-free `(False, reason)`** path is **LIVE** and
+  testable on this host now; the **`(True, …)` / `device_usable` flip** requires the
+  flashed PR shell + `CAP_NET_RAW` → **SKIP** until the probe answers. (R78, R81,
+  R83, R84, R86)
+- **AC-2b-3.** A per-pattern PYRO circuit is implemented in-context against the
+  **locked static DCP** (R82), `pr_verify` passes, and the emitted manifest carries
+  `payload_kind == "pr_bitstream"` (R72/R82) with the real shell/PR-region
+  `SHELL_VERSION`; the partial bitstream loads into `pyro_rp` via JTAG/`hw_server`
+  without disturbing the PCIe link (R85), after which the loaded circuit answers
+  `ID_REPLY` with a non-zero `rp_child_id` and serves `MATCH_REQUEST`. Requires
+  `pr_flow_present` ∧ `device_usable` → **SKIP** on this host (no validated PR flow,
+  device not usable); flips to LIVE when both predicates flip true. The JTAG load is
+  performed by `pyro.device.load_partial(config, path)`, which raises `PyroLoadError`
+  on any JTAG/`hw_server` failure (R85/R86.5). (R72, R80, R82, R83, R85, R86)
 
 ### Phase 3 — Transparent interposition + benchmarks
 
@@ -1677,25 +1763,375 @@ automatic tier-based dispatch and prewarming.
   and synthesis-failure injection increment the correct counters without altering
   results. (R52, R61, R65, R66)
 
-### 10.1 Deferred: Ethernet control-frame format
+### 10.1 Ethernet control-frame format (Phase-2b enablement)
 
-- **R76 (control-frame format — deferred, not yet specified).** R50 and P2 refer to
-  a "defined control-frame format" for the raw-Ethernet transport binding that
-  encapsulates CSR writes and buffer transfers over `enp175s0f0`/`f1` (F3). That
-  format is **not specified in this document.** The forward reference in earlier
-  drafts ("specified at Phase 1 §10.1") pointed at a subsection that never existed;
-  this ruling records the **disposition** and repairs the dangling reference rather
-  than inventing the frame format now. **The frame format is deferred to
-  Phase-2b/Phase-3 hardware enablement** — the point at which `device_usable`
-  (R71) becomes true and a raw-Ethernet path to a PYRO-controllable device is
-  actually built. Deferring it is safe for Phase 2 because **every device-dependent
-  clause SKIPs** on the current host (R71: `device_usable == false`,
-  `pr_flow_present == false`), so no Phase-2 AC exercises the raw-Ethernet
-  transport. When enablement begins, this subsection MUST be filled with the
-  normative frame layout (EtherType, control/data framing, register-address
-  encoding, sequencing, and MTU/fragmentation handling) under a version bump, and
-  R50/P2 updated to cite it. Until then the raw-Ethernet binding is **not a
-  Phase-2 deliverable** and MUST NOT be assumed by any AC.
+This subsection **lifts the R76 deferral** (v2.2.0). In Phase 2b all PYRO device
+communication is carried **in-band as raw Ethernet frames** on the `onic` netdev
+(`enp175s0f0`/`f1`, F3). The user box's **AXI-Lite window is tied off** in Phase 2b
+(no MMIO CSR path): every §7.4 register meaning the host needs is reached through
+the frame protocol below. Sending/receiving frames uses `AF_PACKET` and therefore
+requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**.
+
+- **R76 (control-frame format — deferral, LIFTED in v2.2.0).** The v2.1.0 ruling
+  deferred the raw-Ethernet control-frame format to Phase-2b enablement and repaired
+  a dangling reference. **That deferral is now lifted:** the normative frame layout
+  is specified in **R78** below and R50/P2 are updated to cite it. R76 is retained as
+  the disposition record; the substantive contract is R78/R79.
+
+- **R78 (control-frame format — normative).** PYRO device control is a request/reply
+  protocol over Ethernet II frames.
+  - **R78.1 (EtherType).** The EtherType is **`0x88B5`** (IEEE 802 local
+    experimental Ethertype 1), written **big-endian** on the wire (bytes `88 B5`).
+    Frames with any other EtherType are not PYRO frames and MUST be ignored by both
+    peers.
+  - **R78.2 (frame anatomy & endianness).** A PYRO frame is: the 14-byte Ethernet II
+    header (`dst_mac[6] src_mac[6] ethertype[2]`), then a **fixed 14-byte PYRO
+    control header**, then a kind-specific **payload**, then the Ethernet FCS
+    (appended/checked by the NIC, not by PYRO). **All multi-byte fields of the PYRO
+    control header and of the request/reply payload framing are big-endian (network
+    byte order).** The one exception is the `MATCH_REPLY` result entries, which embed
+    the existing **24-byte little-endian `pyro_match`** layout (R47) verbatim so the
+    host runtime consumes them without re-marshaling; this mixed-endianness is
+    intentional and is called out at R78.7.
+  - **R78.3 (PYRO control header — fixed 14 bytes).** Offsets are from the start of
+    the frame (the PYRO header begins at frame offset 14):
+
+    | Off | Size | Field      | Endian | Meaning                                            |
+    |-----|------|------------|--------|----------------------------------------------------|
+    | 14  | 1    | `magic`    | —      | `0x50` (`'P'`) — sanity byte; MUST be `0x50`        |
+    | 15  | 1    | `version`  | —      | protocol version; this spec defines **`0x01`**     |
+    | 16  | 1    | `kind`     | —      | message kind (R78.4)                               |
+    | 17  | 1    | `flags`    | —      | reserved; MUST be `0x00` in version 1              |
+    | 18  | 2    | `slot`     | BE     | circuit/pattern slot identifier (0 = ID stub / n/a)|
+    | 20  | 4    | `seq`      | BE     | sequence number; a reply MUST echo its request's   |
+    | 24  | 2    | `length`   | BE     | payload length in bytes (excludes the 14B header)  |
+    | 26  | 2    | `reserved` | BE     | MUST be `0x0000`                                    |
+
+    The payload begins at frame offset **28**.
+  - **R78.4 (message kinds).** `kind` is one of:
+
+    | Value  | Name            | Direction      |
+    |--------|-----------------|----------------|
+    | `0x00` | *reserved*      | —              |
+    | `0x01` | `ID_REQUEST`    | host → device  |
+    | `0x02` | `ID_REPLY`      | device → host  |
+    | `0x03` | `MATCH_REQUEST` | host → device  |
+    | `0x04` | `MATCH_REPLY`   | device → host  |
+    | `0x05` | `STATUS`/`ERROR`| device → host  |
+
+    Any other value is invalid and MUST be dropped (device) or treated as a
+    protocol error routing the call to fallback (host, R52).
+  - **R78.5 (`ID_REQUEST` / `ID_REPLY`).** `ID_REQUEST` carries an **empty payload**
+    (`length == 0`, `slot == 0`). `ID_REPLY` echoes `seq` and carries a **12-byte**
+    payload (`length == 12`):
+
+    | Off (from payload) | Size | Field             | Endian | Meaning                                   |
+    |--------------------|------|-------------------|--------|-------------------------------------------|
+    | 0                  | 4    | `static_shell_id` | BE     | flashed PR-shell identity (R81)           |
+    | 4                  | 4    | `harness_version` | BE     | resident harness contract version (R45)   |
+    | 8                  | 4    | `rp_child_id`     | BE     | `0x00000000` = default ID stub; non-zero identifies a loaded pattern circuit |
+
+  - **R78.6 (`MATCH_REQUEST`).** `slot` selects the resident circuit; payload framing
+    (big-endian), followed by the raw subject chunk:
+
+    | Off | Size | Field       | Endian | Meaning                                             |
+    |-----|------|-------------|--------|-----------------------------------------------------|
+    | 0   | 8    | `start_off` | BE     | byte offset of this chunk in the logical stream (mirrors `pyro_scan` `start_off`, R41) |
+    | 8   | 2    | `out_cap`   | BE     | max result entries the host will accept in the reply |
+    | 10  | 2    | `reserved`  | BE     | MUST be `0x0000`                                     |
+    | 12  | N    | `corpus`    | —      | raw subject bytes, `N = length − 12`, `N ≤ 1474`    |
+
+  - **R78.7 (`MATCH_REPLY`).** Echoes `seq` and `slot`; payload:
+
+    | Off | Size  | Field      | Endian | Meaning                                             |
+    |-----|-------|------------|--------|-----------------------------------------------------|
+    | 0   | 2     | `count`    | BE     | number `M` of result entries following              |
+    | 2   | 2     | `status`   | BE     | bit0 `OVF` (more matches pending — host resumes via `start_off`, R41/R47), bit1 `ERR` |
+    | 4   | 4     | `reserved` | BE     | MUST be `0x00000000`                                |
+    | 8   | 24·M  | `entries`  | LE     | `M` result entries, each the 24-byte little-endian `pyro_match` (R47): `start(8) end(8) pattern_id(4) flags(4)` |
+
+    `M ≤ 61` per reply (payload ≤ 1486). Each entry's `flags` bit0 (`verified`) is
+    **advisory only**; the host MUST re-verify every window per R19 before returning
+    it, exactly as on the DMA path (R47a). On `OVF`, the host resumes the scan with
+    `start_off` advanced past the last returned entry (R41).
+  - **R78.8 (`STATUS`/`ERROR`).** Payload: `code` (4 bytes BE, mapping to a
+    `pyro_status` value, R38) followed by optional UTF-8 diagnostic text
+    (`N = length − 4`). A device that receives a `MATCH_REQUEST` for a `slot` that is
+    not resident (e.g. the default ID stub) MUST reply `STATUS`/`ERROR` with
+    `code = PYRO_E_NOT_RESIDENT` (7); the host then falls back (R51).
+  - **R78.9 (MTU, minimum length, padding).** The **total** Ethernet frame
+    (`dst+src+ethertype + 14B PYRO header + payload + 4B FCS`) MUST NOT exceed
+    **1518** bytes; equivalently the PYRO `length` (payload) MUST be **≤ 1486**. A
+    frame shorter than the 60-byte Ethernet L2 minimum (excluding FCS) MUST be
+    **zero-padded to 60 bytes** by the sender; the `length` field alone delimits the
+    real payload, and the receiver MUST ignore trailing padding beyond `length`.
+    There is **no PYRO-level fragmentation**: a corpus larger than one
+    `MATCH_REQUEST` is chunked by the host and reassembled by result-`start_off`
+    (R41), not by IP-style fragmentation.
+  - **R78.10 (normative test vectors).** The following frames are **normative**; the
+    host codec MUST produce and parse them byte-for-byte (AC-2b-1). MACs are example
+    locally-administered addresses (host `02:00:00:00:00:01`, device
+    `02:00:00:00:00:02`); frame validity does **not** depend on the specific MACs.
+    Bytes are shown in hex, in wire order; where a frame is under 60 bytes it is
+    zero-padded to 60 on the wire (padding not shown).
+
+    **(a) `ID_REQUEST`** (host → device; `seq = 1`, empty payload):
+    ```
+    02 00 00 00 00 02  02 00 00 00 00 01  88 B5   ; eth: dst, src, ethertype
+    50 01 01 00  00 00  00 00 00 01  00 00  00 00 ; PYRO: magic ver kind flags | slot | seq | length | resv
+    ```
+    (28 meaningful bytes; zero-padded to 60 on the wire.)
+
+    **(b) `ID_REPLY`** (device → host; echoes `seq = 1`;
+    `static_shell_id = 0x02025A3C`, `harness_version = 0x00010000`,
+    `rp_child_id = 0` = default ID stub):
+    ```
+    02 00 00 00 00 01  02 00 00 00 00 02  88 B5
+    50 01 02 00  00 00  00 00 00 01  00 0C  00 00
+    02 02 5A 3C  00 01 00 00  00 00 00 00           ; payload: static_shell_id | harness_version | rp_child_id
+    ```
+    (40 meaningful bytes; zero-padded to 60 on the wire. `static_shell_id >> 16 ==
+    0x0202 == PYRO_SHELL_SPEC16` ⇒ the probe accepts it, R81/R83.)
+
+    **(c) `MATCH_REQUEST`** (host → device; `slot = 1`, `seq = 2`, `start_off = 0`,
+    `out_cap = 4`, corpus `"abcabc"` = `61 62 63 61 62 63`):
+    ```
+    02 00 00 00 00 02  02 00 00 00 00 01  88 B5
+    50 01 03 00  00 01  00 00 00 02  00 12  00 00
+    00 00 00 00 00 00 00 00  00 04  00 00           ; payload: start_off(8) | out_cap | resv
+    61 62 63 61 62 63                                ; corpus "abcabc"
+    ```
+    (46 meaningful bytes; zero-padded to 60 on the wire. `length = 0x12 = 18`.)
+
+    **(d) `MATCH_REPLY`** (device → host; echoes `slot = 1`, `seq = 2`; the resident
+    circuit for pattern `bc` reports two windows `[1,3)` and `[4,6)`; `count = 2`,
+    `status = 0` (no OVF); entries are 24-byte little-endian `pyro_match`,
+    `pattern_id = 0`, `flags = 0` ⇒ **unverified**, host re-verifies per R19):
+    ```
+    02 00 00 00 00 01  02 00 00 00 00 02  88 B5
+    50 01 04 00  00 01  00 00 00 02  00 38  00 00
+    00 02  00 00  00 00 00 00                        ; payload: count | status | resv
+    01 00 00 00 00 00 00 00  03 00 00 00 00 00 00 00  00 00 00 00  00 00 00 00 ; entry0: start=1 end=3 pid=0 flags=0 (LE)
+    04 00 00 00 00 00 00 00  06 00 00 00 00 00 00 00  00 00 00 00  00 00 00 00 ; entry1: start=4 end=6 pid=0 flags=0 (LE)
+    ```
+    (84 bytes; `length = 0x38 = 56`. This round-trip — (c)→(d) — is the normative
+    `MATCH` vector for AC-2b-1.)
+
+- **R79 (frame parsing lives inside `pyro_rp`).** The PYRO control-frame parser and
+  responder are implemented **inside the reconfigurable partition `pyro_rp`**
+  (§10.2, R80), **not** in the static OpenNIC shell. Consequence (normative): a
+  change to the R78 protocol (new `kind`, new payload field, `version` bump) is a
+  **partial-bitstream change only** and MUST NOT require rebuilding or reflashing the
+  static shell. The static shell's sole responsibilities on the datapath are to
+  carry frames to/from `pyro_rp` over the R80 AXI-Stream boundary and to own PCIe;
+  it is protocol-agnostic. This keeps the frozen static image (R80/R81) stable across
+  protocol evolution and is the reason the boundary (R80) — not the protocol — is the
+  thing that must be permanent.
+
+### 10.2 Phase-2b on-hardware bring-up (PR shell, probe, PR flow)
+
+Ground truth for Phase 2b (owner-verified, 2026-07-06): the U250 at
+`0000:af:00.0/1` is the **owner's own board**; reprogramming is permitted. The board
+is reflashed with a **PYRO-built OpenNIC PR shell**: Xilinx `open-nic-shell` at
+commit `ce85c8d`, ported to **Vivado 2025.2** (R70a-pin, v2.2.1), with a `pyro` user-box
+plugin containing a reconfigurable partition **`pyro_rp`** (Xilinx DFX,
+`HD.RECONFIGURABLE` + `Pblock`). Per-pattern PYRO circuits become **PARTIAL**
+bitstreams for `pyro_rp` (R72 `payload_kind == "pr_bitstream"`). JTAG programming is
+verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`).
+
+- **R80 (reconfigurable-partition boundary contract — thin & permanent).** The
+  interface between the static shell and `pyro_rp` is **frozen for the life of the
+  flashed static image** so that every partial bitstream links against the same
+  locked static DCP (R82). The boundary is **thin**: exactly
+  - `clk` — the 250 MHz user-box clock (F4), and `rstn` — synchronous active-low
+    reset;
+  - one **512-bit AXI-Stream slave** carrying host→device (QDMA **H2C**) frames into
+    `pyro_rp`: `s_axis_tdata[511:0]`, `s_axis_tkeep[63:0]`, `s_axis_tlast`,
+    `s_axis_tuser[47:0]` (16-bit `size`, 16-bit `src`, 16-bit `dst`), `s_axis_tvalid`,
+    `s_axis_tready`;
+  - one **512-bit AXI-Stream master** carrying device→host (QDMA **C2H**) frames out
+    of `pyro_rp`: `m_axis_tdata[511:0]`, `m_axis_tkeep[63:0]`, `m_axis_tlast`,
+    `m_axis_tuser[47:0]` (`size`/`src`/`dst` **pass-through** as needed for egress),
+    `m_axis_tvalid`, `m_axis_tready`.
+
+  The box's **AXI-Lite is tied off** in Phase 2b (all control is in-band, R78). No
+  other signal crosses the boundary; adding one is a **static-shell change** (a new
+  flash + new locked DCP), not a partial-bitstream change. The **default child**
+  shipped inside the flashed static image is an **ID stub**: a minimal circuit that
+  parses frames (R79), answers `ID_REQUEST` with `ID_REPLY` (`rp_child_id == 0`,
+  R78.5) carrying the shell identity (R81), and replies `STATUS`/`ERROR`
+  `PYRO_E_NOT_RESIDENT` to any `MATCH_REQUEST` (no pattern resident, R78.8). The ID
+  stub is what lets `device_usable` flip true **before** any pattern circuit is built
+  (R83): a freshly flashed board answers the probe.
+
+- **R81 (static shell identity — `static_shell_id`).** The flashed PR shell carries a
+  32-bit **`static_shell_id`** returned in `ID_REPLY` (R78.5). It is derived as
+  `(SPEC16 << 16) | BUILD16`, where **`SPEC16 = (spec_MAJOR << 8) | spec_MINOR`** of
+  the spec version the shell was built against (for this spec, `2.2` ⇒ `0x0202`) and
+  **`BUILD16`** is the low 16 bits of the shell build's Unix epoch **minutes**
+  (`epoch_seconds // 60`, mod 2¹⁶) — a build-identifying discriminator. The host
+  runtime is compiled with an expected **`PYRO_SHELL_SPEC16`** (`0x0202` for this
+  spec). The probe (R83/R84) MUST verify **`(static_shell_id >> 16) ==
+  PYRO_SHELL_SPEC16`** exactly before declaring the device usable, and MUST record
+  the full 32-bit value in `pyro.re.stats()`/diagnostics; the low 16 `BUILD16` bits
+  identify the specific flashed image and are **not** required to equal a fixed
+  constant. **`static_shell_id` is distinct from `SHELL_VERSION`** (R45/R75, the
+  manifest/cache-key shell/PR-region identifier, still `0x0A000001` for the model
+  harness): `static_shell_id` is the **wire probe identity**, `SHELL_VERSION` is the
+  **artifact-compatibility key**. `SHELL_VERSION` is unchanged by this bump and
+  becomes the real static-shell/PR-region identifier only when `pr_flow_present`
+  flips true and a `pr_bitstream` is emitted (R75/R82, a future bump).
+
+- **R82 (PR link flow — same tool, `pr_verify` mandatory, locked static is the
+  substrate).** Normative rules for producing partial bitstreams for `pyro_rp`:
+  - **R82a (single tool release).** The static shell **and** every partial bitstream
+    MUST be produced by the **same Vivado release** — the R70a-pinned **2025.2**
+    (`toolchain_version == 0x19020000`, R75). A partial bitstream whose recorded
+    `toolchain_version` differs from the static image's MUST be **refused** at load
+    and the pattern treated as fallback (not a device error), exactly as an R47b
+    compatibility failure → `PYRO_E_NOT_RESIDENT` (R47c).
+  - **R82b (locked static DCP is the linking substrate).** The implementation-locked
+    static shell **DCP** (with `pyro_rp` as `HD.RECONFIGURABLE`) is the substrate
+    against which every `pyro_rp` child is implemented **in context**. Partial
+    bitstreams are generated from that locked static so the static region is
+    bit-identical across all configurations.
+  - **R82c (`pr_verify` is mandatory before claiming `pr_bitstream`).** Vivado
+    **`pr_verify`** (comparing the static region across the routed configurations)
+    MUST **pass** before the synthesis service may emit a manifest with
+    `payload_kind == "pr_bitstream"` (R72). If `pr_verify` was not run or does not
+    pass, the manifest MUST NOT claim `pr_bitstream` — it stays `ooc_metrics` (R72,
+    honest metrics, no device claim) or the job fails (R65). Fabricating a
+    `pr_bitstream` claim without a passing `pr_verify` is a defect (R72c honesty).
+  - **R82d (`pr_flow_present` artifacts).** `pr_flow_present` (R71/R83) is the
+    conjunction of: the locked static DCP (R82b) present and validated on the host,
+    a `pyro_rp` floorplan (`Pblock` + `HD.RECONFIGURABLE`, R80 boundary), and a
+    PR-generation flow that produces a genuine loadable partial bitstream with a
+    passing `pr_verify` (R82c).
+
+- **R83 (R71 predicate-flip semantics + canonical SKIP string — normative,
+  supersedes the v2.1.3 literal).** Amends R71's dispositions with the exact
+  flip conditions and the canonical SKIP reason:
+  - **`pr_flow_present` flips true** iff the R82d artifacts are all present and
+    validated on the host. While any is absent it is **false** and clauses requiring
+    it SKIP with reason `pr_flow_present=false — <first missing R82d artifact>`.
+  - **`device_usable` flips true** iff **both**: (i) a **live probe** sends
+    `ID_REQUEST` and receives a valid `ID_REPLY` whose `static_shell_id` satisfies
+    the R81 `SPEC16` check within `PYRO_PROBE_TIMEOUT` (R84); **and** (ii) transport
+    privilege **`CAP_NET_RAW`** is present (AF_PACKET send/recv on the `onic` netdev,
+    P2/P3). If either is absent, `device_usable` is **false**.
+  - **Canonical SKIP string (normative).** When `device_usable == false`, the probe
+    MUST emit `device_usable=false — ` followed by a comma-separated enumeration, in
+    this fixed order, of **exactly the unmet conditions** among:
+    1. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)`
+    2. `transport: CAP_NET_RAW absent`
+    A clause requiring `device_usable ∧ pr_flow_present` appends
+    `; pr_flow_present=false — <first missing R82d artifact>` when that predicate is
+    also false. This **supersedes** the fixed v2.1.3 literal
+    (`… no loadable PR artifact …, no PYRO transport …, full reprogram needs root
+    PCIe-rescan cooperation`); the enumeration now reflects the *actual* probe
+    result. **On the current host** `device_usable == false` with reason
+    `device_usable=false — probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch), transport: CAP_NET_RAW absent`
+    (PR shell not yet flashed; `CAP_NET_RAW` not granted).
+  - A **SKIP is never PASS**; a device clause PASSes only from real execution against
+    a probe-confirmed `device_usable == true` (R71 honesty, unchanged).
+
+- **R84 (probe and PR-job timeouts — normative constants).**
+  - **`PYRO_PROBE_TIMEOUT = 500 ms`** per `ID_REQUEST` attempt, with **3 attempts**
+    (fresh `seq` each) before the probe concludes `device_usable == false`. A
+    `MATCH_REQUEST`/`MATCH_REPLY` round-trip that exceeds `PYRO_PROBE_TIMEOUT` is a
+    device timeout → `PYRO_E_TIMEOUT`, routed to fallback (R52), not a crash.
+  - **`VIVADO_PR_JOB_TIMEOUT = 3600 s` (60 min)** — the per-job timeout for
+    **`pr_bitstream`** synthesis jobs, which include a full in-context place-and-route
+    **link** against the locked static plus `pr_verify` (R82) and are heavier than the
+    OOC-only `ooc_metrics` job governed by **R77** (`VIVADO_JOB_TIMEOUT = 1800 s`).
+    R77's discipline is otherwise unchanged and applies to PR jobs verbatim: the
+    adapter enforces the deadline **inside the out-of-process worker** and, on expiry,
+    **kills the entire Vivado process tree** and raises `SynthesisFailed` →
+    permanent-fallback (R65); the R63e reaper is the bookkeeping backstop. Both
+    timeouts are overridable via the `ToolchainConfig` per-job-timeout field (R70a);
+    the adapter selects the PR default when the job targets `payload_kind ==
+    "pr_bitstream"`, else the R77 default. Neither timeout ever blocks or slows a
+    caller (R63/R77 asynchrony unchanged).
+
+- **R85 (Phase-2b PR-load path is JTAG; ICAP/MCAP deferred).** In Phase 2b,
+  `pyro_circuit_load` on hardware (R40) for a `pr_bitstream` artifact (R72/R82) is
+  performed **out of band via JTAG** using Vivado `hw_server` (verified working on the
+  owner's board). This is safe with respect to the live PCIe link: the **static shell
+  owns PCIe** and is bit-identical across configurations (R82b), so partial
+  reconfiguration of `pyro_rp` over JTAG **does not disturb** the PCIe link or the
+  `onic` netdev. The async/non-blocking load contract (R63) and single-tenant
+  residency/eviction semantics (R64) are unchanged; only the load *mechanism* is JTAG.
+  **ICAP/MCAP-based (in-band, self-hosted) partial reconfiguration is explicitly
+  deferred** to a later phase — like R76 deferred the frame format — because it
+  requires additional shell plumbing (an ICAP/MCAP controller reachable from the host
+  path) that the `ce85c8d` PR shell does not yet expose. Until that ruling is lifted
+  under a future version bump, the **only** sanctioned on-device PR-load mechanism is
+  the JTAG/`hw_server` path, and no AC may assume ICAP/MCAP self-reconfiguration.
+
+- **R86 (host-side device API surface — `pyro.device`, NEW obligation, v2.2.1).**
+  PYRO MUST expose a public module **`pyro.device`** so the coder and the
+  test-developer derive the device-plumbing surface from this spec independently. It
+  is **PYRO-specific** and MUST NOT appear on the standard `re` namespace when
+  interposing (§7.2), mirroring R31/R62/§9.1. All four functions are **config-in with
+  no ad-hoc environment reads**: every environment-derived value (netdev name,
+  expected `PYRO_SHELL_SPEC16`, probe-timeout override, Vivado/`hw_server` locations)
+  is carried on the passed config, which was sampled at the R35a points (R5/R35a
+  discipline; the functions MUST NOT read `os.environ` themselves).
+  - **R86.1 (exception taxonomy).** The module defines a base
+    **`PyroDeviceError(Exception)`** and subclasses **`PyroFrameError(PyroDeviceError)`**
+    (malformed frame in encode/decode) and **`PyroLoadError(PyroDeviceError)`**
+    (JTAG/PR-load failure). These are the **only** exception types the R86 functions
+    raise; they MUST NOT leak `PermissionError`, `OSError`, or transport internals to
+    callers (wrap them).
+  - **R86.2 (`encode_frame`).**
+    `encode_frame(kind, slot, seq, payload, flags=0) -> bytes` builds the **PYRO
+    control header + payload** portion of a frame per R78 (R78 frame offset 14
+    onward — i.e. the Ethernet *payload*; the 14-byte Ethernet L2 header
+    `dst/src/0x88B5`, plus FCS and any 60-byte-minimum zero-padding, are the
+    transport/NIC's responsibility, R78.9, and are deliberately not this function's
+    concern since frame validity is MAC-independent, R78.10). `kind` is an R78.4
+    value; `slot`/`seq` are integers; `payload` is the already-serialized payload
+    `bytes`; `flags` MUST be `0` in version 1. It sets `magic=0x50`, `version=0x01`,
+    `length=len(payload)`, `reserved=0`, encoding all header fields **big-endian**
+    (R78.2/R78.3). It MUST raise `PyroFrameError` if `len(payload) > 1486` (R78.9),
+    if `kind` is not an R78.4 value, or if `flags != 0`.
+  - **R86.3 (`decode_frame`).** `decode_frame(data: bytes) -> result` parses the PYRO
+    control header + payload (the same slice `encode_frame` returns) and returns a
+    structured result whose fields are named exactly for the R78 header:
+    `magic, version, kind, flags, slot, seq, length, payload` (with `payload` the raw
+    `bytes` of the kind-specific body; typed sub-parsing of `ID_REPLY`/`MATCH_REPLY`
+    payloads MAY be offered by additional helpers but is not required of
+    `decode_frame`). It MUST raise **`PyroFrameError`** if `magic != 0x50`, if
+    `version != 0x01`, if `flags != 0`, if `length` exceeds the R78.9 bound (1486),
+    or if `length` is inconsistent with the available bytes (fewer payload bytes than
+    `length`). Trailing bytes beyond `length` (Ethernet zero-padding) MUST be
+    ignored, not treated as payload (R78.9). `encode_frame`/`decode_frame` MUST
+    round-trip the R78.10 normative vectors byte-for-byte on their PYRO-header-onward
+    portion (AC-2b-1).
+  - **R86.4 (`probe_device`).** `probe_device(config) -> (usable: bool, reason: str)`
+    implements the R83/R84 device-usability probe: it sends `ID_REQUEST` (up to 3
+    attempts, `PYRO_PROBE_TIMEOUT` each, R84), validates the `ID_REPLY`
+    `static_shell_id` `SPEC16` (R81), and checks `CAP_NET_RAW`. It returns
+    `(True, reason)` only when both conditions hold (the reason string MAY record the
+    observed full `static_shell_id`), else `(False, reason)` where `reason` is the
+    **R83 canonical `device_usable=false — …` enumeration** of the unmet conditions.
+    **`probe_device` MUST NEVER require elevated privilege to return `(False,
+    reason)`:** if `CAP_NET_RAW` is absent it MUST detect that **before** attempting
+    any privileged `AF_PACKET` operation and return `(False, "device_usable=false —
+    …transport: CAP_NET_RAW absent")` — it MUST NOT raise `PermissionError` or crash.
+    It returns, never raises, for any "not usable" condition (including timeout and
+    `SPEC16` mismatch); it MAY raise `PyroFrameError` only on a genuinely malformed
+    reply frame, which the caller treats as not-usable.
+  - **R86.5 (`load_partial`).** `load_partial(config, partial_bitstream_path) -> None`
+    implements the R85 JTAG partial-bitstream load via `hw_server`. On success it
+    returns `None`; on any failure (`hw_server` unreachable, JTAG chain mismatch,
+    incompatible or corrupt bitstream, load error) it MUST raise **`PyroLoadError`**
+    with a diagnostic message. It MUST NOT disturb the PCIe link (R85). Artifact
+    admissibility (`payload_kind == "pr_bitstream"`, same-release, integrity —
+    R72b/R82) is enforced by `pyro_circuit_load` (R40) upstream; `load_partial`
+    performs the JTAG mechanism and surfaces mechanism failures as `PyroLoadError`
+    (mapping, in the residency manager, to the R47c not-resident / R65 semantics as
+    appropriate).
 
 ---
 
@@ -1708,8 +2144,9 @@ automatic tier-based dispatch and prewarming.
   matching the OpenNIC shell version; a floorplanned PR partition for the 250 MHz
   user box with a fixed static/reconfigurable interface (`pblock` + the harness
   contract, §7.4); and a PR bitstream generation flow. **Status at Phase-2 start
-  (R71):** the Vivado half is now **present** — Vivado 2023.1
-  (`/usr/local/cad/Vivado/2023.1`) synthesizes, places, and routes the target part
+  (R71):** the Vivado half is now **present** — Vivado **2025.2**
+  (`/usr/local/cad/2025.2/Vivado`, the R70a-pin re-pinned from 2023.1 in v2.2.1)
+  synthesizes, places, and routes the target part
   `xcu250-figd2104-2L-e` with no license error — but the OpenNIC **PR floorplan and
   PR-bitstream flow remain absent**, so there is no loadable PYRO artifact, and the
   runtime user has no PYRO-usable transport (no `/dev/qdma*`, no `CAP_NET_RAW`); the
@@ -1724,9 +2161,9 @@ automatic tier-based dispatch and prewarming.
 - **P2 (transport enablement).** The performance-target QDMA char-dev binding
   requires the QDMA PF/queue setup and `/dev/qdma*` (or equivalent) char devices,
   which do not currently exist (F5). Until then, the **raw-Ethernet-frame
-  binding** to `enp175s0f0`/`f1` (F3) is the functional transport; it needs a
-  defined control-frame format (**deferred; see §10.1 and R76**, R50) and likely
-  `CAP_NET_RAW`/root or an `AF_XDP`/`AF_PACKET` path.
+  binding** to `enp175s0f0`/`f1` (F3) is the functional transport; its control-frame
+  format is **specified in §10.1 (R78)** (v2.2.0, R76 lifted, R50) and it requires
+  `CAP_NET_RAW` for the `AF_PACKET` path (the gate on `device_usable`, R83).
 - **P3 (privilege).** MMIO/DMA and raw-frame transport typically require root or
   specific capabilities. The runtime MUST detect insufficient privilege and fall
   back to the model/CPU with a clear diagnostic rather than crashing (R52).
@@ -1834,6 +2271,98 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.2.1** (2026-07-06) — *Vivado re-pin to 2025.2 + `pyro.device` API surface
+  (MINOR — added requirement + toolchain re-pin), spec-writer.* Two items; no frozen
+  invariant touched (C ABI 2.0.0, `PYROART1` FORMAT_VERSION 1, `SHELL_VERSION
+  0x0A000001` semantics, all existing AC numbers unchanged).
+  - **Toolchain re-pin 2023.1 → 2025.2 (empirical, orchestrator-verified 2026-07-06).**
+    Vivado **2023.1 segfaults at batch-process exit** on this host after the OS
+    upgrade to Ubuntu 24.04 / glibc 2.39 (unsupported by 2023.1; `libtinfo.so.5` and
+    TERM/locale shims do not help). The nonzero exit codes of successfully-completed
+    `launch_runs` children mark completed runs **FAILED** (this killed the first
+    PR-shell build *after* CMAC synthesis had actually succeeded) — a violation of the
+    exit-code-integrity assumption underlying R77's process discipline. **Vivado
+    2025.2** at **`/usr/local/cad/2025.2/Vivado`** exits cleanly with no shim,
+    officially supports the host OS, and is license-clean for `xcu250-figd2104-2L-e`
+    (the permanent `cmac_usplus` license, good through 2027.06, covers it). Amended:
+    **R70a-pin** (new normative sub-clause — pinned release 2025.2 at that path,
+    superseding 2023.1); **R75** pinned `toolchain_version = 0x19020000`
+    (`YY=25=0x19`, `RR=2`, `build=0`), 2023.1's `0x17010000` retained only as a
+    historical example; **R75a** and **R82a** updated to the new value/release; swept
+    the R70/R71-toolchain_present/§10.2-intro/§11-P1 references. Historical changelog
+    entries (2.1.0, 2.2.0) retain original wording as record.
+  - **R74a (calibration is toolchain-bound — transitional honesty ruling).** Post-route
+    utilization depends on the Vivado release, so `ESTIMATOR_CALIBRATION_MARGIN` is
+    calibrated **per `toolchain_version`**. Any AC-2-4 calibration data gathered under
+    2023.1 (`0x17010000`) is **not evidence** for the 2025.2 pin (`0x19020000`) and
+    MUST NOT be reused to claim PASS; AC-2-4 MAY PASS only from real syntheses under
+    the pinned 2025.2 toolchain and otherwise records the R74 empty-success-set SKIP.
+    The R4/R75a cache key enforces this mechanically (distinct keys).
+  - **R86 (`pyro.device` host-side API surface — NEW obligation).** Public,
+    PYRO-specific module so coder and test-developer derive the device-plumbing
+    imports from the spec independently: `encode_frame(kind, slot, seq, payload,
+    flags=0) -> bytes` and `decode_frame(bytes) -> result` (fields named for the R78
+    header; `PyroFrameError` on bad `magic`/`version`/`flags`/`length`);
+    `probe_device(config) -> (usable, reason)` implementing R83/R84 with the canonical
+    reason string and the **privilege-free `(False, reason)`** guarantee (never raises
+    `PermissionError` when `CAP_NET_RAW` is absent); `load_partial(config, path) ->
+    None` implementing the R85 JTAG load (raises `PyroLoadError` on failure). Exception
+    taxonomy `PyroDeviceError`/`PyroFrameError`/`PyroLoadError` (R86.1). All four are
+    **config-in with no ad-hoc `os.environ` reads** (R5/R35a discipline). Wired into
+    AC-2b-1/2b-2/2b-3 and the Phase-2b deliverables. **New implementation obligations:**
+    the R70a-pin re-pin, R86 (`pyro.device`); R74a is a transitional honesty ruling.
+- **2.2.0** (2026-07-06) — *Phase-2b on-hardware bring-up (MINOR — added
+  requirements), spec-writer.* Defines everything R71 recorded as absent so
+  device bring-up can proceed on the owner's own U250 (reflashed with a PYRO-built
+  OpenNIC PR shell: `open-nic-shell` @ `ce85c8d`, Vivado 2023.1, `pyro_rp`
+  DFX/`HD.RECONFIGURABLE` partition; JTAG programming verified). **No frozen
+  invariant is touched:** C ABI 2.0.0 (`0x00020000`), the `PYROART1` artifact header
+  (FORMAT_VERSION 1), `SHELL_VERSION 0x0A000001` semantics, and all existing AC
+  numbering are unchanged; every on-device clause still records **SKIP** (never
+  PASS) until the live probe answers. Added §10.1 (filled) and §10.2:
+  - **§10.1 filled; R76 LIFTED.** The Phase-2b deferral of the raw-Ethernet
+    control-frame format (R76) is lifted; the normative format is **R78**.
+  - **R78 (control-frame format — NEW obligation).** In-band Ethernet protocol,
+    EtherType **`0x88B5`**, fixed 14-byte big-endian PYRO header (`magic`/`version`/
+    `kind`/`flags`/`slot`/`seq`/`length`), kinds `ID_REQUEST`/`ID_REPLY`/
+    `MATCH_REQUEST`/`MATCH_REPLY`/`STATUS`-`ERROR`, `MATCH_REPLY` entries embedding
+    the 24-byte little-endian `pyro_match` (R47), MTU ≤ 1518 (payload ≤ 1486),
+    60-byte-minimum zero-padding, no PYRO-level fragmentation. Includes **normative
+    hex test vectors** for `ID_REQUEST` and a full `MATCH` round-trip (tests derive
+    from these, AC-2b-1).
+  - **R79 (parsing lives inside `pyro_rp`).** The frame parser/responder is in the
+    reconfigurable partition, not the static shell, so a protocol change is a
+    **partial-bitstream change only** and never reflashes the static image.
+  - **R80 (RP boundary — thin & permanent).** Frozen boundary: `clk`/`rstn`, one
+    512-bit AXIS slave (H2C in), one 512-bit AXIS master (C2H out) with `tkeep`/
+    `tlast`/16-bit `tuser` size·src·dst; AXI-Lite tied off. Default child = an **ID
+    stub** answering `ID_REQUEST` (so a freshly flashed board answers the probe) and
+    `STATUS`/`ERROR` `PYRO_E_NOT_RESIDENT` to `MATCH_REQUEST`.
+  - **R81 (`static_shell_id`).** 32-bit `(SPEC16<<16)|BUILD16` build identity in
+    `ID_REPLY`; probe verifies `SPEC16 == PYRO_SHELL_SPEC16` (`0x0202`) before
+    declaring the device usable. Distinct from `SHELL_VERSION` (unchanged this bump).
+  - **R82 (PR link flow).** Static shell and partial bitstreams MUST use the same
+    Vivado release (2023.1); the **locked static DCP** is the in-context linking
+    substrate; **`pr_verify` is MANDATORY** before any manifest may claim
+    `payload_kind == "pr_bitstream"` (R72). Defines the `pr_flow_present` artifacts.
+  - **R83 (predicate-flip semantics; canonical SKIP string).** `pr_flow_present`
+    flips true on validated R82d artifacts; `device_usable` flips true only on a live
+    `ID_REPLY` with matching `static_shell_id` **and** `CAP_NET_RAW`. New canonical
+    SKIP string enumerates exactly the unmet conditions, **superseding** the fixed
+    v2.1.3 literal. Amended R71 and the AC-2-2/AC-2-6 SKIP references.
+  - **R84 (timeouts).** `PYRO_PROBE_TIMEOUT = 500 ms` × 3 attempts; match round-trip
+    timeout → `PYRO_E_TIMEOUT`/fallback. **`VIVADO_PR_JOB_TIMEOUT = 3600 s`** for
+    `pr_bitstream` jobs (full P&R link + `pr_verify`), distinct from R77's 1800 s OOC
+    default; R77's kill-the-process-tree discipline applies to PR jobs verbatim.
+  - **R85 (JTAG PR-load; ICAP/MCAP deferred).** Phase-2b on-device
+    `pyro_circuit_load` is out-of-band **JTAG via `hw_server`**; the static shell owns
+    PCIe (bit-identical across configs) so PR of `pyro_rp` does not disturb the link.
+    ICAP/MCAP self-reconfiguration is **explicitly deferred** (its own ruling).
+  - **New ACs (do not renumber existing):** Phase-2b **AC-2b-1** (host frame codec vs.
+    R78 test vectors — **LIVE**, no device), **AC-2b-2** (live probe / `device_usable`
+    flip — SKIP until it answers), **AC-2b-3** (`pr_bitstream` via locked static +
+    `pr_verify`, JTAG load — SKIP until `pr_flow_present ∧ device_usable`). Updated
+    R50/P2 to cite R78. **New implementation obligations:** R78–R85 and AC-2b-1.
 - **2.1.3** (2026-07-06) — *Board-ownership & device-blocker rationale correction
   (PATCH — factual clarification), spec-writer.* The project owner clarified that the
   Alveo U250 at PCI `af:00.0` is the **owner's own board** and that reprogramming it
