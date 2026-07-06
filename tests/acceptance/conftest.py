@@ -42,7 +42,12 @@ import pytest
 # Env vars sampled at R35a points (import/install/uninstall/refresh_env). All are
 # saved/cleared/restored per test so hook/knob tests are order-independent.
 _ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
-             "PYRO_N_SYNTH")
+             "PYRO_N_SYNTH",
+             # R68/R70 (v2.1.0) toolchain-selection knobs. Sampled at R35a points;
+             # saved/cleared/restored per test so the Phase-2 vivado probe
+             # (phase2_support.toolchain_present) can pin them for a single test
+             # without leaking the vivado toolchain into Phase-0/1 mock-only tests.
+             "PYRO_TOOLCHAIN", "PYRO_VIVADO")
 
 
 def pytest_configure(config):
