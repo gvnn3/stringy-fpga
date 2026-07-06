@@ -313,20 +313,35 @@ class VivadoToolchain:
         "write_checkpoint -force rm_synth.dcp\n"
         "close_design\n"
         "open_checkpoint @STATIC_DCP@\n"
-        # S8: quote the REF_NAME/ORIG_REF_NAME filter values.
-        "set _rp [get_cells -hierarchical -filter "
+        # In the LOCKED static DCP (R82b) the RP cell is already a black box, so
+        # REF_NAME/ORIG_REF_NAME no longer read "@RPCELL@" — the property that
+        # survives lock_design is HD.RECONFIGURABLE (empirically verified against
+        # this host's locked DCP; the finish-lock flow locates the cell the same
+        # way).  Fall back to the ref-name match for a non-blackboxed substrate.
+        "set _rp [get_cells -hierarchical -filter {HD.RECONFIGURABLE == 1}]\n"
+        "if {[llength $_rp] != 1} {\n"
+        "    set _rp [get_cells -hierarchical -filter "
         "{ORIG_REF_NAME == \"@RPCELL@\" || REF_NAME == \"@RPCELL@\"}]\n"
+        "}\n"
         "if {[llength $_rp] != 1} {\n"
         "    error \"PYRO_PR: expected exactly one @RPCELL@ cell, found: $_rp\"\n"
         "}\n"
-        "update_design -cell $_rp -black_box\n"
-        "read_checkpoint -cell $_rp rm_synth.dcp\n"
+        # Netlist mutations invalidate cached cell objects (and glob chars like
+        # g_intf[0] break bare get_cells patterns), so keep the immutable NAME
+        # string and re-query with an exact -filter match after every mutation.
+        "set _rp_name [get_property NAME $_rp]\n"
+        "proc _rp_cell {} { upvar #0 _rp_name n; "
+        "return [get_cells -hierarchical -filter \"NAME == $n\"] }\n"
+        "if {![get_property IS_BLACKBOX [_rp_cell]]} {\n"
+        "    update_design -cell [_rp_cell] -black_box\n"
+        "}\n"
+        "read_checkpoint -cell [_rp_cell] rm_synth.dcp\n"
         "opt_design\n"
         "place_design\n"
         "route_design\n"
         # W3: scope utilization to the RM cell so PR manifests report the PATTERN's
         # resources (consistent with the OOC path / R74), not static+RM whole-device.
-        "report_utilization -cells $_rp -file util.rpt\n"
+        "report_utilization -cells [_rp_cell] -file util.rpt\n"
         "report_timing_summary -file timing.rpt\n"
         "set _p [get_timing_paths -max_paths 1 -nworst 1 -setup]\n"
         "if {[llength $_p] == 0} {\n"
@@ -361,7 +376,7 @@ class VivadoToolchain:
         "    error \"PYRO_PR: pr_verify report lacks compatibility confirmation (R82c)\"\n"
         "}\n"
         "puts \"PYRO_METRIC:PR_VERIFY:PASS\"\n"
-        "write_bitstream -force -cell $_rp pyro_rp_partial.bit\n"
+        "write_bitstream -force -cell [_rp_cell] pyro_rp_partial.bit\n"
         "puts \"PYRO_METRIC:DONE\"\n"
     )
 

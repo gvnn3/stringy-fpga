@@ -64,6 +64,14 @@ DEFAULT_SLOT = 1                            # single-tenant resident slot (R87)
 MAX_FRAME_BYTES = 1536
 MAX_ENTRIES = 61                            # R78.7 max pyro_match entries / reply
 
+# The generated RTL's address decompositions (word-select [10:6], word index
+# [4:0], byte-in-word [5:0]) are exact only for NWORDS <= 32 / offsets < 2048.
+# Guard at generation time so a future MAX_FRAME_BYTES bump fails loud here
+# instead of silently aliasing addresses in silicon.
+assert MAX_FRAME_BYTES % 64 == 0 and MAX_FRAME_BYTES <= 2048, (
+    "rp_wrapper address slices assume NWORDS <= 32; widen the generated "
+    "slices before raising MAX_FRAME_BYTES")
+
 
 def rp_child_id_from_hash(pattern_hash_hex: str) -> int:
     """Derive a non-zero ``RP_CHILD_ID`` (R78.5a) from the pattern hash.
@@ -170,6 +178,7 @@ module pyro_rp #(
 
   // ---- sizing / R78 constants -------------------------------------------
   localparam integer MAX_FRAME = @MAXFRAME@;   // bytes buffered (>= 1518, R78.9)
+  localparam integer NWORDS    = @MAXFRAME@/64; // 512-bit beats (24 = MAX_FRAME/64)
   localparam integer MAXENT    = @MAXENT@;     // max pyro_match entries / reply (R78.7)
 
   localparam [7:0]  KIND_ID_REQ      = 8'h01;
@@ -190,26 +199,75 @@ module pyro_rp #(
   localparam [31:0] CTRL_START  = 32'h0000_0001;
   localparam [31:0] CTRL_RESET  = 32'h0000_0002;
 
-  // ---- frame buffers -----------------------------------------------------
-  reg  [7:0]  rx_buf [0:MAX_FRAME-1];
-  reg  [7:0]  tx_buf [0:MAX_FRAME-1];
+  // ---- frame buffers (RAM-inferable; a PYRO frame is <= NWORDS 512-bit beats) --
+  // RX: ONE full-word write per accepted beat (single write port).  We store the
+  // whole s_axis_tdata including lanes beyond tkeep; those don't-care bytes are
+  // never read because every read is either a header field in beat 0 (always a
+  // real >=60-byte L2-min region, R78.9) or a corpus feed bounded by the W5 clamp
+  // (corpus_len <= rx_len-40, and rx_len counts only accepted/tkeep bytes), so no
+  // read can reach a lane that was not on the wire.  => 24-deep 512-bit distr RAM.
+  //
+  // rx_words is read from exactly ONE place at run time: the variable-index corpus
+  // feed in ST_FEED (rx_words[feed_addr[10:6]]).  All *header-field* reads (all at
+  // the constant index beat 0) go through `hdr` below, a plain 512-bit snapshot of
+  // beat 0 latched at RX.  Keeping constant-index taps off rx_words is what lets it
+  // infer as a clean single-write/single-read distributed RAM: empirically, once the
+  // match store also became an inferred RAM, the tool would otherwise reject rx_words
+  // ("incorrect usage") for its mixed constant+variable indexing and drop it back to
+  // 12288 flops -- a marginal-inference coupling that this snapshot removes so ALL of
+  // rx_words/tx_words/match_mem stay RAM together.  hdr == rx_words[0] byte-for-byte
+  // (both take beat 0's s_axis_tdata), so every wire byte is UNCHANGED.
+  (* ram_style = "distributed" *) reg [511:0] rx_words [0:NWORDS-1];
+  reg  [511:0] hdr;           // beat-0 header snapshot (== rx_words[0]) for header reads
+  // TX: composed word-at-a-time into word_acc (a flat 512-bit register -> cheap
+  // indexed byte inserts, NOT a memory) and flushed ONE word at a time to tx_words
+  // (single write port).  The B1 combinational AXIS master reads exactly one word
+  // per beat (tx_words[tx_beat]) -> single async read.  => 24-deep 512-bit distr RAM.
+  (* ram_style = "distributed" *) reg [511:0] tx_words [0:NWORDS-1];
+  reg  [511:0] word_acc;      // TX compose accumulator (flat reg)
   reg  [15:0] rx_len;
   reg  [15:0] tx_len;
   reg  [15:0] rx_beat;
 
   // ---- result capture (R47 pyro_match entries) ---------------------------
-  reg  [63:0] m_start [0:MAXENT-1];
-  reg  [63:0] m_end   [0:MAXENT-1];
-  reg  [31:0] m_pid   [0:MAXENT-1];
-  reg  [31:0] m_flg   [0:MAXENT-1];
-  reg  [15:0] match_count;
-  reg         ovf;
+  // Captured entries live in an inferable BLOCK RAM, NOT a wall of parallel flops.
+  // The prior MAXENT(61) x 192-bit m_start/m_end/m_pid/m_flg arrays cost ~11712 FFs
+  // held in parallel; at that footprint the wrapper (~13709 FFs) congested the DFX
+  // routing-contained pblock (two clock regions, LOCKED static DCP that cannot be
+  // resized) and route_design never closed.  This one 61-deep x 192-bit entry store
+  // holds the SAME 192-bit R47 payload with 0 flops.
+  //
+  // ram_style = "block" (NOT distributed) is deliberate: the frame buffers rx_words/
+  // tx_words are already distributed (LUTRAM) RAMs, and empirically a *distributed*
+  // match store competes with them for SLICEM/LUTRAM inference -- Vivado then evicts
+  // rx_words back to 12288 flops, leaving the total FF count unchanged (a net-zero
+  // swap).  Placing the match store in BRAM columns (RAMB) keeps it off the SLICEM
+  // pool entirely, so rx_words/tx_words stay distributed RAM AND the 11712 capture
+  // flops disappear -- both wins at once.  A block child costs only a few RAMB18,
+  // which the pblock has spare.  (Spec sanctions this: R78.7 storage is an
+  // implementation choice; the wire bytes are fixed by R47/R78.7, not the memory.)
+  //
+  // Block RAM read is REGISTERED (1-cycle latency) unlike the old async FF array, so
+  // ST_BENT drives the read address a cycle ahead via ent_warm (see below); the
+  // MATCH_REPLY wire bytes are byte-for-byte identical, only composed one cycle later
+  // per entry.  ONE write port (res_wr capture pulse) + ONE registered read port
+  // (ent_val_r) => a simple-dual-port BRAM.  Entry bit layout is the EXACT R47
+  // little-endian-on-wire packing the parallel arrays fed into ST_BENT:
+  // {flags[31:0], pattern_id[31:0], end[63:0], start[63:0]} (bits [63:0]=start,
+  // [127:64]=end, [159:128]=pattern_id, [191:160]=flags).
+  (* ram_style = "block" *) reg [191:0] match_mem [0:MAXENT-1];
+  reg  [191:0] match_rd;     // registered BRAM read data (match_mem[build_idx])
+  reg          ent_warm;     // 1 = BRAM read latency in flight; skip compose 1 cycle
+  reg  [15:0]  match_count;  // # captured entries AND the BRAM write pointer
+  reg          ovf;
 
   // ---- parsed request state (valid after RX completes) -------------------
   reg  [15:0] corpus_len;    // clamped corpus length (R78.6, W5)
   reg  [15:0] reply_cap;     // min(out_cap, MAXENT)
   reg  [15:0] feed_idx;
-  reg  [15:0] build_idx;
+  reg  [15:0] build_idx;     // TX entry index being serialized (0..match_count-1)
+  reg  [15:0] compose_idx;   // TX byte compose offset (frame byte position)
+  reg  [4:0]  byte_in_ent;   // 0..23: byte within the current pyro_match entry
 
   // ---- engine (pyro_circuit) interface ----------------------------------
   reg         eng_csr_write;
@@ -263,15 +321,27 @@ module pyro_rp #(
   // W5 clamp scratch (ST_CLASSIFY, one cycle).
   reg [15:0] raw_corpus, avail_corpus, cl_tmp;
 
+  // Blocking scratch for the RX feed read and TX compose (assigned-before-use each
+  // cycle; the single tx_words write port is the lone `tx_words[...] <=` below).
+  reg [15:0]  feed_addr;      // 40 + feed_idx (corpus byte offset in the frame)
+  reg [7:0]   ent_byte;       // current entry byte being composed (from match_rd)
+  reg [511:0] wacc;           // word_acc + this cycle's byte insert
+  reg         txw_en;         // pulse: flush a completed/last word this cycle
+  reg [4:0]   txw_sel;        // tx_words index to flush
+  reg [511:0] txw_data;       // word data to flush
+
   // Accept new frames only while receiving; back-pressure otherwise (R80).
   assign s_axis_tready = (state == ST_RX);
 
-  // Header field views of the buffered request (big-endian, R78.3).
-  wire [7:0] h_eth_hi = rx_buf[12];
-  wire [7:0] h_eth_lo = rx_buf[13];
-  wire [7:0] h_magic  = rx_buf[14];
-  wire [7:0] h_ver    = rx_buf[15];
-  wire [7:0] h_kind   = rx_buf[16];
+  // Header field views of the buffered request (big-endian, R78.3).  Byte b of the
+  // frame is hdr[8*b +: 8] (hdr == beat 0 == rx_words[0]); all header fields live in
+  // beat 0 (offset < 64).  Reading the snapshot `hdr` (not rx_words[0]) keeps
+  // constant-index taps off the rx_words RAM so it infers cleanly (see decl comment).
+  wire [7:0] h_eth_hi = hdr[8*12 +: 8];
+  wire [7:0] h_eth_lo = hdr[8*13 +: 8];
+  wire [7:0] h_magic  = hdr[8*14 +: 8];
+  wire [7:0] h_ver    = hdr[8*15 +: 8];
+  wire [7:0] h_kind   = hdr[8*16 +: 8];
   wire       is_pyro  = (h_eth_hi == ETH_HI) && (h_eth_lo == ETH_LO) &&
                         (h_magic == PYRO_MAGIC) && (h_ver == PYRO_VER);
 
@@ -287,26 +357,25 @@ module pyro_rp #(
 
   // ---- combinational AXIS master output (B1, S10) ------------------------
   // Segregated scratch: these regs are driven ONLY here (no clocked driver), so
-  // the presented beat is a pure function of tx_beat/tx_len/tx_buf.
-  reg  [15:0]  eff_len, remaining, this_bytes, tx_ii;
-  reg  [511:0] tx_d;
+  // the presented beat is a pure function of tx_beat/tx_len/tx_words.  The reworked
+  // buffering (RAM-inferable) means the whole beat is a SINGLE async word read
+  // (tx_words[tx_beat]); tx_words[w] already carries R78.9 zero-pad in bytes beyond
+  // tx_len (word_acc is cleared per word), so no per-byte "< tx_len ? : 0" is needed.
+  reg  [15:0]  eff_len, remaining, this_bytes;
+  reg  [511:0] tx_word_r;
   reg  [63:0]  tx_k;
   integer tk;
   always @(*) begin
     eff_len    = (tx_len < 16'd60) ? 16'd60 : tx_len;     // 60-byte L2 min (R78.9)
     remaining  = eff_len - (tx_beat * 16'd64);
     this_bytes = (remaining < 16'd64) ? remaining : 16'd64;
-    tx_d = 512'b0;
+    tx_word_r  = tx_words[tx_beat[4:0]];                   // single async word read
     tx_k = 64'b0;
-    for (tk = 0; tk < 64; tk = tk + 1) begin
-      tx_ii = tx_beat * 16'd64 + tk[15:0];
-      if (tx_ii < tx_len) tx_d[8*tk +: 8] = tx_buf[tx_ii];  // real bytes
-      // else 0 => R78.9 zero-pad region (tx_len..eff_len)
-      if (tk[15:0] < this_bytes) tx_k[tk] = 1'b1;
-    end
+    for (tk = 0; tk < 64; tk = tk + 1)
+      if (tk[15:0] < this_bytes) tx_k[tk] = 1'b1;          // valid-byte / pad mask
   end
   assign m_axis_tvalid = (state == ST_TX);
-  assign m_axis_tdata  = tx_d;
+  assign m_axis_tdata  = tx_word_r;
   assign m_axis_tkeep  = tx_k;
   assign m_axis_tlast  = (state == ST_TX) && (remaining <= 16'd64);
   // tuser {dst,src,size}: size = full C2H frame byte length (R78.9); src/dst are
@@ -316,14 +385,19 @@ module pyro_rp #(
   always @(posedge clk) begin
     if (!rstn) begin
       state         <= ST_RX;
+      hdr           <= 512'b0;
       rx_len        <= 16'd0;
       rx_beat       <= 16'd0;
       tx_len        <= 16'd0;
       tx_beat       <= 16'd0;
       match_count   <= 16'd0;
       ovf           <= 1'b0;
+      ent_warm      <= 1'b0;
       feed_idx      <= 16'd0;
       build_idx     <= 16'd0;
+      compose_idx   <= 16'd0;
+      byte_in_ent   <= 5'd0;
+      word_acc      <= 512'b0;
       reply_kind    <= 2'd0;
       corpus_len    <= 16'd0;
       reply_cap     <= 16'd0;
@@ -340,27 +414,44 @@ module pyro_rp #(
       eng_csr_addr  <= CSR_STATUS;
       eng_in_valid  <= 1'b0;
       eng_in_last   <= 1'b0;
+      txw_en         = 1'b0;   // no tx_words flush unless a case arm requests one
 
       // Capture result-ring writes whenever the engine pulses res_wr (R47).  The
       // engine self-limits at OUT_CAP (== reply_cap) and reports OVF in its
       // status (bit3), which ST_DRAIN latches (B2); this bound keeps match_count
-      // within reply_cap so the entry arrays never overflow.
+      // within reply_cap so the RAM write pointer never overflows MAXENT.
+      // SINGLE write port to match_mem: assemble the 192-bit R47 entry in the exact
+      // {flags, pattern_id, end, start} order the parallel arrays used to feed
+      // ST_BENT (unchanged wire bytes) and write it at the current pointer, then
+      // increment.  match_count is both the count and the write index (B2 count/OVF
+      // logic is otherwise untouched).
       if (eng_res_wr && (match_count < reply_cap)) begin
-        m_start[match_count[5:0]] <= eng_res_start;
-        m_end  [match_count[5:0]] <= eng_res_end;
-        m_pid  [match_count[5:0]] <= eng_res_pid;
-        m_flg  [match_count[5:0]] <= eng_res_flags;
+        match_mem[match_count[5:0]] <=
+          {eng_res_flags, eng_res_pid, eng_res_end, eng_res_start};
         match_count <= match_count + 16'd1;
       end
+
+      // Registered read port of the match_mem BRAM: the entry addressed by the
+      // current build_idx is latched into match_rd, ready one cycle later.  build_idx
+      // holds steady for the 24 bytes of an entry, so match_rd is stable across the
+      // whole serialization of that entry; ent_warm (below) absorbs the 1-cycle read
+      // latency at each entry boundary.  Unconditional read + gated write => the tool
+      // infers a simple-dual-port block RAM (no read/write address hazard: capture
+      // writes happen in ST_FEED/ST_DRAIN, entry reads in ST_BENT -- disjoint).
+      match_rd <= match_mem[build_idx[5:0]];
 
       case (state)
         // ---- receive + buffer the request frame ------------------------
         ST_RX: begin
           if (s_axis_tvalid && s_axis_tready) begin
-            for (k = 0; k < 64; k = k + 1) begin
-              if (s_axis_tkeep[k] && ((rx_beat*64 + k) < MAX_FRAME))
-                rx_buf[rx_beat*64 + k] <= s_axis_tdata[8*k +: 8];
-            end
+            // ONE full-word write per beat (single write port).  Lanes beyond
+            // tkeep are stored but never read (header uses beat 0 real bytes; the
+            // corpus feed is bounded by the W5 rx_len clamp).  rx_len still counts
+            // only accepted (tkeep) bytes so the clamp stays sound.
+            if (rx_beat < NWORDS[15:0])
+              rx_words[rx_beat[4:0]] <= s_axis_tdata;
+            if (rx_beat == 16'd0)
+              hdr <= s_axis_tdata;               // snapshot beat 0 for header reads
             rx_len  <= rx_beat*64 + {9'd0, keep_bytes(s_axis_tkeep)};
             rx_beat <= rx_beat + 16'd1;
             if (s_axis_tlast) state <= ST_CLASSIFY;
@@ -380,7 +471,7 @@ module pyro_rp #(
             reply_kind <= 2'd0;              // ID_REPLY
             state <= ST_BHDR;
           end else if (h_kind == KIND_MATCH_REQ) begin
-            if ({rx_buf[18], rx_buf[19]} != SLOT) begin
+            if ({hdr[8*18 +: 8], hdr[8*19 +: 8]} != SLOT) begin
               reply_kind <= 2'd1;            // STATUS/ERROR NOT_RESIDENT (R78.8/R87)
               state <= ST_BHDR;
             end else begin
@@ -388,15 +479,15 @@ module pyro_rp #(
               // W5: clamp corpus_len = min(length-12, rx_len-40, MAX_FRAME-40),
               // guarding rx_len < 40, so a host-crafted `length` can never make
               // the feed read past the bytes actually buffered.
-              raw_corpus   = ({rx_buf[24], rx_buf[25]} >= 16'd12)
-                             ? ({rx_buf[24], rx_buf[25]} - 16'd12) : 16'd0;
+              raw_corpus   = ({hdr[8*24 +: 8], hdr[8*25 +: 8]} >= 16'd12)
+                             ? ({hdr[8*24 +: 8], hdr[8*25 +: 8]} - 16'd12) : 16'd0;
               avail_corpus = (rx_len >= 16'd40) ? (rx_len - 16'd40) : 16'd0;
               cl_tmp = raw_corpus;
               if (cl_tmp > avail_corpus)     cl_tmp = avail_corpus;
               if (cl_tmp > (MAX_FRAME - 40)) cl_tmp = MAX_FRAME - 40;
               corpus_len <= cl_tmp;
-              reply_cap  <= ({rx_buf[36], rx_buf[37]} < MAXENT[15:0])
-                            ? {rx_buf[36], rx_buf[37]} : MAXENT[15:0];
+              reply_cap  <= ({hdr[8*36 +: 8], hdr[8*37 +: 8]} < MAXENT[15:0])
+                            ? {hdr[8*36 +: 8], hdr[8*37 +: 8]} : MAXENT[15:0];
               state <= ST_RESET_ENG;
             end
           end else begin
@@ -442,7 +533,10 @@ module pyro_rp #(
         // ---- stream corpus one byte/cycle into the engine (R48) --------
         ST_FEED: begin
           eng_in_valid <= 1'b1;
-          eng_in_data  <= rx_buf[16'd40 + feed_idx];   // corpus base = frame off 40
+          // corpus base = frame offset 40; word select + 64:1 byte mux.  feed_addr
+          // <= rx_len (W5 clamp), so this never reads a lane that was not on the wire.
+          feed_addr    = 16'd40 + feed_idx;
+          eng_in_data  <= rx_words[feed_addr[10:6]][ {feed_addr[5:0], 3'b000} +: 8 ];
           eng_in_last  <= (feed_idx == (corpus_len - 16'd1));
           if (feed_idx == (corpus_len - 16'd1))
             state <= ST_DRAIN;
@@ -461,78 +555,123 @@ module pyro_rp #(
         end
 
         // ---- build the reply header + payload framing ------------------
+        // Compose reply word 0 (frame bytes 0..63) into wacc, a FLAT 512-bit reg:
+        // every insert is a constant part-select on one register (cheap flops), not
+        // a memory write.  Single-word replies (ID/STATUS) flush word 0 to tx_words
+        // here; MATCH_REPLY keeps word 0 in word_acc so ST_BENT appends entries from
+        // frame offset 36 onward.  Bytes not written stay 0 => R78.9 zero-pad.
         ST_BHDR: begin
+          wacc = 512'b0;
           // Ethernet: MAC swap (dst <- req src, src <- req dst), EtherType.
           for (k = 0; k < 6; k = k + 1) begin
-            tx_buf[k]     <= rx_buf[6 + k];
-            tx_buf[6 + k] <= rx_buf[k];
+            wacc[8*k +: 8]       = hdr[8*(6 + k) +: 8];
+            wacc[8*(6 + k) +: 8] = hdr[8*k +: 8];
           end
-          tx_buf[12] <= ETH_HI;
-          tx_buf[13] <= ETH_LO;
+          wacc[8*12 +: 8] = ETH_HI;
+          wacc[8*13 +: 8] = ETH_LO;
           // PYRO control header (R78.3): magic ver kind flags slot seq length resv
-          tx_buf[14] <= PYRO_MAGIC;
-          tx_buf[15] <= PYRO_VER;
-          tx_buf[16] <= (reply_kind == 2'd0) ? KIND_ID_REPLY :
-                        (reply_kind == 2'd1) ? KIND_STATUS_ERR : KIND_MATCH_REPLY;
-          tx_buf[17] <= 8'h00;                 // flags
-          tx_buf[18] <= rx_buf[18];            // slot echo (BE)
-          tx_buf[19] <= rx_buf[19];
-          tx_buf[20] <= rx_buf[20];            // seq echo (BE)
-          tx_buf[21] <= rx_buf[21];
-          tx_buf[22] <= rx_buf[22];
-          tx_buf[23] <= rx_buf[23];
-          tx_buf[26] <= 8'h00;                 // reserved
-          tx_buf[27] <= 8'h00;
+          wacc[8*14 +: 8] = PYRO_MAGIC;
+          wacc[8*15 +: 8] = PYRO_VER;
+          wacc[8*16 +: 8] = (reply_kind == 2'd0) ? KIND_ID_REPLY :
+                            (reply_kind == 2'd1) ? KIND_STATUS_ERR : KIND_MATCH_REPLY;
+          wacc[8*17 +: 8] = 8'h00;                       // flags
+          wacc[8*18 +: 8] = hdr[8*18 +: 8];      // slot echo (BE)
+          wacc[8*19 +: 8] = hdr[8*19 +: 8];
+          wacc[8*20 +: 8] = hdr[8*20 +: 8];      // seq echo (BE)
+          wacc[8*21 +: 8] = hdr[8*21 +: 8];
+          wacc[8*22 +: 8] = hdr[8*22 +: 8];
+          wacc[8*23 +: 8] = hdr[8*23 +: 8];
+          wacc[8*26 +: 8] = 8'h00;                       // reserved
+          wacc[8*27 +: 8] = 8'h00;
           if (reply_kind == 2'd0) begin
             // ID_REPLY payload (R78.5/R78.5a/R78.5b): static_shell_id | harness_version | rp_child_id
-            tx_buf[24] <= 8'h00; tx_buf[25] <= 8'h0C;   // length = 12
-            tx_buf[28] <= SPEC16[15:8];  tx_buf[29] <= SPEC16[7:0];
-            tx_buf[30] <= BUILD16[15:8]; tx_buf[31] <= BUILD16[7:0];
-            tx_buf[32] <= HARNESS_VERSION[31:24]; tx_buf[33] <= HARNESS_VERSION[23:16];
-            tx_buf[34] <= HARNESS_VERSION[15:8];  tx_buf[35] <= HARNESS_VERSION[7:0];
-            tx_buf[36] <= RP_CHILD_ID[31:24]; tx_buf[37] <= RP_CHILD_ID[23:16];
-            tx_buf[38] <= RP_CHILD_ID[15:8];  tx_buf[39] <= RP_CHILD_ID[7:0];
+            wacc[8*24 +: 8] = 8'h00; wacc[8*25 +: 8] = 8'h0C;   // length = 12
+            wacc[8*28 +: 8] = SPEC16[15:8];  wacc[8*29 +: 8] = SPEC16[7:0];
+            wacc[8*30 +: 8] = BUILD16[15:8]; wacc[8*31 +: 8] = BUILD16[7:0];
+            wacc[8*32 +: 8] = HARNESS_VERSION[31:24]; wacc[8*33 +: 8] = HARNESS_VERSION[23:16];
+            wacc[8*34 +: 8] = HARNESS_VERSION[15:8];  wacc[8*35 +: 8] = HARNESS_VERSION[7:0];
+            wacc[8*36 +: 8] = RP_CHILD_ID[31:24]; wacc[8*37 +: 8] = RP_CHILD_ID[23:16];
+            wacc[8*38 +: 8] = RP_CHILD_ID[15:8];  wacc[8*39 +: 8] = RP_CHILD_ID[7:0];
+            word_acc <= wacc;
+            txw_en = 1'b1; txw_sel = 5'd0; txw_data = wacc;      // flush word 0
             tx_len  <= 16'd40;
             tx_beat <= 16'd0;
             state   <= ST_TX;
           end else if (reply_kind == 2'd1) begin
             // STATUS/ERROR payload (R78.8): code (4B BE) = PYRO_E_NOT_RESIDENT
-            tx_buf[24] <= 8'h00; tx_buf[25] <= 8'h04;   // length = 4
-            tx_buf[28] <= E_NOT_RESIDENT[31:24]; tx_buf[29] <= E_NOT_RESIDENT[23:16];
-            tx_buf[30] <= E_NOT_RESIDENT[15:8];  tx_buf[31] <= E_NOT_RESIDENT[7:0];
+            wacc[8*24 +: 8] = 8'h00; wacc[8*25 +: 8] = 8'h04;   // length = 4
+            wacc[8*28 +: 8] = E_NOT_RESIDENT[31:24]; wacc[8*29 +: 8] = E_NOT_RESIDENT[23:16];
+            wacc[8*30 +: 8] = E_NOT_RESIDENT[15:8];  wacc[8*31 +: 8] = E_NOT_RESIDENT[7:0];
+            word_acc <= wacc;
+            txw_en = 1'b1; txw_sel = 5'd0; txw_data = wacc;      // flush word 0
             tx_len  <= 16'd32;
             tx_beat <= 16'd0;
             state   <= ST_TX;
           end else begin
             // MATCH_REPLY payload (R78.7): count(2 BE) status(2 BE) resv(4) entries
-            tx_buf[24] <= (16'd8 + (match_count * 16'd24)) >> 8;    // length hi
-            tx_buf[25] <= (16'd8 + (match_count * 16'd24)) & 16'hFF; // length lo
-            tx_buf[28] <= match_count[15:8]; tx_buf[29] <= match_count[7:0];
-            tx_buf[30] <= 8'h00;             tx_buf[31] <= {7'd0, ovf}; // status bit0 OVF
-            tx_buf[32] <= 8'h00; tx_buf[33] <= 8'h00;
-            tx_buf[34] <= 8'h00; tx_buf[35] <= 8'h00;
-            build_idx <= 16'd0;
+            wacc[8*24 +: 8] = (16'd8 + (match_count * 16'd24)) >> 8;    // length hi
+            wacc[8*25 +: 8] = (16'd8 + (match_count * 16'd24)) & 16'hFF; // length lo
+            wacc[8*28 +: 8] = match_count[15:8]; wacc[8*29 +: 8] = match_count[7:0];
+            wacc[8*30 +: 8] = 8'h00;             wacc[8*31 +: 8] = {7'd0, ovf}; // status bit0 OVF
+            wacc[8*32 +: 8] = 8'h00; wacc[8*33 +: 8] = 8'h00;
+            wacc[8*34 +: 8] = 8'h00; wacc[8*35 +: 8] = 8'h00;
+            word_acc    <= wacc;                 // word 0 header; entries append @36
+            build_idx   <= 16'd0;
+            compose_idx <= 16'd36;               // first entry byte lands at offset 36
+            byte_in_ent <= 5'd0;
+            ent_warm    <= 1'b1;                  // warm the BRAM read for entry 0
             state <= ST_BENT;
           end
         end
 
-        // ---- serialize pyro_match entries, one per cycle (R47, LE) -----
+        // ---- serialize pyro_match entries, one BYTE per cycle (R47, LE) -----
+        // Accumulate-and-flush: insert the current entry byte into word_acc (via
+        // wacc, a flat-reg part-select) at its intra-word position; when a 64-byte
+        // word fills, flush it to tx_words (single write port) and clear word_acc
+        // for the next word (so bytes above the composed length stay 0 => R78.9
+        // pad).  On completion, flush the final partial word once.  build_idx is the
+        // entry index, byte_in_ent the 0..23 byte within it (each field LE, R47:
+        // match_rd = {flags, pattern_id, end, start}, so byte j = match_rd[8*j +: 8]).
+        //
+        // BRAM read latency: match_rd is match_mem[build_idx] delayed one cycle.
+        // ent_warm is set when we ENTER ST_BENT (from ST_BHDR) and each time build_idx
+        // advances; while set, we spend one cycle letting match_rd catch up to the new
+        // address and compose NOTHING.  The composed bytes are therefore identical to
+        // the old async-read array, just produced one cycle later per entry (ST_TX
+        // reads only the finished tx_words, so the wire MATCH_REPLY is byte-for-byte
+        // unchanged).
         ST_BENT: begin
-          if (build_idx >= match_count) begin
+          if (ent_warm) begin
+            ent_warm <= 1'b0;      // match_rd now valid for build_idx; compose next cyc
+          end else if (build_idx >= match_count) begin
+            // composition done; flush the final partial word if one is pending
+            // (compose_idx not word-aligned). match_count==0 flushes word 0 (header).
+            if (compose_idx[5:0] != 6'd0) begin
+              txw_en = 1'b1; txw_sel = compose_idx[10:6]; txw_data = word_acc;
+            end
             tx_len  <= 16'd36 + (match_count * 16'd24);
             tx_beat <= 16'd0;
             state   <= ST_TX;
           end else begin
-            // entry base = 36 + 24*build_idx; each field little-endian (R47)
-            for (k = 0; k < 8; k = k + 1)
-              tx_buf[16'd36 + (build_idx * 16'd24) + k]      <= m_start[build_idx[5:0]][8*k +: 8];
-            for (k = 0; k < 8; k = k + 1)
-              tx_buf[16'd36 + (build_idx * 16'd24) + 8 + k]  <= m_end[build_idx[5:0]][8*k +: 8];
-            for (k = 0; k < 4; k = k + 1)
-              tx_buf[16'd36 + (build_idx * 16'd24) + 16 + k] <= m_pid[build_idx[5:0]][8*k +: 8];
-            for (k = 0; k < 4; k = k + 1)
-              tx_buf[16'd36 + (build_idx * 16'd24) + 20 + k] <= m_flg[build_idx[5:0]][8*k +: 8];
-            build_idx <= build_idx + 16'd1;
+            // SINGLE registered read port of the match_mem BRAM: match_rd already
+            // holds match_mem[build_idx] = {flags,pid,end,start} (latched last cycle).
+            ent_byte = match_rd[ {byte_in_ent, 3'b000} +: 8 ];    // byte_in_ent*8
+            wacc = word_acc;
+            wacc[ {compose_idx[5:0], 3'b000} +: 8 ] = ent_byte;    // insert @ intra-word pos
+            if (compose_idx[5:0] == 6'd63) begin
+              txw_en = 1'b1; txw_sel = compose_idx[10:6]; txw_data = wacc;  // flush full word
+              word_acc <= 512'b0;                                 // next word starts cleared
+            end else begin
+              word_acc <= wacc;
+            end
+            if (byte_in_ent == 5'd23) begin
+              byte_in_ent <= 5'd0;
+              build_idx   <= build_idx + 16'd1;
+              ent_warm    <= 1'b1;    // advance BRAM read addr; absorb its 1-cyc latency
+            end else begin
+              byte_in_ent <= byte_in_ent + 5'd1;
+            end
+            compose_idx <= compose_idx + 16'd1;
           end
         end
 
@@ -553,6 +692,12 @@ module pyro_rp #(
 
         default: state <= ST_RX;
       endcase
+
+      // SINGLE tx_words write port: the lone clocked write to the tx_words RAM.
+      // Every reply path routes its flush through txw_en/txw_sel/txw_data above, so
+      // synthesis infers one write port and one async read port (distributed RAM).
+      if (txw_en)
+        tx_words[txw_sel] <= txw_data;
     end
   end
 
