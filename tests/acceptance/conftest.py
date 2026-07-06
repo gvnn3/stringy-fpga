@@ -51,7 +51,18 @@ _ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
              # R68 device knobs (v2.2.2): the onic netdev name and hw_server URL that
              # seed DeviceConfig defaults (R86.6), sampled at R35a points. Saved/
              # cleared/restored per test so knob-sampling tests leave no env residue.
-             "PYRO_DEVICE_IFACE", "PYRO_HW_SERVER")
+             "PYRO_DEVICE_IFACE", "PYRO_HW_SERVER",
+             # R68 PR-substrate knobs (v2.2.4): the locked-static and reference-routed
+             # DCP paths that populate ToolchainConfig.static_dcp/reference_dcp (R82b/
+             # R82c/R82d) and that the phase2_support.pr_flow_present probe consults
+             # (R83). No default; fail-loud (R68/R88). Saved/cleared/restored per test
+             # so the both-polarity pr_flow_present checks leave no env residue.
+             "PYRO_PR_STATIC_DCP", "PYRO_PR_REFERENCE_DCP",
+             # R68 PR evidence-manifest knob (v2.2.5): the host-observable proxy for a
+             # passing pr_verify (R82c) that flips pr_flow_present true (R83a). No
+             # default; fail-closed. Populates ToolchainConfig.pr_evidence_manifest.
+             # Saved/cleared/restored per test so the full-true polarity leaves no residue.
+             "PYRO_PR_EVIDENCE_MANIFEST")
 
 
 def pytest_configure(config):

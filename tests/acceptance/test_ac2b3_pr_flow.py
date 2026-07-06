@@ -65,6 +65,230 @@ def test_on_device_pr_bitstream_roundtrip_is_gated():  # AC-2b-3 (R71/R82/R83/R8
 
 
 # ==========================================================================
+# R83a pr_flow_present evidence predicate (hermetic, all five arms + full-true).
+# The probe consults the three R68 knobs (PYRO_PR_STATIC_DCP / PYRO_PR_REFERENCE_DCP /
+# PYRO_PR_EVIDENCE_MANIFEST) in fixed order; the first unmet condition is named in the
+# canonical `pr_flow_present=false — <first unmet R83a condition>` reason (R83/R83a).
+# It flips TRUE iff the evidence manifest parses (R47b-consistency loader) and attests a
+# verified pr_bitstream (payload_kind=='pr_bitstream' AND pr_verified==true).
+# ==========================================================================
+_STALE_MARKERS = ("PYRO_PR_FLOW", "not built/validated",
+                  "not verifiable host-side")  # the retired v2.2.4 conservative literal
+
+# R83a canonical first-unmet-condition reasons (exact spec 'Else:' wording).
+_R83A_STATIC = ("pr_flow_present=false — static DCP not configured/unreadable "
+                "(PYRO_PR_STATIC_DCP)")
+_R83A_REFERENCE = ("pr_flow_present=false — reference DCP not configured/unreadable "
+                   "(PYRO_PR_REFERENCE_DCP)")
+_R83A_EVIDENCE_CFG = ("pr_flow_present=false — evidence manifest not "
+                      "configured/unreadable (PYRO_PR_EVIDENCE_MANIFEST)")
+_R83A_PARSE = "pr_flow_present=false — evidence manifest not parseable"
+_R83A_NOT_VERIFIED = ("pr_flow_present=false — evidence manifest not pr_verified "
+                      "(no verified pr_bitstream attested)")
+
+
+def _assert_no_stale_placeholder(reason):
+    """The sweep must retire every pre-R83a placeholder (PYRO_PR_FLOW env var, the
+    'not built/validated' literal, and the v2.2.4 'not verifiable host-side' conservative
+    literal) — R83a reasons name a concrete condition among the five."""
+    assert reason.startswith("pr_flow_present=false — "), reason
+    for marker in _STALE_MARKERS:
+        assert marker not in reason, f"stale placeholder {marker!r} survived: {reason!r}"
+
+
+def _fake_dcp(path):
+    """A readable stand-in DCP (the probe only checks existence+readability at arms 1/2,
+    R83a — DCP *contents* are Vivado-only and never inspected host-side)."""
+    path.write_bytes(b"PK\x03\x04 fake vivado dcp container")
+    return str(path)
+
+
+def _write_manifest_json(path, *, pr_verified, payload_kind):
+    """Write a schema-correct pyro.synth.Manifest JSON sidecar via the public API, so
+    the R83a arm-4 loader (Manifest.from_json) parses it exactly as the spec defines."""
+    m = psynth.Manifest(**_MANIFEST_BASE, pr_verified=pr_verified,
+                        payload_kind=payload_kind)
+    path.write_text(m.to_json(), encoding="utf-8")
+    return str(path)
+
+
+def _set_substrate(monkeypatch, tmp_path):
+    """Configure arms 1+2 (both substrate DCPs present+readable) so a test can drive
+    arms 3/4/5 in isolation."""
+    monkeypatch.setenv("PYRO_PR_STATIC_DCP", _fake_dcp(tmp_path / "static.dcp"))
+    monkeypatch.setenv("PYRO_PR_REFERENCE_DCP", _fake_dcp(tmp_path / "reference.dcp"))
+
+
+# ---- Arm 1: static DCP not configured/unreadable -------------------------
+def test_r83a_arm1_static_unset(monkeypatch):  # AC-2b-3 (R83a.1)
+    """R83a step 1: with all knobs unset, the first unmet condition is the static DCP."""
+    for k in ("PYRO_PR_STATIC_DCP", "PYRO_PR_REFERENCE_DCP", "PYRO_PR_EVIDENCE_MANIFEST"):
+        monkeypatch.delenv(k, raising=False)
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False
+    _assert_no_stale_placeholder(reason)
+    assert reason == _R83A_STATIC, reason
+
+
+def test_r83a_arm1_static_configured_but_missing(tmp_path, monkeypatch):  # AC-2b-3 (R83a.1)
+    """R83a step 1: a configured-but-unresolvable static DCP path is 'unreadable' — same
+    canonical reason (the probe never raises, fail-closed)."""
+    missing = tmp_path / "nonexistent_static.dcp"
+    assert not missing.exists()
+    monkeypatch.setenv("PYRO_PR_STATIC_DCP", str(missing))
+    monkeypatch.setenv("PYRO_PR_REFERENCE_DCP", _fake_dcp(tmp_path / "reference.dcp"))
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST",
+                       _write_manifest_json(tmp_path / "ev.json", pr_verified=True,
+                                            payload_kind="pr_bitstream"))
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False and reason == _R83A_STATIC, reason
+
+
+# ---- Arm 2: reference DCP not configured/unreadable ----------------------
+def test_r83a_arm2_reference_unset(tmp_path, monkeypatch):  # AC-2b-3 (R83a.2)
+    """R83a step 2 (fixed order): static present+readable, reference unset → reference."""
+    monkeypatch.setenv("PYRO_PR_STATIC_DCP", _fake_dcp(tmp_path / "static.dcp"))
+    monkeypatch.delenv("PYRO_PR_REFERENCE_DCP", raising=False)
+    monkeypatch.delenv("PYRO_PR_EVIDENCE_MANIFEST", raising=False)
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False
+    _assert_no_stale_placeholder(reason)
+    assert reason == _R83A_REFERENCE, reason
+
+
+# ---- Arm 3: evidence manifest not configured/unreadable ------------------
+def test_r83a_arm3_evidence_unset(tmp_path, monkeypatch):  # AC-2b-3 (R83a.3)
+    """R83a step 3: both DCPs present, evidence-manifest knob unset → evidence config."""
+    _set_substrate(monkeypatch, tmp_path)
+    monkeypatch.delenv("PYRO_PR_EVIDENCE_MANIFEST", raising=False)
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False
+    _assert_no_stale_placeholder(reason)
+    assert reason == _R83A_EVIDENCE_CFG, reason
+
+
+def test_r83a_arm3_evidence_configured_but_missing(tmp_path, monkeypatch):
+    # AC-2b-3 (R83a.3)
+    """R83a step 3: a configured-but-nonexistent evidence path is 'unreadable' — same
+    canonical reason (before any parse is attempted)."""
+    _set_substrate(monkeypatch, tmp_path)
+    missing = tmp_path / "nonexistent_evidence.json"
+    assert not missing.exists()
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST", str(missing))
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False and reason == _R83A_EVIDENCE_CFG, reason
+
+
+# ---- Arm 4: evidence manifest not parseable ------------------------------
+def test_r83a_arm4_corrupt_json(tmp_path, monkeypatch):  # AC-2b-3 (R83a.4)
+    """R83a step 4: a corrupt (non-JSON) evidence file fails Manifest.from_json → the
+    probe catches it (never raises) and reports 'not parseable'."""
+    _set_substrate(monkeypatch, tmp_path)
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("this is not json {{{", encoding="utf-8")
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST", str(corrupt))
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False
+    _assert_no_stale_placeholder(reason)
+    assert reason == _R83A_PARSE, reason
+
+
+def test_r83a_arm4_inconsistent_manifest_rejected(tmp_path, monkeypatch):
+    # AC-2b-3 (R83a.4 / R47b-consistency)
+    """R83a step 4 + R47b-consistency (v2.2.3): an internally-inconsistent manifest
+    (pr_verified==True but payload_kind!='pr_bitstream') MUST be rejected by the
+    R47b-consistency-enforcing loader, so the probe reports 'not parseable' — it is NOT
+    silently accepted and MUST NOT flip true.  Built via raw JSON so it bypasses the
+    (also-rejecting) constructor."""
+    _set_substrate(monkeypatch, tmp_path)
+    data = json.loads(psynth.Manifest(**_MANIFEST_BASE).to_json())
+    data["pr_verified"] = True
+    data["payload_kind"] = "ooc_metrics"        # inconsistent: verified claim, non-PR payload
+    ev = tmp_path / "inconsistent.json"
+    ev.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST", str(ev))
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False, (
+        "an inconsistent evidence manifest must NOT flip pr_flow_present true (R47b-"
+        "consistency / R83a.4)")
+    # Spec-correct disposition is arm 4 (rejected at from_json).  If a build ever failed
+    # to enforce R47b-consistency, from_json would accept it and the probe would fall to
+    # arm 5 (payload_kind!='pr_bitstream') — still false, still no false PASS.
+    assert reason in (_R83A_PARSE, _R83A_NOT_VERIFIED), reason
+
+
+# ---- Arm 5: evidence manifest not pr_verified ----------------------------
+@pytest.mark.parametrize("pr_verified,payload_kind", [
+    (False, "ooc_metrics"),   # honest metrics, no device claim (consistent)
+    (False, "mock_stub"),     # mock payload (consistent)
+])
+def test_r83a_arm5_not_verified(tmp_path, monkeypatch, pr_verified, payload_kind):
+    # AC-2b-3 (R83a.5)
+    """R83a step 5: a parseable, CONSISTENT manifest that does not attest a verified
+    pr_bitstream (payload_kind!='pr_bitstream' / pr_verified!=true) → 'not pr_verified'.
+    """
+    _set_substrate(monkeypatch, tmp_path)
+    ev = _write_manifest_json(tmp_path / "ev.json", pr_verified=pr_verified,
+                              payload_kind=payload_kind)
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST", ev)
+    present, reason = phase2_support.pr_flow_present()
+    assert present is False
+    _assert_no_stale_placeholder(reason)
+    assert reason == _R83A_NOT_VERIFIED, reason
+
+
+# ---- Full-true polarity: all five R83a conditions satisfied --------------
+def test_r83a_full_true_flips_present(tmp_path, monkeypatch):  # AC-2b-3 (R83a full)
+    """R83a: with both substrate DCPs present+readable AND an evidence manifest that
+    parses and attests payload_kind=='pr_bitstream' with pr_verified==true, the probe
+    flips TRUE with an empty reason.  This is the sole host-observable true polarity
+    (the passing-pr_verify proxy, R82c/R82d)."""
+    _set_substrate(monkeypatch, tmp_path)
+    ev = _write_manifest_json(tmp_path / "evidence.json", pr_verified=True,
+                              payload_kind="pr_bitstream")
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST", ev)
+    present, reason = phase2_support.pr_flow_present()
+    assert present is True, (
+        f"all five R83a conditions satisfied but probe stayed false: {reason!r}")
+    assert reason == "", f"true polarity must carry an empty reason, got {reason!r}"
+
+
+# ---- Opportunistic real-artifact check (non-hermetic; skips if absent) ----
+def test_r83a_real_evidence_manifest_if_present(monkeypatch):  # AC-2b-3 (R83a.4/.5)
+    """Opportunistic (non-hermetic): if the first real PR job has emitted an evidence
+    manifest at /usr/local/cad/gn262/pyro/patterns/pattern_*_manifest.json, assert it
+    satisfies R83a arms 4-5 (parses via the R47b-consistency loader AND attests a
+    verified pr_bitstream).  Skips cleanly when no such artifact exists yet."""
+    import glob
+    candidates = sorted(glob.glob(
+        "/usr/local/cad/gn262/pyro/patterns/pattern_*_manifest.json"))
+    if not candidates:
+        pytest.skip("no real PR evidence manifest present yet "
+                    "(/usr/local/cad/gn262/pyro/patterns/pattern_*_manifest.json)")
+    real = candidates[0]
+    # Arm 4: parses via the R47b-consistency-enforcing loader without raising.
+    with open(real, "r", encoding="utf-8") as fh:
+        m = psynth.Manifest.from_json(fh.read())
+    # Arm 5: attests a verified pr_bitstream.
+    assert m.payload_kind == "pr_bitstream", (
+        f"{real}: real evidence manifest payload_kind={m.payload_kind!r}, not "
+        "'pr_bitstream' (R83a.5)")
+    assert m.pr_verified is True, (
+        f"{real}: real evidence manifest pr_verified!=True (R83a.5/R82c)")
+    # And end-to-end: pointing the probe at it flips pr_flow_present true (needs the
+    # substrate DCP knobs too; use the same real artifacts as the operator would).
+    static = "/usr/local/cad/gn262/pyro/open-nic-shell/build/au250_pyro_pr/pr/pyro_static_locked.dcp"
+    reference = "/usr/local/cad/gn262/pyro/open-nic-shell/build/au250_pyro_pr/pr/pyro_static_id_stub_routed.dcp"
+    if not (os.path.isfile(static) and os.path.isfile(reference)):
+        pytest.skip("real evidence manifest present but substrate DCPs absent")
+    monkeypatch.setenv("PYRO_PR_STATIC_DCP", static)
+    monkeypatch.setenv("PYRO_PR_REFERENCE_DCP", reference)
+    monkeypatch.setenv("PYRO_PR_EVIDENCE_MANIFEST", real)
+    present, reason = phase2_support.pr_flow_present()
+    assert present is True, f"real R83a inputs present but probe false: {reason!r}"
+
+
+# ==========================================================================
 # Manifest-layer honesty (LIVE): no pr_bitstream claim while pr_flow absent.
 # ==========================================================================
 def test_no_manifest_claims_pr_bitstream_while_pr_flow_absent():  # AC-2b-3 (R72c/R82c)

@@ -100,27 +100,92 @@ def toolchain_present():
     return (True, "")
 
 
+# R68 PR-substrate knob names.  No defaults; fail-loud/fail-closed (R68).  This is
+# TEST code sampling its own env (per this module's convention, cf. toolchain_present)
+# — the LIBRARY must not read these ad hoc (R5/R35a); conftest _ENV_KEYS saves/
+# clears/restores them per test so a both-polarity probe check leaves no residue.
+PYRO_PR_STATIC_DCP = "PYRO_PR_STATIC_DCP"        # -> ToolchainConfig.static_dcp (R82b, v2.2.4)
+PYRO_PR_REFERENCE_DCP = "PYRO_PR_REFERENCE_DCP"  # -> ToolchainConfig.reference_dcp (R82c, v2.2.4)
+# v2.2.5: the host-observable proxy for the one otherwise-Vivado-only R82d conjunct
+# (a passing pr_verify) — a pyro.synth.Manifest sidecar asserting a verified pr_bitstream.
+PYRO_PR_EVIDENCE_MANIFEST = "PYRO_PR_EVIDENCE_MANIFEST"  # -> ToolchainConfig.pr_evidence_manifest (R83a)
+
+
 def pr_flow_present():
-    """R71/R82d/R83: the conjunction of (i) a host-validated locked static DCP with
-    pyro_rp as HD.RECONFIGURABLE (R82b), (ii) a pyro_rp Pblock/HD.RECONFIGURABLE
-    floorplan (R80 boundary), and (iii) a PR-generation flow that emits a genuine
-    loadable partial bitstream with a passing pr_verify (R82c).  Established FALSE
-    on this host — none of the R82d artifacts exist (R71/§11 P1).
+    """R71/R82d/R83/R83a: availability of the PR link-flow for `pyro_rp`, evaluated by
+    the exact host-observable R83a evidence predicate (v2.2.5).
 
-    R83 canonical reason: `pr_flow_present=false — <first missing R82d artifact>`.
-    The first missing artifact here is the locked static DCP (nothing is built yet).
+    R83a spells out the five conditions, in FIXED ORDER — the first that fails is named
+    in the canonical `pr_flow_present=false — <first unmet R83a condition>` reason
+    (which supersedes the earlier `<first missing R82d artifact>` wording, R83):
 
-    Probed honestly: a real PR flow would advertise itself via a PYRO_PR_FLOW /
-    OpenNIC PR floorplan pointer; absent that, this is the documented
-    always-false-with-reason placeholder mandated by R71/R83.
+      1. static DCP — `PYRO_PR_STATIC_DCP` configured AND path exists+readable (attests
+         the R82b locked static substrate + the R80/`pyro_rp` floorplan it carries).
+         Else: `static DCP not configured/unreadable (PYRO_PR_STATIC_DCP)`.
+      2. reference DCP — `PYRO_PR_REFERENCE_DCP` configured AND path exists+readable
+         (attests the R82c `pr_verify` reference). Else:
+         `reference DCP not configured/unreadable (PYRO_PR_REFERENCE_DCP)`.
+      3. evidence manifest configured — `PYRO_PR_EVIDENCE_MANIFEST` configured AND path
+         exists+readable. Else:
+         `evidence manifest not configured/unreadable (PYRO_PR_EVIDENCE_MANIFEST)`.
+      4. evidence manifest parses — loads via the R47b-consistency-enforcing loader
+         `pyro.synth.Manifest.from_json(...)` WITHOUT raising (a corrupt or internally
+         inconsistent manifest — violating `pr_verified == (payload_kind ==
+         'pr_bitstream')` — is rejected here, not silently accepted). Else:
+         `evidence manifest not parseable`.
+      5. evidence attests a verified PR bitstream — the parsed manifest carries
+         `payload_kind == 'pr_bitstream'` AND `pr_verified == true` (checked BOTH
+         defensively; R47b-consistency makes them agree once step 4 succeeds). Else:
+         `evidence manifest not pr_verified (no verified pr_bitstream attested)`.
+
+    The predicate NEVER raises for an unmet condition (fail-closed): a missing/
+    unreadable/unparseable/not-`pr_verified` input yields `(False, <R83a reason>)`.  It
+    does NOT claim `device_usable` (a separate live-probe + `CAP_NET_RAW` predicate, R83)
+    and never promotes SKIP to PASS.  The manifest evidence is legitimate because a
+    `pr_bitstream`/`pr_verified==true` manifest can only be emitted after a passing
+    `pr_verify` (R82c) and R47b-consistency makes that claim un-fabricable at `from_json`.
+
+    On THIS host the R68 knobs are UNSET by default (no default; fail-closed), so the
+    first unmet condition is the static DCP — the probe returns false with the R83a
+    canonical reason for condition 1.
     """
-    flow = os.environ.get("PYRO_PR_FLOW")
-    if flow and os.path.isdir(flow):
-        # Reserved for a future host where the PR flow exists; never true here.
-        return (True, "")
-    return (False,
-            "pr_flow_present=false — locked static DCP (pyro_rp "
-            "HD.RECONFIGURABLE) not built/validated on this host (R82d)")
+    # R83a reads the three paths from config (here: this test module's own env sample,
+    # cf. toolchain_present); the LIBRARY reads them via ToolchainConfig, not ad hoc.
+    static_dcp = os.environ.get(PYRO_PR_STATIC_DCP)
+    reference_dcp = os.environ.get(PYRO_PR_REFERENCE_DCP)
+    evidence = os.environ.get(PYRO_PR_EVIDENCE_MANIFEST)
+
+    def _false(cond):
+        return (False, "pr_flow_present=false — " + cond)
+
+    def _readable(path):
+        return bool(path) and os.path.isfile(path) and os.access(path, os.R_OK)
+
+    # (1) static DCP — configured + present + readable (R82b/R80).
+    if not _readable(static_dcp):
+        return _false("static DCP not configured/unreadable (PYRO_PR_STATIC_DCP)")
+    # (2) reference DCP — configured + present + readable (R82c pr_verify reference).
+    if not _readable(reference_dcp):
+        return _false("reference DCP not configured/unreadable (PYRO_PR_REFERENCE_DCP)")
+    # (3) evidence manifest — configured + present + readable.
+    if not _readable(evidence):
+        return _false(
+            "evidence manifest not configured/unreadable (PYRO_PR_EVIDENCE_MANIFEST)")
+    # (4) evidence manifest parses via the R47b-consistency-enforcing loader without
+    #     raising (rejects corrupt/inconsistent manifests).  Fail-closed: ANY exception
+    #     (read error, JSON error, R47b-consistency rejection) is condition-4 unmet.
+    try:
+        import pyro.synth as _psynth
+        with open(evidence, "r", encoding="utf-8") as fh:
+            manifest = _psynth.Manifest.from_json(fh.read())
+    except Exception:  # noqa: BLE001 — probe NEVER raises (R83a fail-closed)
+        return _false("evidence manifest not parseable")
+    # (5) evidence attests a verified PR bitstream — BOTH checks defensively (R47b).
+    if not (getattr(manifest, "payload_kind", None) == "pr_bitstream"
+            and getattr(manifest, "pr_verified", False) is True):
+        return _false(
+            "evidence manifest not pr_verified (no verified pr_bitstream attested)")
+    return (True, "")
 
 
 # R83 canonical unmet-condition phrases (fixed order, comma-separated).
