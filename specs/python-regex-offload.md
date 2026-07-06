@@ -1,8 +1,8 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.1.0
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow beginning on `phase1-pyro`)
+- **Version:** 2.1.1
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-06
 
@@ -190,6 +190,20 @@ proves them wrong, but they MUST NOT be silently ignored.
   decision path is native; expressing it as an absolute bound for Phase 0 (R3a)
   preserves the intent — negligible routing tax — without demanding a ratio that
   is unachievable for a Python wrapper around sub-microsecond C code.
+  - **R3c (R3b's native-hot-path precondition is the gate — normative).** The
+    R3b relative bound binds **only when its own precondition holds**: the
+    loss-regime **routing/decision hot path** (the §8 R51 decision) is itself
+    served by native code (L3 or native-cheap interposition). The mere existence
+    of an L3 native runtime does **not** satisfy the precondition if the routing
+    decision that governs a below-threshold call is still executed at Python level.
+    While the routing decision is Python-level, **R3a (absolute ≤ 2 µs)
+    governs** and any R3b relative-ratio check MUST record a **SKIP** — not a
+    FAIL — whose reason states the measured ratio and that the native routing hot
+    path is not yet in place (mirroring the Phase-0 disposition in AC-0-6). R3b
+    becomes a **hard PASS requirement at AC-3-3** (Phase 3 interposition +
+    benchmarks), the point at which the native routing/dispatch path is a
+    deliverable. This does not weaken R3: the negligible-routing-tax intent is
+    enforced at all times by the absolute R3a bound.
 - **R4 (compile amortization and cache tiers).** PYRO SHALL maintain two distinct
   caches with three service tiers:
   - **Host classification cache (warm, µs-scale).** Keyed by `(pattern_bytes,
@@ -983,6 +997,19 @@ synthesis time and identified via the identity block (R47a).
   wait for or serialize after that scan (R48/R43). Eviction is not a device error
   and MUST NOT affect results (evicted patterns simply revert to fallback until
   reloaded).
+  - **R64a (device-free residency bookkeeping is REQUIRED, not vacuous).** On a
+    device-free host, R51b lets the software model serve any tier, but the
+    single-tenant **residency and eviction bookkeeping MUST still be exercised**:
+    the residency manager MUST track the resident-circuit set (gauge
+    `circuits_resident`, R66), promote a chosen circuit to residency, and, on
+    promoting a second pattern's circuit against the single-tenant budget
+    (`pr_partitions == 1`), **fire the deterministic LRU eviction** (incrementing
+    `circuits_evicted`, R66) exactly as it would on hardware. This bookkeeping is a
+    real state machine over the model, not a no-op, so the model-side clauses of
+    **AC-1-5 and AC-2-6** are **firm, non-vacuous LIVE assertions**. Results remain
+    byte-identical across evict/reload cycles (R53). Only the physical PR-load
+    mechanism and its timing are absent (and SKIP, R71); the arbitration/eviction
+    *logic* is fully live on the model.
 - **R65 (synthesis-failure semantics).** If synthesis fails — RTL does not fit
   the PR-region budget, fails timing, the toolchain errors, or the per-job
   timeout (R63e) fires — the pattern MUST become **permanently fallback-only**
@@ -1155,6 +1182,11 @@ knob is set.
   **over**-estimate (clauses 1–2 guarantee it never green-lights a circuit that
   then overflows); the 10× ceiling (clauses 3–4) keeps it from rejecting patterns
   that would in fact fit. The `max(1, ·)` guards the degenerate `real == 0` case.
+  **Empty success set (normative).** If **no** corpus pattern synthesizes
+  successfully on the real path, the calibration clause has nothing to judge and
+  MUST record a **SKIP** (with a reason such as `no successful real syntheses to
+  calibrate against`), **never a FAIL** — an empty universally-quantified set is
+  vacuously satisfied, not a defect.
   Independently, a pattern that **passes** the estimate (is enqueued) but then
   **fails real synthesis** (does-not-fit, `met_timing == false` per R73, tool error,
   or the R77 timeout) MUST become permanently fallback-only with a diagnostic and
@@ -1574,16 +1606,22 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   `MAX_REPEAT` clauses still run. (R11–R13, R65, R73, R74, R77)
 - **AC-2-5.** Throughput of a resident circuit meets R1 on hardware (≥ 1 GiB/s
   floor, 5 GiB/s target). This requires `device_usable` (R71) → **SKIP** with
-  reason `device_usable=false`. Routing thresholds (R3–R5) and the relative
-  loss-regime bound (R3b) hold in all cases and are asserted against the model.
-  (R1, R2, R3, R59, R71)
+  reason `device_usable=false`. The **absolute** routing/decision bounds (R3a/R5,
+  ≤ 2 µs median) are asserted against the model in all cases. The **relative**
+  loss-regime bound (R3b, 1.15×) binds **only when its native-hot-path precondition
+  holds (R3c)**; while the R51 routing decision is served at Python level it does
+  not, so the R3b clause records a **SKIP** whose reason states the measured ratio
+  (not a FAIL), and R3b becomes a hard PASS requirement at **AC-3-3**. (R1, R2, R3,
+  R3a, R3b, R3c, R5, R59, R71)
 - **AC-2-6.** Single-tenant PR arbitration on hardware: loading a second
   pattern's circuit evicts the first per R64; results remain byte-identical
   across evict/reload cycles. This requires `device_usable` ∧ `pr_flow_present`
   (R71) → **SKIP** with reason
   `device_usable=false — third-party live NIC, must not perturb; pr_flow_present=false`.
   The eviction policy and byte-identical results across evict/reload are asserted
-  on the model. (R64, R53, R71)
+  on the model as a **firm, non-vacuous LIVE** clause: the device-free residency
+  manager MUST exercise single-tenant residency and fire deterministic LRU eviction
+  (R64a). (R64, R64a, R53, R71)
 
 ### Phase 3 — Transparent interposition + benchmarks
 
@@ -1602,7 +1640,11 @@ automatic tier-based dispatch and prewarming.
 - **AC-3-3.** The benchmark suite emits machine-readable metrics for R1–R5 and,
   on hardware, demonstrates the win regime (R1/R2, resident circuits) and the
   loss-regime routing (R3), and records synthesis/PR-load costs separately from
-  scan throughput. Without hardware, R1/R2 are SKIP, R3–R5 PASS. (R1–R5, R59)
+  scan throughput. Without hardware, R1/R2 are SKIP, R3–R5 PASS. This is the phase
+  at which the native routing/dispatch hot path is a deliverable, so the R3b
+  **relative** 1.15× bound becomes a **hard PASS requirement** here (its R3c
+  precondition now holds) rather than a SKIP as in earlier phases. (R1–R5, R3b, R3c,
+  R59)
 - **AC-3-4.** `pyro.re.stats()` reports the dispatch counters (hardware / model /
   fallback / fallback-after-error) **and** the lifecycle counters (synth
   launched/succeeded/failed, synthesizing, resident, evicted, pr_loads); fault
@@ -1763,6 +1805,27 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.1.1** (2026-07-06) — *Phase-2 test-author adjudications (PATCH —
+  clarifications), spec-writer.* Three ambiguities surfaced by the test-developer
+  against v2.1.0; no interface/AC break, no new implementation obligation.
+  - **R3c (R3b native-hot-path precondition is the gate).** The R3b relative 1.15×
+    loss-regime bound binds **only** when the §8 routing/decision hot path is itself
+    native-cheap; the mere existence of an L3 native runtime does not satisfy it
+    while the routing decision is Python-level. Until then **R3a (absolute ≤ 2 µs)
+    governs** and any R3b check records a **SKIP-with-measured-ratio**, never a FAIL
+    (consistent with AC-0-6). Pinned R3b's hard-PASS binding to **AC-3-3** (native
+    routing path is a Phase-3 deliverable). Reworded **AC-2-5** (dropped "in all
+    cases": absolute bounds always asserted; relative bound SKIPs under R3c) and
+    **AC-3-3** (R3b becomes hard here).
+  - **R74 empty success set.** Added one sentence: if no corpus pattern synthesizes
+    successfully, the AC-2-4 calibration clause records a **SKIP** (vacuously
+    satisfied), **never a FAIL**.
+  - **R64a (device-free residency bookkeeping REQUIRED).** On a device-free host the
+    software model MUST still exercise single-tenant residency and fire the
+    deterministic LRU eviction (`circuits_resident`/`circuits_evicted` per R66), so
+    the model-side clauses of **AC-1-5/AC-2-6** are firm, non-vacuous LIVE
+    assertions; only the physical PR-load mechanism/timing is absent (SKIP, R71).
+    Referenced from AC-2-6.
 - **2.1.0** (2026-07-06) — *Phase-2 real-Vivado rulings (MINOR — added
   requirements), spec-writer.* Makes the Phase-2 ACs executable on a host where P1
   is only **partially** satisfied (Vivado present; no OpenNIC PR flow; the physical

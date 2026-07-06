@@ -516,3 +516,96 @@ Context hygiene: this spec-amendment task is a natural checkpoint. Recommend **/
 <usage><subagent_tokens>102245</subagent_tokens><tool_uses>26</tool_uses><duration_ms>407519</duration_ms></usage>
 </task-notification>
 
+## 2026-07-06 00:12:57
+
+<task-notification>
+<task-id>bd6g7hqfa</task-id>
+<tool-use-id>toolu_01XWNPoUfaQp8PdJDLgUiuuD</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/bd6g7hqfa.output</output-file>
+<status>completed</status>
+<summary>Background command "Run four generated circuits through Vivado 2023.1 OOC synth+P&amp;amp;R at 250 MHz" completed (exit code 0)</summary>
+</task-notification>
+
+## 2026-07-06 00:19:11
+
+<task-notification>
+<task-id>aeebb0373209777f8</task-id>
+<tool-use-id>toolu_016c8aFpAg3jKT5xDcnCYFXb</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/aeebb0373209777f8.output</output-file>
+<status>completed</status>
+<summary>Agent "Test-developer: AC-2 acceptance tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All new tests collect cleanly (532 total; no regressions to the existing 506). The model genuinely exercises single-tenant residency and eviction (`max_resident_gauge=1`, `evicted_delta=1`, all byte-identical) — AC-2-6's model clause is a real LIVE pass, not vacuous.
+
+## Summary
+
+I wrote the Phase-2 acceptance suite strictly from `specs/python-regex-offload.md` v2.1.0 (§10 AC-2-1..AC-2-6, §7.6 R70–R77, §9.1 R67–R69, R63/R65, R4/R4a, R74). I did not read any `pyro/` source; all assertions derive from spec-normative field names and the public surface (`pyro.re`, `pyro.prewarm`, `pyro.testing`, `pyro.re.stats()`/`explain()`, `PYRO_*` knobs, the ctypes ABI, and on-disk cache manifests).
+
+### Files created (all absolute)
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/phase2_support.py` — the single shared R71 probe (`toolchain_present`/`pr_flow_present`/`device_usable`, each returning `(bool, reason)`), manifest read-back helpers, the long-deadline worker runner, and the session-scoped `vivado_corpus` fixture (4 §5.1 calibration patterns synthesized once).
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/phase2_workers.py` — out-of-process workers: `vivado_synth` (real synth + async/non-blocking evidence) and `eviction` (single-tenant model eviction).
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_1_real_synthesis.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_2_device_contract.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_3_tier_timing.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_4_estimator_calibration.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_5_throughput.py`
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/test_ac2_6_arbitration.py`
+
+### File edited (the one permitted edit)
+- `/home/gn262/Repos/Yale/stringy-fpga/tests/acceptance/conftest.py` — added `PYRO_TOOLCHAIN`, `PYRO_VIVADO` to `_ENV_KEYS` so the vivado probe pins them per-test without leaking the vivado toolchain into Phase-0/1 mock-only tests.
+
+### Per-AC clause → test → disposition (this host)
+- **AC-2-1** real OOC synth/honest metrics/warm-reload (`toolchain_present`) → `test_ac2_1_real_synthesis.py::test_real_ooc_manifest_is_honest_ooc_metrics / met_timing_and_fmax_proxy / toolchain_version_is_vivado_not_mock / fits_pr_budget / reloads_warm_across_restart` — **LIVE, currently FAIL** (adapter not producing real synth, see below). Honesty guard `test_no_ooc_manifest_claims_pr_bitstream` — **PASS**. PR-bitstream clause `test_loadable_pr_bitstream_requires_pr_flow` — **SKIP** (`pr_flow_present=false`).
+- **AC-2-2** on-device harness/scan (`device_usable ∧ pr_flow_present`) → `test_on_device_harness_contract_over_1mib` — **SKIP** (both absent; model-side correctness noted as AC-1-3, not a PASS).
+- **AC-2-3** cold→warm real async (`toolchain_present`) → `test_live_real_synth_is_async_and_never_blocks_caller` **LIVE PASS** (caller never blocked/raised, byte-identical during synth), `test_live_real_synth_genuinely_takes_minutes` / `test_live_cold_to_warm_persists_across_restart` **LIVE FAIL** (synth fast-fails). Model async `test_model_async_prewarm_is_nonblocking_all_cases` — **PASS**. warm→resident on device `test_warm_to_resident_on_device_skips` — **SKIP** (`device_usable`).
+- **AC-2-4** estimator calibration (`toolchain_present`) → `test_estimator_within_calibration_margin_per_pattern[4]` — **SKIP-surfaced** (no `ooc_metrics` manifest, so R74 has no successfully-synthesized pattern to judge). `test_max_repeat_over_bound_is_fallback_only[2]` — **LIVE PASS**. `test_estimate_pass_then_synth_fail_permanent_fallback` (R67 seam) — **LIVE PASS**.
+- **AC-2-5** hardware throughput (`device_usable`) `test_hardware_throughput_on_device_skips` — **SKIP**. Routing: `test_short_oneshot_routes_to_fallback` **PASS**, `test_absolute_routing_overhead_median` (R3a/R5, ≤2µs) **PASS**, `test_relative_loss_regime_bound_r3b` — **SKIP-surfaced** (see ambiguity).
+- **AC-2-6** on-device arbitration (`device_usable ∧ pr_flow_present`) `test_on_device_arbitration_skips` — **SKIP**. `test_model_single_tenant_eviction_and_byte_identical` — **LIVE PASS** (gauge≤1, one eviction fired, byte-identical across evict/reload).
+
+Every SKIP names its missing prerequisite (R71 SKIP discipline verified with `-rs`).
+
+### Needs the implementation (expected, per your brief)
+The Vivado adapter **is wired** (`PYRO_TOOLCHAIN=vivado` recognized, job launched, `synth_launched=1`, negative-cache `FAILED.json` written per R65) but the real OOC flow **is not functional**: it fast-fails in ~0.25 s with
+
+`vivado toolchain error: IndexError('Replacement index 0 out of range for positional args tuple')`
+
+— a `str.format`/template bug in the coder's `pyro/synth/` VivadoToolchain, not a genuine synthesis/timing failure. Because it fast-fails, the whole corpus fixture builds in ~25 s (no 20-min wait). The 7 LIVE failures in AC-2-1/AC-2-3 will turn green once the adapter actually runs Vivado OOC synth+P&amp;R and writes an `ooc_metrics` manifest with genuine `luts/ffs/met_timing/fmax_mhz` and `toolchain_version==0x17010000`; AC-2-4's R74 clauses will then evaluate (currently SKIP-surfaced) instead of skipping.
+
+### Spec ambiguities surfaced (not resolved unilaterally)
+1. **R3b vs AC-2-5 (the one I did not bake).** R3b conditions its 1.15× relative bound on the loss-regime hot path being "native-code cheap," yet AC-2-5 says R3b holds "in all cases." Measured on this build: below-threshold ratio ≈ **4.66×** (median pyro ~1222 ns vs stock ~262 ns) — i.e., the decision path is Python-level (~1 µs, still within R3a/R5's 2 µs absolute bound, which passes). I did **not** bake either reading: the test PASSES if genuinely ≤1.15×, else SKIPs with the measured ratio and a note. Please adjudicate: is R3b a hard Phase-2 requirement (⇒ the routing path must be native), or is its native-hot-path precondition the gate (⇒ AC-2-5 should not list it "in all cases")?
+2. **R74 over an empty success set.** R74 is "evaluated per pattern over the corpus … only over successfully-synthesized patterns." If **zero** patterns synthesize (as now), AC-2-4's calibration clause has nothing to assert. I made it SKIP-per-pattern with an explicit reason. Confirm that a corpus with no successful synth should SKIP (not fail) the calibration clause.
+3. **AC-2-6 model residency under `PYRO_FORCE_MODEL` (resolved favorably, flagged for confirmation).** R51b lets the model serve at any tier, leaving open whether the single-tenant PR region is ever "occupied" on a device-free host. Empirically it is (gauge=1, eviction fires), so the test asserts eviction firmly; but if a future model implementation stops tracking residency, the conditional eviction assertion would not fire — confirm the model is required to exercise R64 residency/eviction bookkeeping on a device-free host.</result>
+<usage><subagent_tokens>161549</subagent_tokens><tool_uses>39</tool_uses><duration_ms>951202</duration_ms></usage>
+</task-notification>
+
+## 2026-07-06 00:21:47
+
+<task-notification>
+<task-id>a7b944a27850c40eb</task-id>
+<tool-use-id>toolu_011qYD3yHX2EGT9zeYUnZBRS</tool-use-id>
+<output-file>/tmp/gn262/claude-1361/-home-gn262-Repos-Yale-stringy-fpga/af23c991-00cd-44ae-95a5-b069841d45c6/tasks/a7b944a27850c40eb.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec-writer: Phase 2 rulings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three adjudications are amended into v2.1.1, cross-references resolve, and the changelog records them. Spec file: `/home/gn262/Repos/Yale/stringy-fpga/specs/python-regex-offload.md`.
+
+## Rulings (brief for the test-developer)
+
+**1. R3b vs AC-2-5 "in all cases" → the native-hot-path precondition is the gate (recommended option adopted).**
+- New **R3c** (after R3b): R3b's 1.15× relative bound binds **only** when the §8 R51 routing/decision hot path is itself native-cheap. The existence of an L3 native runtime does **not** satisfy the precondition while the routing decision is executed at Python level. Until then **R3a (absolute ≤ 2 µs) governs**, and any R3b relative-ratio check records a **SKIP whose reason states the measured ratio** (e.g. the observed 4.66×), **never a FAIL** — mirroring the Phase-0 disposition in AC-0-6.
+- **R3b becomes a hard PASS requirement at AC-3-3** (Phase 3 interposition + benchmarks — the phase where the native routing/dispatch path is a deliverable). AC-3-3 amended to say so.
+- **AC-2-5** reworded: dropped "in all cases." Absolute R3a/R5 bounds are asserted against the model in all cases; the R3b clause SKIPs-with-measured-ratio under R3c.
+- Spec-consistency note: this is exactly AC-0-6's reasoning and R3b's own embedded precondition, now made explicit for Phase 2. No native routing path is forced now.
+
+**2. R74 empty success set → SKIP, not FAIL (confirmed).**
+- Added one normative sentence to R74: if no corpus pattern synthesizes successfully, the AC-2-4 calibration clause has an empty universally-quantified set, is vacuously satisfied, and MUST record a **SKIP** (reason e.g. `no successful real syntheses to calibrate against`), never a FAIL.
+
+**3. AC-2-6 model residency bookkeeping → REQUIRED (yes, recommended adopted).**
+- New **R64a**: on a device-free host the software model MUST still exercise single-tenant residency and fire the deterministic LRU eviction — track `circuits_resident` (gauge), promote to residency, and on a second circuit against `pr_partitions == 1` increment `circuits_evicted` (R66), exactly as on hardware. This makes the model-side clauses of **AC-1-5 and AC-2-6** firm, non-vacuous **LIVE** assertions; only the physical PR-load mechanism/timing is absent (SKIP, R71). AC-2-6's model clause now cites R64a.
+
+Version bumped **2.1.0 → 2.1.1** (PATCH — clarifications; no interface/AC break, no new implementation obligation). Changelog updated.
+
+Context hygiene: this was a follow-up adjudication on the same spec, a natural checkpoint. Recommend **/compact** before the next task (the test-developer can now finalize assertions from v2.1.1, and the coder work from v2.1.0 still stands).</result>
+<usage><subagent_tokens>114610</subagent_tokens><tool_uses>12</tool_uses><duration_ms>121583</duration_ms></usage>
+</task-notification>
+
