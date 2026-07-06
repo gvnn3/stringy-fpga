@@ -77,6 +77,25 @@ class Manifest:
     # success from payload_kind alone.
     pr_verified: bool = False
 
+    # -- R47b-consistency boundary check (defense-in-depth, v2.2.3) ----------
+    def __post_init__(self) -> None:
+        """Reject an inconsistent ``pr_verified``/``payload_kind`` combination at
+        the boundary (R47b-consistency/R82c), not merely at the producer.
+
+        The invariant is the biconditional ``pr_verified == (payload_kind ==
+        "pr_bitstream")``: a genuine loadable partial bitstream is exactly the one
+        for which ``pr_verify`` ran and passed.  Enforcing it in the constructor
+        (and in :meth:`from_json`) means a corrupt or hand-edited manifest cannot
+        enter the system.  Back-compat safe: every pre-v2.2.2 manifest is
+        ``mock_stub``/``ooc_metrics`` with ``pr_verified`` absent→``False``, which
+        satisfies the invariant.
+        """
+        if bool(self.pr_verified) != (self.payload_kind == "pr_bitstream"):
+            raise ValueError(
+                f"inconsistent manifest: pr_verified={self.pr_verified!r} but "
+                f"payload_kind={self.payload_kind!r} — R47b-consistency/R82c "
+                f"requires pr_verified == (payload_kind == 'pr_bitstream')")
+
     # -- (de)serialization --------------------------------------------------
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
@@ -91,6 +110,9 @@ class Manifest:
         # R47b/R82c (v2.2.2): a pre-v2.2.2 manifest lacks pr_verified — default it
         # False so the round-trip is preserved (missing key => not pr-verified).
         data.setdefault("pr_verified", False)
+        # R47b-consistency (v2.2.3): the constructor (__post_init__) rejects an
+        # inconsistent pr_verified/payload_kind combination, so a corrupt/edited
+        # on-disk manifest raises ValueError here rather than being accepted.
         return cls(**data)
 
     # -- host-side checks performed before a PR load (R47b) -----------------

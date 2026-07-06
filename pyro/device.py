@@ -319,7 +319,11 @@ class DeviceConfig:
     production implementation, so a ``DeviceConfig()`` with no overrides is
     byte-identical to production behavior.  They need no ``PYRO_ENABLE_TEST_HOOKS``
     gate: passing a non-default value is explicit config injection, not an ambient
-    process-wide hook, so there is no production foot-gun (R86.6).
+    process-wide hook, so there is no production foot-gun (R86.6).  The seam
+    callables' contracts are normative in **R86.7** (v2.2.3): ``transport_factory``
+    returns an R86.7 ``Transport`` (full-Ethernet-frame ``send``/``recv``-``None``-
+    sentinel/idempotent ``close``); ``load_runner`` returns ``(rc: int, output:
+    str)`` with nonzero ``rc`` → :class:`PyroLoadError`.
     """
 
     # -- probe (R83/R84); iface from PYRO_DEVICE_IFACE (R68) -----------------
@@ -482,7 +486,20 @@ def _parse_id_reply(frame: bytes, expect_seq: int) -> Optional[int]:
 
 
 class _Transport:
-    """Structural interface for the probe transport (send/recv/close)."""
+    """The R86.7 ``Transport`` protocol (v2.2.3) — what ``transport_factory``
+    returns.  It carries **full Ethernet frames including the 14-byte L2 header**
+    (``dst/src/0x88B5``), so the transport is the layer that prepends/strips the
+    L2 header around the R86.2/R86.3 PYRO portion and owns the 60-byte-minimum
+    zero-padding (R78.9).
+
+      * ``send(frame: bytes) -> None`` — transmit one complete Ethernet frame.
+      * ``recv(timeout: float) -> bytes | None`` — the next complete Ethernet
+        frame, or ``None`` if none arrives within ``timeout`` seconds (the
+        ``None`` sentinel means *no-frame-within-timeout*, distinct from an empty
+        frame; a ``None`` at each attempt drives the ``probe: no valid ID_REPLY``
+        disposition, R84/R86.4).
+      * ``close() -> None`` — release the transport; **idempotent**.
+    """
 
     def send(self, frame: bytes) -> None:  # pragma: no cover - interface
         raise NotImplementedError
@@ -495,7 +512,8 @@ class _Transport:
 
 
 class _EthTransport(_Transport):
-    """Real ``AF_PACKET`` raw-socket transport on the ``onic`` netdev (R78/R83).
+    """Real ``AF_PACKET`` raw-socket transport on the ``onic`` netdev (R78/R83),
+    conforming to the R86.7 ``Transport`` protocol.
 
     Constructed only after the ``CAP_NET_RAW`` gate passes; still fully contained
     so no ``OSError`` leaks (probe_device swallows OSError into "no reply").
@@ -522,6 +540,8 @@ class _EthTransport(_Transport):
         self._sock.send(frame)
 
     def recv(self, timeout: float) -> Optional[bytes]:
+        # R86.7: return the next complete Ethernet frame, or None if none arrives
+        # within `timeout` (the None sentinel = no-frame-within-timeout).
         import select
         r, _, _ = select.select([self._sock], [], [], max(0.0, float(timeout)))
         if not r:
@@ -529,6 +549,8 @@ class _EthTransport(_Transport):
         return self._sock.recv(2048)
 
     def close(self) -> None:
+        # R86.7: idempotent — socket.close() on an already-closed socket is a
+        # no-op, so repeated calls neither raise nor double-free.
         try:
             self._sock.close()
         except OSError:
@@ -655,10 +677,14 @@ def _resolve_vivado(config: DeviceConfig) -> str:
 
 
 def _default_load_runner(cmd: list, cwd: str, timeout: float) -> Tuple[int, str]:
-    """Run the JTAG batch command with an R77-style process-tree kill on timeout.
+    """The real R86.7 ``load_runner``: run the JTAG batch command with an R77-style
+    process-tree kill on timeout.
 
-    Returns ``(returncode, combined_output)``.  Raises :class:`_LoadTimeout` on
-    deadline expiry (after killing the whole process group), or ``OSError`` if the
+    Returns ``(rc: int, output: str)`` — the process exit code and combined tool
+    log (R86.7).  ``rc != 0`` is mapped to :class:`PyroLoadError` by the caller
+    (``load_partial``), with ``output`` in the diagnostic.  Raises
+    :class:`_LoadTimeout` on deadline expiry (after killing the whole process
+    group; the timeout need not surface as an ``rc``, R86.7), or ``OSError`` if the
     process cannot be launched (mapped to PyroLoadError by the caller)."""
     import signal
     import subprocess
