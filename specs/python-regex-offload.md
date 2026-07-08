@@ -1,10 +1,10 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.2.5
+- **Version:** 2.3.0
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
-- **Date:** 2026-07-06
+- **Date:** 2026-07-08
 
 ---
 
@@ -847,6 +847,38 @@ synthesis time and identified via the identity block (R47a).
   | 0x004C  | `OUT_COUNT`   | RO     | number of results produced                |
   | 0x0050  | `IRQ_ENABLE`  | RW     | bit0 DONE-irq enable                      |
   | 0x0054  | `IRQ_STATUS`  | RW1C   | bit0 DONE, write-1-to-clear               |
+  | 0x0058  | `CYCLES_LO`   | RO     | R45a: BUSY core-clock cycles, low 32      |
+  | 0x005C  | `CYCLES_HI`   | RO     | R45a: BUSY core-clock cycles, high 32     |
+  | 0x0060  | `BYTES_LO`    | RO     | R45a: input bytes consumed, low 32        |
+  | 0x0064  | `BYTES_HI`    | RO     | R45a: input bytes consumed, high 32       |
+
+- **R45a (on-chip performance counters — v2.3.0).** Every generated circuit
+  MUST implement two 64-bit read-only counters in the CSR block:
+  - `CYCLES` (`0x0058`/`0x005C`) — increments once per core-clock cycle while
+    the engine is BUSY (from the cycle after `CTRL.START` is accepted until the
+    final input byte is consumed);
+  - `BYTES` (`0x0060`/`0x0064`) — the input bytes consumed so far
+    (`datapath_bytes` per accepted beat; the final beat may be short).
+
+  Both counters are cleared by `CTRL.START` and by `CTRL.RESET`, and hold their
+  values after `STATUS.DONE` until the next START/RESET. The 32-bit halves have
+  no latch-on-read-low coherence: while BUSY a 64-bit read MAY tear across the
+  halves, so hosts MUST sample the counters only after `STATUS.DONE` where
+  exact values are required. **Purpose:** these are the benchmark suite's
+  (R59/AC-3-3) attribution seam — `CYCLES × t_clk` is the pure on-chip scan
+  cost, so end-to-end host time minus it isolates PCIe/DMA/framing/dispatch
+  overhead, and `BYTES / CYCLES` is the achieved datapath utilization. The
+  software model (R7) MUST expose the same registers but reports the
+  **idealized** values (`BYTES` = bytes consumed, `CYCLES` =
+  `ceil(BYTES / datapath_bytes)`); only hardware-measured values are
+  performance evidence for R1/R59. Circuits built against harness < 2.1.0 read
+  0 at these offsets (the prior default decode): a `CYCLES` of 0 after a
+  completed non-empty scan therefore identifies a counter-less circuit, and
+  hosts MUST treat its counter values as unavailable, never as measurements.
+  This addition bumps `HARNESS_VERSION`/`GENERATOR_VERSION` to `0x00020100`
+  (2.1.0): identity hashes (R47a) and cache keys (R4) roll over, so pre-2.1.0
+  cached artifacts are stale (rejected by the R47b harness check) and
+  re-synthesize on demand.
 
 - **R47a (circuit-identity register block — trust boundary).** Before dispatching
   any scan, the host runtime MUST read the identity block (`CIRC_ID0..3`,
@@ -1927,8 +1959,8 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
       wire `harness_version` field carries the **R45 resident-harness contract
       version** (the `HARNESS_VER` register value; `0x00010000` in the current model
       harness / flashed ID stub). This is a **distinct namespace** from the
-      **`PYROART1` artifact-header `HARNESS_VERSION`** (`0x00020000`, the L2-generator
-      artifact-format version tied to ABI 2.0.0). A pattern child MUST report the
+      **`PYROART1` artifact-header `HARNESS_VERSION`** (`0x00020100` as of v2.3.0,
+      the L2-generator artifact-format version tied to ABI 2.0.0). A pattern child MUST report the
       **wire/R45 value** here (matching the ID stub for wire consistency), **not** the
       artifact value. The two are intentionally different and MUST NOT be "fixed" to
       match each other: one identifies the *resident hardware harness contract*, the
@@ -2630,6 +2662,31 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.3.0** (2026-07-08) — *R45a on-chip performance counters (MINOR — added
+  requirement), spec-writer.* Closes the benchmark-attribution gap: the R45 CSR
+  block had no on-chip cycle/byte counters, so R59/AC-3-3 could only measure
+  end-to-end throughput and could not separate on-chip scan cost from
+  PCIe/DMA/framing/dispatch overhead. No interface/AC break, no renumbering;
+  frozen invariants untouched (C ABI 2.0.0, `PYROART1` container format,
+  `SHELL_VERSION 0x0A000001`, `PYRO_SHELL_SPEC16 0x0202`, wire harness
+  namespace `0x00010000` (R78.5b), R78 wire protocol, existing AC numbers).
+  - **R45 table (additive).** Four new normative RO offsets: `CYCLES_LO/HI`
+    (`0x0058`/`0x005C`), `BYTES_LO/HI` (`0x0060`/`0x0064`).
+  - **R45a (NEW).** Counter semantics: cleared on `CTRL.START`/`CTRL.RESET`,
+    stable after `STATUS.DONE`, halves MAY tear while BUSY (sample after DONE);
+    the model (R7) reports idealized values — only hardware values are R1/R59
+    evidence; harness < 2.1.0 circuits read 0 at these offsets, so
+    `CYCLES == 0` after a completed non-empty scan means "counters
+    unavailable", never a measurement.
+  - **Version rollover.** `HARNESS_VERSION`/`GENERATOR_VERSION` → `0x00020100`
+    (2.1.0), mirrored in `src/pyro_rt.c`. Identity hashes (R47a), descriptor
+    cache keys (R4), and the R47b manifest harness check roll over: pre-2.1.0
+    cached artifacts (including this host's built `ab+c` pattern partial) are
+    stale and re-synthesize on demand. The R83a `pr_flow_present` evidence
+    predicate is unaffected (it checks parse/`payload_kind`/`pr_verified`, not
+    harness equality). Estimator intercepts bumped (+64 LUTs / +64 FFs) to keep
+    R74's `real <= est` conservative over the recorded corpus data pending the
+    R74a 2025.2 recalibration.
 - **2.2.5** (2026-07-06) — *`pr_flow_present` evidence predicate (PATCH — one
   clarification + one additive knob/field), spec-writer.* Closes a real gap the
   test-developer flagged: R83 flipped `pr_flow_present` true when the R82d artifacts

@@ -37,7 +37,7 @@ Wire behavior of a pattern child vs. the default stub (R78.5/R78.8):
   2. **R78.5b** — the wire ``harness_version`` (``ID_REPLY``) carries the **R45
      resident-harness contract version** (``0x00010000``, matching the ID stub),
      a DISTINCT namespace from the ``PYROART1`` artifact ``HARNESS_VERSION``
-     (``0x00020000``).  The child reports the wire/R45 value.
+     (``0x00020100`` as of spec v2.3.0).  The child reports the wire/R45 value.
   3. **R87** — the single-tenant pattern occupies **slot 1**; children default to
      ``SLOT = 1``.  Multi-slot (``slot ≥ 2``) is deferred; such requests get
      ``PYRO_E_NOT_RESIDENT``.

@@ -183,6 +183,11 @@ CSR_CIRC_ID3 = 0x0024
 CSR_CIRC_FLAGS = 0x0028
 CSR_RESERVED = 0x002C
 CSR_OUT_COUNT = 0x004C
+# R45a perf counters (v2.3.0): 64-bit RO pairs, cleared on START/RESET.
+CSR_CYCLES_LO = 0x0058
+CSR_CYCLES_HI = 0x005C
+CSR_BYTES_LO = 0x0060
+CSR_BYTES_HI = 0x0064
 
 # STATUS bits (R45 0x0014).
 ST_BUSY = 0x1
@@ -194,7 +199,8 @@ ST_OVF = 0x8
 class CircuitModel:
     """Behavioral model of one resident-capable generated circuit (R7)."""
 
-    __slots__ = ("circuit", "enc", "resident", "_status", "_out_count", "_lock")
+    __slots__ = ("circuit", "enc", "resident", "_status", "_out_count",
+                 "_cycles", "_bytes", "_lock")
 
     def __init__(self, circuit: hdl.GeneratedCircuit):
         self.circuit = circuit
@@ -202,6 +208,8 @@ class CircuitModel:
         self.resident = False
         self._status = 0
         self._out_count = 0
+        self._cycles = 0
+        self._bytes = 0
         self._lock = threading.Lock()
 
     # -- harness CSR block (R45/R47a) --------------------------------------
@@ -221,6 +229,10 @@ class CircuitModel:
             CSR_CIRC_FLAGS: c.circ_flags,
             CSR_RESERVED: 0,
             CSR_OUT_COUNT: self._out_count,
+            CSR_CYCLES_LO: self._cycles,
+            CSR_CYCLES_HI: self._cycles >> 32,
+            CSR_BYTES_LO: self._bytes,
+            CSR_BYTES_HI: self._bytes >> 32,
         }
         return int(table.get(offset, 0)) & 0xFFFFFFFF
 
@@ -258,7 +270,13 @@ class CircuitModel:
             raise ValueError("out_cap must be non-negative")
         with self._lock:  # single-issue per circuit (R48)
             self._status = ST_BUSY
-            windows = _scan_windows(self.circuit.automaton, bytes(buf), start_off)
+            data = bytes(buf)
+            windows = _scan_windows(self.circuit.automaton, data, start_off)
+            # R45a perf counters: the model reports the *idealized* datapath
+            # numbers (BYTES = bytes consumed, CYCLES = ceil(BYTES/datapath));
+            # only hardware-measured values are performance evidence (R59).
+            self._bytes = max(0, len(data) - start_off)
+            self._cycles = -(-self._bytes // self.circuit.datapath_bytes)
             overflowed = len(windows) > out_cap
             self._out_count = min(len(windows), out_cap)
             self._status = ST_DONE | (ST_OVF if overflowed else 0)

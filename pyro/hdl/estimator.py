@@ -81,8 +81,13 @@ PR_PARTITIONS = 1  # single-tenant region (R64)
 # above): even a MAX_STATES-sized automaton estimates ~6.4k LUTs / ~1.5k FFs,
 # far under PR_LUTS/PR_FFS, so no classifier-eligible pattern is rejected for
 # resources and no classification flips.
-_HARNESS_LUTS = 256         # CSR block, DMA sequencing, result-ring writer
-_HARNESS_FFS = 448
+# v2.3.0 (R45a): the perf counters add a 64-bit BUSY-cycle counter + four CSR
+# read-mux sources to every circuit (~64 FFs / ~50 LUTs of real floor on top of
+# the corpus data above, which predates them).  Intercepts bumped +64/+64 to
+# keep `real <= est` conservative (R74 clauses 1-2); slopes unchanged.  The
+# pending R74a re-measurement under 2025.2 recalibrates both together.
+_HARNESS_LUTS = 320         # CSR block, DMA sequencing, result-ring writer
+_HARNESS_FFS = 512
 _LUTS_PER_STATE = 4
 _LUTS_PER_EDGE = 2
 _FFS_PER_STATE = 1

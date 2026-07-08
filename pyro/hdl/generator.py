@@ -2,10 +2,10 @@
 
 Lowers a HW-eligible pattern's byte automaton (:mod:`pyro.hdl.automaton`) into a
 **synthesizable per-pattern Verilog-2001 circuit** that implements the fixed
-harness contract of §7.4: the normative CSR register block (R45), the baked
-circuit-identity block (R47a), result-ring semantics (R47), and START/DONE/OVF
-single-issue control (R48).  The datapath is a generic one-hot NFA recognizer;
-no vendor primitives and no timing-closure effort are attempted (Task-5 brief) —
+harness contract of §7.4: the normative CSR register block (R45), the on-chip
+performance counters (R45a), the baked circuit-identity block (R47a),
+result-ring semantics (R47), and START/DONE/OVF single-issue control (R48).
+The datapath is a generic one-hot NFA recognizer; no vendor primitives and no timing-closure effort are attempted (Task-5 brief) —
 that is Phase-2 work.  The circuit software model (:mod:`pyro._circuit_model`)
 provides the behavioral reference; this RTL is the structural lowering that a
 real synthesis flow (Phase 2) would consume.
@@ -26,9 +26,11 @@ from . import identity as _identity
 from . import estimator as _estimator
 
 # Generator / harness contract versions (packed MAJOR<<16|MINOR<<8|PATCH).
-# This is the v2.0.0 per-pattern-circuit generator (spec §14 2.0.0 entry).
-GENERATOR_VERSION = 0x00020000
-HARNESS_VERSION = 0x00020000
+# 2.1.0: R45a on-chip perf counters (CYCLES/BYTES CSRs, spec §14 2.3.0 entry).
+# Both bump together: the counters change the emitted RTL *and* the harness
+# register map, so identity hashes (R47a) and cache keys (R4) roll over.
+GENERATOR_VERSION = 0x00020100
+HARNESS_VERSION = 0x00020100
 DATAPATH_BYTES = 1  # one byte/cycle (R42 datapath_bytes); multi-byte is future.
 
 ID_MAGIC = 0x5059524F  # "PYRO" (R45 offset 0x0000)
@@ -147,6 +149,7 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("    reg  [NSTATES-1:0] active;      // eps/assert closure (comb)")
     add("    reg  [NSTATES-1:0] moved;       // byte-move result (comb)")
     add("    reg  [63:0] byte_index;")
+    add("    reg  [63:0] cycle_count;  // R45a CYCLES: core-clock cycles while BUSY")
     add("    reg  [7:0]  prev_byte;")
     add("    reg         have_prev;")
     add("    reg         running;")
@@ -203,11 +206,16 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("            out_cap <= 32'd0; out_count <= 32'd0;")
     add("            irq_enable <= 32'd0; irq_status <= 32'd0;")
     add("            state_reg <= {NSTATES{1'b0}};")
-    add("            byte_index <= 64'd0; prev_byte <= 8'd0; have_prev <= 1'b0;")
+    add("            byte_index <= 64'd0; cycle_count <= 64'd0;")
+    add("            prev_byte <= 8'd0; have_prev <= 1'b0;")
     add("            res_wr <= 1'b0; res_start <= 64'd0; res_end <= 64'd0;")
     add("            res_pattern_id <= 32'd0; res_flags <= 32'd0;")
     add("        end else begin")
     add("            res_wr <= 1'b0;")
+    add("            // R45a CYCLES: count every BUSY cycle.  A START/RESET")
+    add("            // assignment later in this block overrides (last")
+    add("            // nonblocking write wins), so clears take precedence.")
+    add("            if (running) cycle_count <= cycle_count + 64'd1;")
     add("            // CSR writes (RW registers only; RO ignored)")
     add("            if (csr_write) begin")
     add("                case (csr_addr)")
@@ -225,14 +233,15 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("            end")
     add("            if (ctrl_reset) begin")
     add("                state_reg <= {NSTATES{1'b0}};")
-    add("                byte_index <= 64'd0; have_prev <= 1'b0;")
+    add("                byte_index <= 64'd0; cycle_count <= 64'd0; have_prev <= 1'b0;")
     add("                out_count <= 32'd0; running <= 1'b0; status <= 32'd0;")
     add("            end else if (ctrl_start && !running) begin")
     add("                running <= 1'b1;")
     add("                status <= 32'h0000_0001;  // BUSY")
     add("                state_reg <= {NSTATES{1'b0}};")
     add("                state_reg[START_STATE] <= 1'b1;")
-    add("                byte_index <= 64'd0; have_prev <= 1'b0; out_count <= 32'd0;")
+    add("                byte_index <= 64'd0; cycle_count <= 64'd0;")
+    add("                have_prev <= 1'b0; out_count <= 32'd0;")
     add("            end else if (running && in_valid) begin")
     add("                state_reg <= moved;")
     add("                prev_byte <= in_data; have_prev <= 1'b1;")
@@ -285,6 +294,11 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("            16'h004C: csr_rdata = out_count;")
     add("            16'h0050: csr_rdata = irq_enable;")
     add("            16'h0054: csr_rdata = irq_status;")
+    add("            // R45a perf counters; BYTES is the byte_index feed counter.")
+    add("            16'h0058: csr_rdata = cycle_count[31:0];")
+    add("            16'h005C: csr_rdata = cycle_count[63:32];")
+    add("            16'h0060: csr_rdata = byte_index[31:0];")
+    add("            16'h0064: csr_rdata = byte_index[63:32];")
     add("            default:  csr_rdata = 32'd0;")
     add("        endcase")
     add("    end")

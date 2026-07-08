@@ -96,6 +96,35 @@ def test_no_overflow_when_capacity_sufficient(ctx):
     assert not (circ.csr_read(cm.CSR_STATUS) & cm.ST_OVF)
 
 
+# --- R45a: on-chip perf counters (CYCLES/BYTES) ----------------------------
+
+def test_perf_counters_report_idealized_scan_cost(ctx):
+    circ = _load(ctx, "abc")
+    subject = b"xx abc yy abc"
+    circ.scan(subject)
+    got_bytes = ((circ.csr_read(cm.CSR_BYTES_HI) << 32)
+                 | circ.csr_read(cm.CSR_BYTES_LO))
+    got_cycles = ((circ.csr_read(cm.CSR_CYCLES_HI) << 32)
+                  | circ.csr_read(cm.CSR_CYCLES_LO))
+    assert got_bytes == len(subject)
+    # the model reports the idealized datapath rate: ceil(bytes / datapath).
+    db = circ.circuit.datapath_bytes
+    assert got_cycles == -(-len(subject) // db)
+
+
+def test_perf_counters_respect_start_off(ctx):
+    circ = _load(ctx, "a")
+    circ.scan(b"aaaa", 3)
+    assert circ.csr_read(cm.CSR_BYTES_LO) == 1
+
+
+def test_perf_counters_cleared_per_scan(ctx):
+    circ = _load(ctx, "a")
+    circ.scan(b"a" * 100)
+    circ.scan(b"aa")                    # START clears; not cumulative
+    assert circ.csr_read(cm.CSR_BYTES_LO) == 2
+
+
 # --- R19: candidate windows are unverified (host re-verifies) -------------
 
 def test_windows_are_unverified(ctx):

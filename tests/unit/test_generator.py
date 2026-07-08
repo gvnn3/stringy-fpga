@@ -54,6 +54,8 @@ def test_rtl_has_pyro_magic_and_versions():
     "16'h0000", "16'h0004", "16'h0008", "16'h000C", "16'h0010", "16'h0014",
     "16'h0018", "16'h001C", "16'h0020", "16'h0024", "16'h0028",
     "16'h0030", "16'h0038", "16'h0048", "16'h004C", "16'h0050", "16'h0054",
+    # R45a perf counters (v2.3.0)
+    "16'h0058", "16'h005C", "16'h0060", "16'h0064",
 ])
 def test_rtl_decodes_all_normative_offsets(off):
     assert off in hdl.generate("abc", 0).rtl
