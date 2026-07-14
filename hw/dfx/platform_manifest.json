@@ -1,0 +1,41 @@
+{
+  "spec": "python-regex-offload",
+  "subproject": "pyro-pr-shell",
+  "phase": "2b",
+
+  "boundary_id": "pyro-rp-v1-axis512-tuser48-250mhz",
+  "_boundary_note": "clk/rstn + one 512-bit AXIS slave (QDMA H2C in) + one 512-bit AXIS master (QDMA C2H out), tuser = {dst[15:0], src[15:0], size[15:0]}. AXI-Lite deliberately NOT crossed into the RP (R80). Defined by hw/src/pyro_rp_stub.v; every child must match it exactly or it will not link against the locked static (R82b).",
+
+  "part": "xcu250-figd2104-2L-e",
+  "board": "au250",
+  "user_clock_mhz": 250.0,
+  "user_clock_period_ns": 4.0,
+
+  "rps": {
+    "PYRO_RP": {
+      "slr": 2,
+      "cell": "pyro_rp_inst",
+      "pblock_range": "CLOCKREGION_X0Y9:CLOCKREGION_X3Y10",
+      "_pblock_note": "docs/device-bringup.md quotes CLOCKREGION_X5Y7:X5Y8 for pyro_rp, but OpenNIC places its own packet-adapter pblocks on row Y8 (X1Y8:X2Y8 and X5Y8:X6Y8), which that range overlaps. This uses the SLR2 region ebpf-os proved out on this exact part instead. Patterns measure 197-410 LUTs (docs/vivado-toolchain.md §6), so region size is not the constraint -- avoiding the collision is."
+    }
+  },
+
+  "rp_budget": {
+    "lut": 80000,
+    "ff": 160000,
+    "bram": 160,
+    "uram": 64,
+    "dsp": 400
+  },
+
+  "opennic": {
+    "num_phys_func": 1,
+    "num_cmac_port": 1,
+    "_pf_note": "OpenNIC requires NUM_PHYS_FUNC == NUM_CMAC_PORT, so pf=cmac=1 gives exactly one pyro_rp."
+  },
+
+  "tools": {
+    "vivado": "2025.2",
+    "toolchain_version": "0x19020000"
+  }
+}

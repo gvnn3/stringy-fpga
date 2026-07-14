@@ -14,9 +14,14 @@ OUT="$2"
 [ -n "$DCP" ] && [ -n "$OUT" ] || { echo "usage: $0 <routed.dcp> <out.bit>"; exit 1; }
 [ -f "$DCP" ] || { echo "ERROR: routed dcp not found: $DCP"; exit 1; }
 
-source /usr/local/cad/2025.2/Vivado/settings64.sh
+# Vivado + license. The zanetti paths (/home/gn262/.Xilinx/Xilinx.lic) do not exist
+# on nf-server06; the license here is node-locked to this host's ens9 MAC and lives
+# in ~/.Xilinx. Override either via the environment.
+: "${PYRO_VIVADO_DIR:=/usr/local/cad/2025.2/Vivado}"
+[ -f "$PYRO_VIVADO_DIR/settings64.sh" ] || { echo "ERROR: no Vivado at $PYRO_VIVADO_DIR"; exit 1; }
+export PYTHONPATH="${PYTHONPATH:-}"   # settings64.sh reads it unguarded
+source "$PYRO_VIVADO_DIR/settings64.sh"
 export TERM=xterm
-export XILINXD_LICENSE_FILE=/home/gn262/.Xilinx/Xilinx.lic
 
 TCLF=$(mktemp --suffix=.tcl)
 cat > "$TCLF" <<TCL

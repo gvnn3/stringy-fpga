@@ -17,11 +17,300 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-2. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-3. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-4. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-5. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash](#14-jul-2026-084952) :in_progress:
+2. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+3. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+4. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+5. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+6. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+7. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+
+---
+
+# EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash :in_progress:
+
+## 1. Hypothesis
+
+The U250 in `nf-server06` boots its **factory golden image** (`10ee:d004`),
+not the Phase 2b PYRO PR shell that the 9 Jul entry recorded as flashed and
+verified booting. QSPI is on-card and the card was believed to have moved from
+`zanetti`, so the shell "should" still be in flash. Two competing explanations:
+
+- **(a)** the image is intact but configuration fails for an environmental
+  reason (leading suspect: PCIe aux power — the golden image is a minimal
+  low-power design), or
+- **(b)** the user image is absent/invalid.
+
+Can `BOOT_STATUS` + the JTAG chain distinguish these **without** a QSPI
+readback (which would require a volatile `program_hw_devices` — the operation
+that crashed zanetti)? And if (b), can the PR shell be rebuilt **from source**
+on this host, given that the original shell tree existed only as an
+unversioned build directory on zanetti (`/usr/local/cad/gn262/pyro/`) and is
+therefore gone?
+
+## 2. How
+
+- **Equipment:** Alveo U250 (`xcu250-figd2104-2L-e`) at PCI **`0000:02:00.0`**
+  (physical slot 2, root port `0000:00:02.0`), QSPI mt25qu01g; host
+  **`nf-server06`** (Supermicro X99, Xeon E5 v4, ASPEED BMC — **no iDRAC**),
+  Ubuntu 24.04, Linux **6.8.0-134-generic**. On-board USB-JTAG (FT4232H,
+  `manufacturer=Xilinx`, `product=A-U250-P64G`), hw_target serial
+  **`2133061B901XA`**, FPGA DNA `40020000013B9E220500E485`.
+- **Software:** Vivado **2025.2** freshly installed at
+  `/usr/local/cad/2025.2/Vivado` (the R70a pin). License node-locked to this
+  host's `ens9` MAC `68:05:ca:41:93:34`; covers `XCU250`/`XCU250_bitgen`,
+  `PartialReconfiguration`, `cmac_usplus` (permanent). **Enterprise edition
+  feature expires 11 Sep 2026.**
+- **Sources (all now version-controlled, unlike the zanetti tree):**
+  `third_party/open-nic-shell/` (vendored), `hw/pyro_plugin/` (the
+  `pyro_250mhz` box replacing stock `p2p_250mhz`), `hw/src/pyro_id_stub.sv`
+  (default child, rewritten from the R78 spec + `pyro.hdl.rp_wrapper`'s reply
+  constructor), `hw/src/pyro_rp_stub.v` (the frozen R80 boundary as a black
+  box), `hw/dfx/` (DFX flow ported from `ebpf-os/integration/dfx`).
+
+### Key commands
+
+```bash
+# Diagnosis (READ-ONLY; no reconfiguration of any kind):
+vivado -mode batch -source scripts/status.tcl
+
+# Build the PR shell from source (~2.5 h):
+hw/dfx/dfx_build.sh --fast          # ID-stub OOC synth + 250MHz gate only
+hw/dfx/dfx_build.sh --jobs 16       # full: static -> lock -> partial -> pr_verify
+
+# Flash (live PCIe -- see §4):
+PYRO_FLASH_ALLOW_LIVE_PCIE=1 scripts/flash_u250.sh flash \
+    hw/dfx/build/dcp/open_nic_shell.bit
+```
+
+## 3. Observations
+
+**Diagnosis — hypothesis (b), and for an unanticipated reason.**
+
+- `status.tcl`: `DONE=1`, `EOS=1`, `PLL_lock=1`, `CRC_error=0`, die 50.8 °C,
+  VCCINT 0.847 V / VCCAUX 1.828 V / VCCBRAM 0.850 V. The FPGA configures
+  **cleanly** and its rails are nominal — **hypothesis (a) (aux power) is
+  dead**. PCIe link is Gen3 8.0 GT/s ×16, identical to zanetti's.
+- **`BOOT_STATUS.SLR0 = 0x00000d07`** decodes to `STATUS_VALID_0` +
+  **`IPROG_0`** + **`FALLBACK_0`** + **`WTO_ERROR_1`**, with `CRC_ERROR` and
+  `ID_ERROR` **clear**. The golden multiboot jumped to `0x01002000`, the
+  configuration **watchdog timed out**, and it fell back to golden. A clear
+  CRC/ID with a watchdog timeout is the signature of an **empty or invalid
+  user slot**, not a corrupted image.
+- **This is not zanetti's card.** The FT4232H is on the Alveo itself, so its
+  serial identifies the board. `ebpf-os/docs/fpga-bs.md` records zanetti's as
+  **`2132049BF00YA`**; this one is **`2133061B901XA`**. A *different physical
+  U250*, whose QSPI user slot was never written. That fully explains the
+  golden fallback and why the 9 Jul image (`5603dd5c…`) is nowhere to be found.
+
+**Build (from scratch, all sources now in git).**
+
+- ID stub OOC synth: **0 errors, 0 critical warnings**, WNS **+2.885 ns** at
+  the 4.000 ns (250 MHz) constraint; **32 LUTs / 336 FFs / 0 BRAM**.
+- Static DFX assembly saw **exactly one black box** —
+  `box_250mhz_inst/pyro_250mhz_inst/g_intf[0].pyro_rp_inst` — i.e. the plugin
+  and the `-user_plugin` mechanism worked and only the RP was left empty.
+- Floorplan **`CLOCKREGION_X0Y9:CLOCKREGION_X3Y10`** (SLR2), **not** the
+  `CLOCKREGION_X5Y7:X5Y8` that `docs/device-bringup.md` quotes — see §4.
+- Post-route timing, per clock domain:
+
+  | Clock | WNS (ns) | Contents |
+  |---|---|---|
+  | `axis_aclk_0` | **+0.030** | QDMA H2C → `pyro_rp` → C2H (our datapath) |
+  | `clk_out1_qdma_subsystem_clk_div` | +0.715 | QDMA / AXI-Lite |
+  | `pipe_clk` | +0.351 | PCIe |
+  | **`txoutclk_out[0]`** | **−0.427** | **OpenNIC `cmac_usplus` lbus2axis** |
+
+  Worst path *inside* `pyro_rp`: setup **+0.482 ns**, hold **+0.021 ns** —
+  all MET. The only failing domain is inside OpenNIC's own CMAC IP.
+- **`PR_VERIFY_ALL_OK`** — the ID-stub partial verifies against config0.
+- Artifacts: `open_nic_shell.bit` 43 MB (sha256 `ee5094ae…`),
+  `open_nic_shell.mcs` 118 MB (sha256 `165c2480…`),
+  `static_routed_locked.dcp` 76 MB, `partials/id_stub.bit` 3.9 MB.
+  **BUILD16 = `0xB18A`.**
+
+**Flash — and the zanetti hazard did not reproduce.**
+
+- `program_hw_devices` loaded the SPI-bridge helper ("1 SPI core(s)", 12 s)
+  **while the card was live on PCIe at `02:00.0`** — the exact operation that
+  raised an uncorrectable root-port FATAL and reset zanetti four times.
+- `Erase Operation successful.` → `Program/Verify Operation successful.` →
+  `Flash programming completed successfully` — **FLASH_DONE, rc=0, 15m33s**.
+- **The host did not crash.** Uptime unbroken across the whole operation.
+- Card still enumerates `10ee:d004` (golden) post-flash — **expected**: the
+  FPGA only reads QSPI at power-up. **Cold power cycle pending.**
+
+## 4. Data analysis
+
+**The card is the story.** Every earlier hypothesis (aux power, corrupt image,
+a flash that silently didn't take) was wrong in the same way: they all assumed
+continuity of *the board*. The JTAG serial is the cheap invariant that settles
+it, and it was never recorded in this notebook — only in `ebpf-os`'s. Worth
+making a habit: **record the hw_target serial and FPGA DNA in every entry**,
+because BDF, hostname, and netdev names are all properties of the *host*, and
+only these identify the *card*.
+
+**`BOOT_STATUS` is the right diagnostic, and it is free.** It answered
+"is the user image there?" without a QSPI readback — which matters, because a
+readback needs the same volatile `program_hw_devices` bridge the flash does,
+i.e. it carries the identical host-crash exposure. Paying a host-reset risk to
+*confirm* what a free register already told us would have been a bad trade.
+`FALLBACK + IPROG + WTO_ERROR` with `CRC/ID` clear ⇒ nothing loadable at the
+multiboot address.
+
+**The live-PCIe crash appears genuinely R740-specific.** nf-server06 absorbed
+a volatile JTAG reconfiguration of a live, enumerated endpoint with no fatal
+and no reset. That is a single data point, not a proof, and the mechanism
+(endpoint identity swapping under a running root port) is real — but the
+zanetti workaround (BIOS slot disable via iDRAC) has no equivalent here and is
+now, on this evidence, not needed. `flash_u250.sh` still refuses by default;
+the risk decision remains an explicit `PYRO_FLASH_ALLOW_LIVE_PCIE=1`.
+
+**The floorplan in the docs is wrong for this shell.** `CLOCKREGION_X5Y7:X5Y8`
+overlaps OpenNIC's own packet-adapter pblocks on row Y8 (`X1Y8:X2Y8`,
+`X5Y8:X6Y8` — recorded in `ebpf-os/integration/dfx/README.md`). Used the SLR2
+region ebpf-os proved on this exact part instead. Pattern circuits measure
+197–410 LUTs, so RP area is not the binding constraint; avoiding the collision
+is. `hw/dfx/platform_manifest.json` is now the single source of truth.
+
+**The timing failure is real but out of the datapath.** WNS −0.427 ns lives
+entirely in OpenNIC's `cmac_usplus` lbus2axis FIFO on the 322 MHz transceiver
+clock — the RISK-2 "OpenNIC-on-2025.2 closure" problem ebpf-os documented and
+shipped partials on. In the PYRO shell the **CMAC path is tied off entirely**
+(`adap_tx` idle, `adap_rx` sunk), which is precisely why bring-up needs no
+100G transceiver or link partner: the R78 control protocol loops
+H2C → `pyro_rp` → C2H *inside the card*, never reaching a MAC. Caveat for
+future work: `axis_aclk_0` closes at only **+30 ps**. The 250 MHz box has
+essentially no margin left, so a per-pattern child materially larger than the
+ID stub may not close — watch this when the first real pattern partial is built.
+
+**Root cause of the whole episode: the shell lived outside version control.**
+`open-nic-shell` + the `pyro` plugin + the floorplan + the DFX scripts existed
+only as a build tree under `/usr/local/cad/gn262/pyro/` on zanetti. Nothing in
+`git log --all --diff-filter=A` for this repo has ever contained a `.xdc`, a
+shell `.sv`, or a DFX `.tcl` (only `scripts/status.tcl`). The 6 Jul entry
+claims a working PR flow and a first partial; none of the machinery that
+produced them was committed. It is all now under `hw/` and
+`third_party/open-nic-shell/`.
+
+## 5. Ideas for future experiments
+
+- **Immediate (blocking):** cold power cycle (full AC-off — a warm reboot
+  leaves the card powered, so the FPGA never re-reads QSPI). Then:
+  `lspci -d 10ee: -nn` → expect `02:00.0 [10ee:903f]` / `02:00.1 [10ee:913f]`.
+- Build + load the `onic` driver — **not present on nf-server06**. Source:
+  `NetFPGA-PLUS/sw/driver/open-nic-driver`; the three kernel-6.8 API fixes are
+  recorded in `ebpf-os/docs/fpga-bs.md`. Netdevs will be **`enp2s0f0`/`f1`**
+  (bus 02), not zanetti's `enp175s0f*`.
+- First real probe: `PYRO_DEVICE_IFACE=enp2s0f0`, grant `CAP_NET_RAW`, run
+  `pyro.device.probe_device()`. Success = `ID_REPLY` with `SPEC16=0x0202`,
+  `BUILD16=0xB18A`, `rp_child_id == 0` — `device_usable` flipping true for the
+  first time on real hardware (R83), and AC-2b-2's SKIP becoming a PASS.
+- **Spec debt (R71/F2/F3):** the spec still declares `af:00.0` (F2) and
+  `enp175s0f0` (F3) as normative facts, and `pyro/_route.py` /
+  `pyro/device.py` still default `PYRO_DEVICE_IFACE` to `enp175s0f0`. Both are
+  false for this host. Needs a spec decision, not a silent code edit.
+- Load the ID-stub **partial** over JTAG against the locked static — the first
+  live PR test, and the cheapest possible exercise of `load_partial` (R86.5).
+- Re-run the AC-2-4 estimator calibration corpus under 2025.2 (R74a): the
+  §6 table is 2023.1-derived and is not evidence for the current pin.
+
+---
+
+# EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image :complete:
+
+## 1. Hypothesis
+
+Can the Phase 2b PYRO PR shell be written persistently to the U250's QSPI
+user-image slot using the proven-safe BIOS-Slot-4-disable procedure — without
+crashing the host, as every live-slot JTAG reconfiguration has — so that the
+card boots the PR-capable shell at the next cold power cycle?
+
+## 2. How
+
+- **Equipment:** Alveo U250 (xcu250-figd2104-2L-e) at PCI af:00.0 (Dell,
+  iDRAC9 @ 10.66.3.9), QSPI mt25qu01g; host zanetti, Ubuntu 24.04,
+  Linux 6.8.0-124-generic.
+- **Software:** Vivado 2025.2 Hardware Manager over USB-FTDI JTAG;
+  `scripts/flash_u250.sh` (ported from ebpf-os, commit f07ff28).
+- **Image:** Phase 2b full flash `open_nic_shell.mcs` (124 MB, SPIx4,
+  size 128, user image @ 0x01002000), sha256 `5603dd5c…0223e93f` — verified
+  identical to the artifact recorded in `/usr/local/cad/gn262/pyro/STATUS.md`.
+  Golden image at 0x0 untouched (unbrickable: bad user image falls back).
+
+### Key commands
+
+```bash
+# Precondition (BIOS Slot 4 disabled via iDRAC, applied at reboot):
+lspci -nn | grep -i xilinx        # -> no output; af:00.0 not enumerated
+# Erase + program + verify QSPI over JTAG (script interlock re-checks af:00.0):
+scripts/flash_u250.sh flash
+# Boot verification (after Slot 4 re-enable + cold power cycle):
+lspci -d 10ee: -nn                # -> af:00.0 [10ee:903f], af:00.1 [10ee:913f]
+# Shell identity: OpenNIC BUILD_TIMESTAMP CSR, BAR2 offset 0x0
+sudo python3 -c "import mmap,struct; f=open('/sys/bus/pci/devices/0000:af:00.0/resource2','r+b'); m=mmap.mmap(f.fileno(),4096); print(hex(struct.unpack('<I',m[0:4])[0]))"
+```
+
+## 3. Observations
+
+- The script's PCIe interlock passed: `0000:af:00.0` absent from sysfs
+  (Slot 4 disable in effect; slot still powered, JTAG reachable).
+- Flash-helper bitstream loaded over JTAG (`program_hw_devices`, 12 s;
+  "programmed with a design that has **1 SPI core(s)**").
+- `Performing Erase Operation... Erase Operation successful.`
+- `Performing Program and Verify Operations... Program/Verify Operation
+  successful.`
+- `INFO: [Labtoolstcl 44-377] Flash programming completed successfully` —
+  **FLASH_DONE, rc=0, elapsed 18m10s** (10:39:29 → 10:57:52).
+- **Host did not crash** — first successful on-host reconfiguration of this
+  card since the 2026-07-06 JTAG crash.
+- **10 Jul 00:45 — first post-flash power cycle, slot still disabled.** Host
+  was down 00:02→00:45 and came back cleanly on 6.8.0-124, but no Xilinx
+  device enumerated *and no root port `ae:00.0`* — only Sky Lake-E uncore
+  functions on bus `ae`. The absent root port is the BIOS Slot 4 disable
+  signature (a failed card would still show the root port with no link), so
+  this power cycle did not include the Slot 4 re-enable; boot verification
+  of the new user image has not happened yet.
+- **10 Jul 00:56 — Slot 4 re-enabled + power cycle: card boots the new
+  image.** Host up at 00:56:16; `af:00.0` [10ee:903f] / `af:00.1`
+  [10ee:913f] (subsystem 10ee:0007) enumerated, **link Gen3 8.0 GT/s x16**,
+  `onic` driver bound, netdevs `enp175s0f0/f1` present.
+- **Shell identity CSR (BAR2 offset 0x0) reads `0x07060612`** — the OpenNIC
+  `BUILD_TIMESTAMP`, confirming the running shell is the Phase 2b PYRO PR
+  build (see §4).
+
+## 4. Data analysis
+
+The slot-disable procedure works as designed: with Slot 4 un-enumerated at
+the BIOS level, the endpoint identity swap during JTAG activity never
+reaches root port ae:00.0, so no platform-firmware FATAL. Timing matches
+the ebpf-os reference run (~18 min for a full 128 Mb-addressed image with
+erase+verify). The R45a CYCLES/BYTES CSR work (spec v2.3.0, harness 2.1.0)
+does not stale this image: the counters live in per-pattern harness circuits
+delivered later as PR partials over PCIe; the static shell is unchanged.
+
+First boot resolved the remaining risk: the QSPI image configured before
+BIOS bus scan and presented valid config space, so the endpoint enumerated
+normally — no golden fallback.
+
+Shell identity is positively the Phase 2b PYRO PR build, not the prior
+stock 2022.2 OpenNIC image. OpenNIC's `build.tcl` sets `BUILD_TIMESTAMP`
+to the build's launch wall-clock formatted `%m%d%H%M` and embedded as
+literal hex digits, so `0x07060612` decodes to **Jul 6, 06:12** — exactly
+when the PR-shell build launched (`pr_launcher.sh` mtime 2026-07-06
+06:12:22 in `/usr/local/cad/gn262/pyro/`), and the flashed
+`open_nic_shell.mcs` re-hashes to the same sha256 `5603dd5c…0223e93f`
+recorded above. The stock image would report its own, older build time.
+
+## 5. Ideas for future experiments
+
+- **Next:** load the ID-stub partial over PCIe (ICAP) as the first live PR
+  test on the now-verified PR shell.
+- Rebuild the `ab+c` partial with the 2.1.0 harness (pre-2.1.0 artifacts are
+  stale per R45a) and read back the CYCLES/BYTES counters after a real scan
+  — first hardware data for R59/AC-3-3 win attribution.
+- Automate the slot dance: `racadm set BIOS.IntegratedDevices.Slot4Disable`
+  + `jobqueue create ... -r pwrcycle` (still untested).
 
 ---
 

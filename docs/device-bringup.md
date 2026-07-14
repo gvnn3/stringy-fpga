@@ -10,15 +10,41 @@ reconfiguration) shell, the in-band control protocol, and the physical
 JTAG/flash procedure.
 
 **Status as this is written: nothing in this guide has run against the new
-shell yet.** The PYRO PR shell (`open-nic-shell` @ `ce85c8d` + the `pyro`
-plugin, built with Vivado 2025.2) is still building at
-`/usr/local/cad/gn262/pyro/open-nic-shell`. The board currently carries a
-stock, non-PR OpenNIC shell built in 2022.2. Every on-device clause in the
-AC-2b suite records **SKIP**, never PASS, until the live probe actually
-answers (R71/R83) — that discipline is not a placeholder to be relaxed
-later; it is the spec's normative honesty rule, and it is enforced by the
-`pyro.device.probe_device` return value itself, not by test-author
-discretion.
+shell yet.** Every on-device clause in the AC-2b suite records **SKIP**, never
+PASS, until the live probe actually answers (R71/R83) — that discipline is not
+a placeholder to be relaxed later; it is the spec's normative honesty rule, and
+it is enforced by the `pyro.device.probe_device` return value itself, not by
+test-author discretion.
+
+> ## ⚠ HOST MOVE — 2026-07-13
+>
+> **The card is no longer in the host this guide was written for.** Everything
+> below was written against **zanetti** (Dell R740): U250 at `0000:af:00.0`/`.1`,
+> root port `ae:00.0`, PCIe Slot 4, netdevs `enp175s0f0`/`f1`, iDRAC9 at
+> 10.66.3.9, Vivado 2025.2 at `/usr/local/cad/2025.2/Vivado`, and the PYRO shell
+> build tree at `/usr/local/cad/gn262/pyro/open-nic-shell`.
+>
+> The card is now in **nf-server06** (Supermicro X99, Xeon E5 v4), at
+> **`0000:02:00.0`** (root port `0000:00:02.0`, physical slot 2). On this host:
+>
+> - The board carries its **factory golden image** (`10ee:d004`) — *not* the
+>   stock 2022.2 OpenNIC shell it carried on zanetti. There is no user image in
+>   QSPI, hence no static shell, hence nothing for a partial bitstream to load
+>   into. Bring-up requires a **full** shell image, not a partial.
+> - **Vivado is not installed** (`/usr/local/cad` does not exist, and is not an
+>   unmounted NFS share), there is **no Xilinx license** present, and the PYRO
+>   shell source/build tree did not come across with the card.
+> - **No PYRO full-shell bitstream exists on this host**, and per §7 below that
+>   build may never have completed on zanetti either. zanetti is on a different
+>   network and is not reachable from nf-server06.
+> - There is **no iDRAC**, so the slot-disablement step that made flashing safe
+>   on zanetti (§3, `scripts/README.md`) has no equivalent here.
+>
+> Netdev names, BDFs, and the iDRAC procedure below are therefore **stale**.
+> `scripts/flash_u250.sh` and `scripts/README.md` have been retargeted to
+> `0000:02:00.0`; the spec (F2/F3), `pyro/_route.py`, `pyro/device.py`, and the
+> AC-2b tests have **not** — they still declare `af:00.0` and `enp175s0f0` as
+> normative facts. That is an open spec decision, not an oversight.
 
 ## 1. Architecture overview
 
@@ -159,11 +185,26 @@ This is the **one-time initial bring-up** flash of the full image (static
 shell + default ID-stub `pyro_rp` child, §2); it is a distinct step from the
 runtime partial-load path (`pyro.device.load_partial`, R86.5, §6 below),
 which only ever reloads `pyro_rp` contents against an already-flashed
-static image. Substitute the actual full-shell `.bit`/`.mcs` produced by
-the `/usr/local/cad/gn262/pyro/open-nic-shell` build once it completes; at
-the time of writing that build is still in progress, so the exact artifact
-path is an operator-judgment fill-in, not something this document can name
-concretely yet.
+static image.
+
+**The artifact does not exist on nf-server06.** The `.bit`/`.mcs` was to come
+from the `/usr/local/cad/gn262/pyro/open-nic-shell` build on zanetti, which was
+still in progress when this guide was written and whose completion is unknown
+(§7). Nothing in §3 is executable here until that image is located on zanetti
+and copied over, or rebuilt from source on this host. Note also that JTAG
+programming on nf-server06 is untested and there is no Vivado installed to run
+`hw_server` — see §7.
+
+Two cautions on the flow above, both of which bit on zanetti:
+
+- The `program_hw_devices` call in that snippet is a **volatile** (config-RAM)
+  load. `scripts/README.md` records that there is no known safe way to run a
+  volatile load on zanetti — it is what crashed the host. Bring-up on this
+  project goes through **QSPI** (`scripts/flash_u250.sh`), which is persistent
+  and survives the cold power cycle; prefer it.
+- The bitstream must carry master-SPIx4 flash-boot config or `write_cfgmem`
+  rejects it (`[Writecfgmem 68-20]`); `scripts/gen_bit_spi.sh` re-emits a routed
+  `.dcp` with those properties.
 
 ### Stage 2 — driver unbind + PCIe rescan (THIS NEEDS ROOT)
 
@@ -176,12 +217,13 @@ step R71/§11 P1(c) names as needing "root PCIe-rescan cooperation."
 
 **THIS NEEDS ROOT.** Unbind the current driver from both physical functions
 of the card, remove the PCI devices, then rescan the bus so the kernel
-re-reads config space and re-binds:
+re-reads config space and re-binds (BDFs are **nf-server06**'s — `02:00.x`;
+on zanetti these were `af:00.x`):
 
 ```
 # THIS NEEDS ROOT
 sudo bash -c '
-  for pf in 0000:af:00.0 0000:af:00.1; do
+  for pf in 0000:02:00.0 0000:02:00.1; do
     echo "$pf" > /sys/bus/pci/devices/$pf/driver/unbind 2>/dev/null || true
     echo 1 > /sys/bus/pci/devices/$pf/remove
   done
@@ -189,7 +231,7 @@ sudo bash -c '
 '
 ```
 
-Confirm the driver actually bound to the new PFs with `lspci -k -s af:00`
+Confirm the driver actually bound to the new PFs with `lspci -k -s 02:00`
 before proceeding — the driver name to unbind/rebind from is whatever
 `lspci -k` reports as currently attached (this is an operator-verification
 step, since the exact sysfs driver path depends on the driver actually
@@ -197,6 +239,13 @@ loaded at the time). If the unbind/remove/rescan sequence does not bring
 the card back cleanly (missing BARs, netdevs not appearing), a full reboot
 is the fallback and is unconditionally safe — it always re-enumerates from
 scratch.
+
+**On nf-server06, prefer the cold power cycle outright.** A rescan is the
+*less* proven path here: the zanetti crash (uncorrectable FATAL at the root
+port when the endpoint identity swaps under a live system) was never shown to
+be R740-specific, and `scripts/README.md` records that OS-level unbind/remove
+did not prevent it there. A full AC-off power cycle loads QSPI before BIOS
+enumeration and sidesteps the question entirely.
 
 ### Stage 3 — `onic` driver rebind (verify, not necessarily an action)
 
@@ -207,11 +256,13 @@ or reload the module and confirm the expected netdevs appear:
 
 ```
 lsmod | grep onic
-ip link show enp175s0f0
-ip link show enp175s0f1
+ip link show enp2s0f0      # zanetti: enp175s0f0
+ip link show enp2s0f1      # zanetti: enp175s0f1
 ```
 
-Seeing both `enp175s0f0` and `enp175s0f1` as netdevs (even if down) is the
+Netdev names follow the PCI bus, so on nf-server06 (bus `02`) expect
+**`enp2s0f0`/`enp2s0f1`**, not the `enp175s0f0`/`f1` (bus `af` = 175) this guide
+was originally written against. Seeing both as netdevs (even if down) is the
 practical sign that the shell reflash + rescan succeeded at the PCIe/driver
 level. This is necessary but not sufficient for `device_usable` — it only
 confirms the netdev exists; the R83 probe (§5) is what actually validates
@@ -262,7 +313,7 @@ read ad hoc):
 
 | Variable | Default | Effect |
 |---|---|---|
-| `PYRO_DEVICE_IFACE` | `enp175s0f0` | The `onic` netdev name the device transport binds for the `AF_PACKET` path. Override if your card enumerates on a different interface name or you want to target the second port (`enp175s0f1`). |
+| `PYRO_DEVICE_IFACE` | `enp175s0f0` | The `onic` netdev name the device transport binds for the `AF_PACKET` path. **On nf-server06 this default is wrong and MUST be overridden** — the card is on PCI bus `02`, so the netdev is `enp2s0f0` (or `enp2s0f1` for the second port), not the bus-`af` name the spec's F3 fact declares. Set `PYRO_DEVICE_IFACE=enp2s0f0`. The library default still follows spec F3 (`pyro/device.py`), which has not been re-declared for the new host. |
 | `PYRO_HW_SERVER` | `TCP:localhost:3121` | The Vivado `hw_server` URL the JTAG loader connects to (R85/R86.5). Override if `hw_server` is not running on the default port, or is reached via a different host. |
 
 Everything else device-related — the expected `PYRO_SHELL_SPEC16`
@@ -370,17 +421,27 @@ QDMA/PCIe path can trigger on its own.
   claim the procedure has been executed successfully yet.
 - The PR shell build (`open-nic-shell` @ `ce85c8d` + the `pyro` plugin,
   Vivado 2025.2, at `/usr/local/cad/gn262/pyro/open-nic-shell`) was still
-  in progress as this guide was written. The artifact set in §2 describes
-  what the build is expected to produce; none of those files existed on
-  this host at time of writing.
-- The board currently carries a stock, non-PR OpenNIC shell (Vivado
-  2022.2, May 2023) — flashing the PYRO PR shell (§3) has not yet
-  happened, `CAP_NET_RAW` has not yet been granted to a test-runner
-  process (§4), and consequently the probe (§5) has never yet been run
-  against real hardware from this host.
-- JTAG programmability and PCIe-rescan/root cooperation are both confirmed
-  **non-blockers** in principle (JTAG verified working 2026-07-06; the
-  board is the owner's own, so reprogramming and driver-rebind cooperation
-  are both permitted) — but "non-blocker" describes permission and
-  mechanism availability, not that the sequence has already been run to
-  completion.
+  in progress as this guide was written, **on zanetti**. The artifact set in §2
+  describes what the build is expected to produce. **Whether that build ever
+  completed is unknown**, and zanetti is not reachable from nf-server06 — so as
+  of 2026-07-13 it is not established that a PYRO full-shell bitstream exists
+  anywhere. Establishing that is the pacing item for all of §3.
+- On nf-server06 the board carries its **factory golden image** (`10ee:d004`),
+  not the stock 2022.2 OpenNIC shell it carried on zanetti. Flashing the PYRO
+  PR shell (§3) has not happened, `CAP_NET_RAW` has not been granted to a
+  test-runner process (§4), and the probe (§5) has never been run against real
+  hardware.
+- **The toolchain did not move with the card.** Vivado is not installed on
+  nf-server06, no Xilinx license is present, and the shell source tree is
+  absent. §3 cannot be executed here until at minimum a full-shell `.bit` and a
+  Vivado (or Lab Edition / hardware-server) install exist on this host.
+- JTAG programmability is a confirmed **non-blocker in principle** (verified
+  working on zanetti 2026-07-06; the FT4232H cable is attached to nf-server06
+  and the board is the owner's own, so reprogramming is permitted) — but
+  "non-blocker" describes permission and mechanism availability, not that the
+  sequence has been run to completion, and JTAG has **not** been exercised on
+  nf-server06 yet.
+- The zanetti PCIe-fatal-on-live-reconfiguration hazard (`scripts/README.md`)
+  is **unresolved, not disproven**, for this host. It has been *elected* to be
+  treated as R740-specific; that election is recorded as the explicit
+  `PYRO_FLASH_ALLOW_LIVE_PCIE=1` override in `flash_u250.sh`, not as a finding.

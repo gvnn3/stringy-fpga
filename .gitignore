@@ -2,3 +2,13 @@
 build/
 __pycache__/
 *.pyc
+
+# Vivado / DFX build outputs and run detritus
+hw/dfx/build/
+clockInfo.txt
+cong/
+hd_visual/
+.Xil/
+*.jou
+vivado*.log
+tight_setup_hold_pins.txt
