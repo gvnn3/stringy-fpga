@@ -17,15 +17,101 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-2. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-3. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-4. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-5. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-6. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-7. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-8. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-9. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+2. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+3. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+4. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+5. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+6. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+7. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+8. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+9. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+10. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+
+---
+
+# EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed :complete:
+
+## 1. Hypothesis
+
+The counter wedge (previous entry §3) can be characterised to a deterministic
+trigger, the workaround-defeating observation explained, and a minimal fix
+landed whose regression test provably fails on the unfixed code.
+
+## 2. How
+
+Characterise → fix → adversarially verify (two lenses: efficacy incl.
+sabotage of the fix; regression on both builds). Full blast-radius audit of
+every pyro-internal consumption of the patched `re` surface.
+
+## 3. Observations
+
+- **Mechanism, at file:line precision.** `install()` patches stdlib `re`; the
+  first post-install `explain(eligible)` lazily imports `pyro.synth`; that
+  cascade imports stdlib `dataclasses` for the *first* time, whose module-level
+  `re.compile` now returns a PyroPattern; dataclasses' string-annotation checks
+  call it 33+ times, crossing `N_REUSE=32` → model verdict →
+  `_consult_residency` re-enters **mid-import** → the nested
+  `from .synth import residency` yields a **partially initialized module**,
+  whose failed import importlib then evicts from `sys.modules` — but the corpse
+  is already cached in `_route._residency`, and the `if res is None` guard
+  never replaces it. Every later consult hits
+  `AttributeError: no attribute 'get_manager'`, swallowed; the R4a launch
+  policy is dead for the process. `uninstall()` does not heal it.
+- **Why install-then-dispatch never wedged:** when `_consult_residency` itself
+  initiates the import, its *outer* frame's assignment runs last and
+  overwrites any nested corpse. Only explain()/stats()/prewarm-initiated first
+  imports leave the corpse as the final write. The asymmetry that made the bug
+  look flaky.
+- **The workaround-defeater, explained.** Prime-before-install only disarms
+  the trigger if the priming pattern is *eligible* — `pyro/re.py` imports
+  residency inside `if eligible:`. A fallback-only prime (e.g. `(a)\1`)
+  returns normally, looks successful, and imports nothing. Also: the trigger
+  never fires under pytest, which pre-imports `dataclasses` — why the suite
+  was blind to it (the regression test spawns a fresh interpreter).
+- **Fix:** (1) re-entrancy-safe cache — `_residency` is assigned only once the
+  module proves complete (`hasattr(res, "get_manager")`; the symbol is defined
+  at the end of residency.py, so its presence proves the body ran); an
+  incomplete module serves the current consult but is never cached. (2) Blast
+  radius: `identity.py`/`toolchain.py`/`_circuit_model.py` now take
+  `_stock_compile` from `pyro._model` (captured at `import pyro`, provably
+  pre-install) instead of compiling through possibly-patched `re` on lazy
+  import. (3) The exception swallows that hid the wedge now record into
+  `_route._RESIDENCY_CONSULT_FAILURES` — diagnostics, not part of the R31/R66
+  shapes. Sabotage-proof: guard removed → regression test fails; restored →
+  passes. Trigger on fixed tree: `synth_launched=1`, `circuit_status=resident`.
+- Suites: native **1187 / 3**, pure **1150 / 40** — baselines + exactly the
+  one new regression test, zero failures. The prime-before-install workaround
+  in `phase3_workers` is removed; AC-3-1 still transitions.
+- **Process incident worth recording:** the two adversarial verifiers ran
+  `git stash` sabotage cycles *concurrently in the same working tree* and
+  raced — one verifier observed (correctly, at that instant) the load-bearing
+  guard missing. The tree's final state was intact, but `_route.py` was then
+  lost to a careless `git checkout` during single-writer re-verification and
+  had to be reconstructed by replaying the agents' successful Edit operations
+  from their transcripts (applied 19:00 fix + 19:25 rewrite, reversed the
+  19:46 sabotage). Verified clean afterwards: guard present, sabotage bites,
+  both suites green. Lesson: sabotage-style verification MUST be single-writer;
+  concurrent verifiers get read-only trees or worktree isolation.
+
+## 4. Data analysis
+
+Three compounding hazards, each individually survivable: a lazy import
+cascade that can be initiated from multiple call sites with different healing
+properties; stdlib modules executing pattern compiles at import time through a
+patched surface; and a cache-on-first-write of a module object mid-import.
+The fix attacks the third (never cache an unproven module) and the second
+(internal consumers hold pre-install references), which also makes the first
+harmless. The residual disclosed honestly: during the one trigger-window
+import, eligible dispatches are still uncounted (dozens of consults fail and
+are now *recorded*, not hidden) — the launch policy self-heals immediately
+after, which is behaviourally invisible at any realistic `PYRO_N_SYNTH`.
+
+## 5. Ideas for future experiments
+
+- AC-3-2 (post-A2 ruling) should assert `_RESIDENCY_CONSULT_FAILURES == 0`
+  across its tier-transition runs — turning the diagnostic into a canary.
+- Worktree isolation for any future multi-verifier sabotage workflow.
 
 ---
 

@@ -395,6 +395,26 @@ def _utf8_transportable(s: str) -> bool:
 # pattern (R65).  It never raises into a caller (R52/R65).
 _residency = None
 
+# --- residency-consultation diagnostics (AC-3-1 counter-wedge review) ------
+# _consult_residency below MUST NOT raise into a dispatch (R52/R65), so it
+# swallows every exception.  But a swallowed failure here can mask a dead R4a
+# launch policy for the whole process (the "counter wedge": ``_residency``
+# pinned to a partially-initialized pyro.synth.residency module whose import
+# attempt died, so every consult raises AttributeError).  Narrowing the except
+# is NOT safe — the wedge's own failure classes (ImportError, AttributeError)
+# are exactly the ones that must not escape into user regex calls — so the
+# swallowed failure is recorded observably instead.  Diagnostics only: not part
+# of the R52/R66 stats() shape, never patched onto the stdlib ``re`` namespace,
+# written only on the (exceptional) failure path.
+_RESIDENCY_CONSULT_FAILURES = 0
+_LAST_RESIDENCY_CONSULT_ERROR = None
+
+
+def _note_residency_failure(exc: BaseException) -> None:
+    global _RESIDENCY_CONSULT_FAILURES, _LAST_RESIDENCY_CONSULT_ERROR
+    _RESIDENCY_CONSULT_FAILURES += 1
+    _LAST_RESIDENCY_CONSULT_ERROR = "%s: %s" % (type(exc).__name__, exc)
+
 
 def _consult_residency(patt, string) -> bool:
     """Register a HW-eligible dispatch and return ``True`` to force fallback.
@@ -409,12 +429,30 @@ def _consult_residency(patt, string) -> bool:
         res = _residency
         if res is None:
             from .synth import residency as res  # cached in sys.modules
-            _residency = res
+            # Re-entrancy guard (AC-3-1 counter wedge): when the FIRST import
+            # of pyro.synth is initiated elsewhere (explain()/stats()/prewarm)
+            # while pyro.install() is active, stdlib modules first imported by
+            # that lazy cascade (dataclasses, pickle) run module-level code
+            # through the *patched* ``re`` and re-enter this consult
+            # MID-IMPORT.  The nested import statement above can then yield a
+            # partially initialized ``residency`` module whose own import
+            # attempt subsequently fails, so importlib evicts it from
+            # sys.modules — caching that object would pin a permanent corpse
+            # (no ``get_manager``) and silently kill the R4a launch policy for
+            # the whole process.  ``get_manager`` is defined at the very end
+            # of residency.py, so its presence proves the module body
+            # completed; cache only then.  An incomplete module still serves
+            # this one consult below (raising AttributeError into the
+            # swallow/record path) but is never cached, and the next consult
+            # after the outer import completes picks up the healthy module.
+            if hasattr(res, "get_manager"):
+                _residency = res
         enc = ENC_UTF8 if isinstance(string, str) else ENC_BYTES
         outcome = res.get_manager().note_eligible_dispatch(
             patt._stock.pattern, patt._stock.flags, enc)
         return outcome == res.ROUTE_PERMANENT_FALLBACK
-    except Exception:
+    except Exception as exc:
+        _note_residency_failure(exc)
         return False
 
 

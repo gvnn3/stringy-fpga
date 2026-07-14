@@ -127,6 +127,17 @@ def purge():
     _stock_purge()
 
 
+# --- residency-consultation diagnostics (AC-3-1 counter-wedge review) ------
+# explain()/stats() below MUST stay total (R31/R66), so their residency
+# consultation swallows every exception; the same class of swallowed failure
+# in _route._consult_residency is what hid the counter wedge.  Narrowing the
+# excepts is NOT safe (the wedge's own ImportError/AttributeError are exactly
+# what must not escape), so swallowed failures are recorded observably in
+# :mod:`pyro._route` (the canonical diagnostic seam shared with the dispatch
+# path — see _route._RESIDENCY_CONSULT_FAILURES / _LAST_RESIDENCY_CONSULT_ERROR).
+# Diagnostics only: not part of the R31 explain() dict or the R52/R66 stats()
+# shape, never patched onto the stdlib ``re`` namespace.
+
 # --- PYRO-specific introspection (R31) — NOT patched onto stdlib re --------
 def explain(pattern, flags=0) -> dict:
     """Return the HW-eligibility verdict for ``(pattern, flags)`` (R31).
@@ -158,8 +169,8 @@ def explain(pattern, flags=0) -> dict:
         try:
             from .synth import residency as _res
             circuit_status = _res.get_manager().tier(pattern, flags)
-        except Exception:
-            pass
+        except Exception as exc:
+            _route._note_residency_failure(exc)
     return {
         "eligible": eligible,
         "reason": reason,
@@ -182,6 +193,6 @@ def stats() -> dict:
     try:
         from .synth import residency as _res
         s.update(_res.get_manager().stats())
-    except Exception:
-        pass
+    except Exception as exc:
+        _route._note_residency_failure(exc)
     return s

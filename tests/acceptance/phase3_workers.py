@@ -269,20 +269,16 @@ def cmd_corpus(program, mode):
         import pyro
         import pyro.re as _pre
         pre = _pre
-        # Prime the diagnostics surface BEFORE installing.  explain()/stats()
-        # lazily construct the residency manager and import the HDL estimator
-        # on first use; if that first use happens while install() is active,
-        # pyro's own internal `re` traffic routes through the patched module
-        # and re-enters the construction path — empirically the R4a launch
-        # policy then never ticks for the whole process (dispatches stop being
-        # counted; see the phase3 infra report).  Priming here keeps the lazy
-        # construction on genuine stock `re`, exactly as in any process that
-        # touches pyro.re diagnostics before installing.  It makes NO
-        # dispatches and does not tick the reuse counter (explain is R66
-        # non-perturbing), so the corpus still starts cold at call 0.
-        if key_pat is not None:
-            pre.explain(key_pat, key_flags)
-        pre.stats()
+        # NOTE: this harness used to "prime" explain()/stats() BEFORE
+        # install() to dodge the AC-3-1 counter wedge (the R4a launch policy
+        # died process-wide if pyro's lazy residency construction first ran
+        # while install() was active).  The wedge is fixed at the root —
+        # pyro._route._consult_residency no longer caches a partially
+        # initialized residency module (see tests/unit/test_counter_wedge.py)
+        # — and the workaround was unreliable anyway (a fallback-only or
+        # invalid key pattern primed nothing), so it is deliberately GONE:
+        # this worker now exercises the plain install()-first ordering a real
+        # program would use.
         pyro.install()
 
     def snap(at):

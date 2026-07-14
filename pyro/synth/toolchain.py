@@ -33,6 +33,15 @@ from typing import List, Optional, Tuple
 from . import artifact as _artifact
 from .manifest import Manifest, payload_crc32
 
+# Stock compiler captured at ``import pyro`` time (pyro._model is imported
+# transitively by pyro/__init__, always before install() can patch stdlib re).
+# This module is imported LAZILY — possibly while pyro.install() is active —
+# so module-level ``re.compile`` here would capture the *patched* compiler and
+# route pyro's own report-parsing regexes through the dispatch layer (spurious
+# R66 stats / reuse ticks, launch-policy pollution; AC-3-1 counter-wedge
+# review).  ``re`` is still imported above for the (unpatched) flag constants.
+from .._model import _stock_compile
+
 # Pinned tool/shell versions — part of the R4/R47b cache key precisely because
 # artifacts are NOT portable across tool/shell versions (P11).  A real Phase-2
 # flow substitutes the true Vivado + open-nic-shell versions here.
@@ -246,19 +255,19 @@ def _stub_payload(job: SynthJob) -> bytes:
 # 2025.2 renders the row as "CLB LUTs*" (footnote asterisk) in both flat and
 # -cells-scoped reports (verified empirically on this host, W3-b); the marker
 # is absent in other configurations, so it is optional here.
-_RE_CLB_LUTS = re.compile(r"^\|\s*CLB LUTs\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
-_RE_CLB_FFS = re.compile(r"^\|\s*CLB Registers\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
+_RE_CLB_LUTS = _stock_compile(r"^\|\s*CLB LUTs\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
+_RE_CLB_FFS = _stock_compile(r"^\|\s*CLB Registers\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
 # WNS marker emitted by the flow tcl.  Vivado's `format %.4f` guarantees a plain
 # fixed-point decimal ("PYRO_METRIC:WNS:2.4050"), so no exponent/odd formatting
 # can slip past this regex; the sentinel "NONE" (no setup timing paths) is
 # matched separately and mapped to SynthesisFailed (R65).
-_RE_WNS = re.compile(r"^PYRO_METRIC:WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
-_RE_WNS_NONE = re.compile(r"^PYRO_METRIC:WNS:NONE\s*$", re.MULTILINE)
+_RE_WNS = _stock_compile(r"^PYRO_METRIC:WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
+_RE_WNS_NONE = _stock_compile(r"^PYRO_METRIC:WNS:NONE\s*$", re.MULTILINE)
 # R82c: emitted only after pr_verify -full_check passes (the PR flow's hard gate).
-_RE_PR_VERIFY_PASS = re.compile(r"^PYRO_METRIC:PR_VERIFY:PASS\s*$", re.MULTILINE)
+_RE_PR_VERIFY_PASS = _stock_compile(r"^PYRO_METRIC:PR_VERIFY:PASS\s*$", re.MULTILINE)
 # `vivado -version` first line: "vivado v2025.2 (64-bit)" (R70a-pin).  The
 # regex is release-agnostic (major.minor), so it also parses the retired 2023.1.
-_RE_VIVADO_VER = re.compile(r"v(\d+)\.(\d+)")
+_RE_VIVADO_VER = _stock_compile(r"v(\d+)\.(\d+)")
 
 
 # NOTE (R70a-pin, v2.2.1): the pinned **Vivado 2025.2** officially supports this
@@ -758,11 +767,11 @@ class VivadoToolchain:
 # ("incompatible" cannot satisfy the OK pattern: \bcompatible\b has no word
 # boundary inside "incompatible".)  Final phrasing check against live
 # pr_verify output remains a release gate for the first real PR job.
-_RE_PR_VERIFY_FAIL = re.compile(
+_RE_PR_VERIFY_FAIL = _stock_compile(
     r"critical\s+warning|\bnot\s+compatible\b|\bincompatible\b|\bfailed\b(?!\s*:\s*0\b)"
     r"|^\s*ERROR[: ]|(?:differences|mismatches)[^:\n]*:\s*[1-9]",
     re.IGNORECASE | re.MULTILINE)
-_RE_PR_VERIFY_OK = re.compile(r"\bcompatible\b|\bpassed\b", re.IGNORECASE)
+_RE_PR_VERIFY_OK = _stock_compile(r"\bcompatible\b|\bpassed\b", re.IGNORECASE)
 
 
 def _validate_pr_verify_report(path: str) -> None:

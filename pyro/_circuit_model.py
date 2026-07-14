@@ -32,7 +32,6 @@ bind it under the C ABI.
 
 from __future__ import annotations
 
-import re as _re
 import re._constants as _c
 import threading
 from bisect import bisect_left
@@ -48,10 +47,15 @@ from .hdl import automaton as _auto
 from ._model import (
     MatchWindow, FLAG_VERIFIED, FLAG_ZERO_WIDTH, ENC_BYTES, ENC_UTF8,
     DeviceError, UnsupportedPattern, utf8_prefix,
+    _stock_compile,
 )
 
-# Stock compiler captured at import time (install() may rebind re.compile).
-_stock_compile = _re.compile
+# The stock compiler comes from pyro._model, which captured it at ``import
+# pyro`` time — always before install() can rebind re.compile.  THIS module is
+# imported lazily (test / native-harness paths only), so capturing
+# ``_re.compile`` here would grab the *patched* compiler when first imported
+# while installed (double-wrap / recursion hazard on the verification paths;
+# AC-3-1 counter-wedge review).
 
 _WORD_BYTES = frozenset(
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_")

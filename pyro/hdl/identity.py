@@ -21,9 +21,16 @@ superset of the spec's key; see the Task-5 report.
 from __future__ import annotations
 
 import hashlib
-import re as _re
 import re._parser as _sre
 from typing import Tuple
+
+# Stock compiler captured at ``import pyro`` time (pyro._model is imported
+# transitively by pyro/__init__, always before install() can patch stdlib re).
+# This module is imported LAZILY — possibly while pyro.install() is active —
+# so a module-level ``re.compile`` here would capture the *patched* compiler
+# and route pyro's own identity regexes through the dispatch layer (spurious
+# R66 stats / reuse-counter ticks; AC-3-1 counter-wedge review).
+from .._model import _stock_compile
 
 # packed CIRC_FLAGS: low16 = baked re flags, hi16 = NUM_PAT (R45 0x0028).
 _PUBLIC_FLAG_MASK = 0xFFFF
@@ -33,8 +40,8 @@ _PUBLIC_FLAG_MASK = 0xFFFF
 # are pure syntax for the effective flag set and MUST be canonicalized away so
 # that ``(?i)abc`` and ``abc`` + ``re.I`` hash identically (R47a v2.0.1).  Scoped
 # groups ``(?i:...)`` and clearing groups ``(?-i:...)`` are semantic and stay.
-_GLOBAL_FLAGS_STR = _re.compile(r"^(?:\(\?[aiLmsux]+\))+")
-_GLOBAL_FLAGS_BYTES = _re.compile(rb"^(?:\(\?[aiLmsux]+\))+")
+_GLOBAL_FLAGS_STR = _stock_compile(r"^(?:\(\?[aiLmsux]+\))+")
+_GLOBAL_FLAGS_BYTES = _stock_compile(rb"^(?:\(\?[aiLmsux]+\))+")
 
 
 def _strip_global_flags(pattern):
