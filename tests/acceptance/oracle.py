@@ -12,6 +12,48 @@ Spec constants used across the suite:
 
 import re as _re
 
+# --------------------------------------------------------------------------
+# Stock-callable capture (booby-trap fix, Phase 3).
+#
+# ``assert_equivalent`` computes its EXPECTED side from stock ``re``.  Looking
+# the functions up on the ``re`` module AT CALL TIME (``getattr(_re, name)``)
+# is a booby-trap under ``pyro.install()``: install() rebinds
+# re.search/match/... to PYRO's implementations (R34), so any comparison made
+# while installed would compare PYRO against PYRO and pass VACUOUSLY.  We
+# therefore capture the stock callables ONCE, at oracle import, into _STOCK
+# and compute every expectation from that table.  Existing pre-install callers
+# are unaffected: the captured functions are exactly what the call-time
+# getattr returned before install().
+# --------------------------------------------------------------------------
+_STOCK_NAMES = ("search", "match", "fullmatch", "findall", "finditer",
+                "sub", "subn", "split", "compile")
+_STOCK = {name: getattr(_re, name) for name in _STOCK_NAMES}
+
+# Defend the capture itself: if this module were first imported while
+# pyro.install() is active, _STOCK would capture PYRO's patched functions and
+# the fix above would be moot.  PYRO's replacements are defined in the
+# ``pyro.re`` module; stock re's are defined in ``re``.  Fail loudly at import
+# rather than silently become a vacuous oracle.
+for _n, _fn in _STOCK.items():
+    if getattr(_fn, "__module__", "").startswith("pyro"):
+        raise ImportError(
+            f"oracle imported while pyro.install() is active: re.{_n} is "
+            f"{_fn!r} (module {_fn.__module__}); the oracle must capture "
+            "STOCK callables — import oracle (or run pyro.uninstall()) "
+            "before installing")
+del _n, _fn
+
+
+def stock(name):
+    """The STOCK ``re`` callable ``name``, captured at oracle import.
+
+    Immune to ``pyro.install()``: use this (never a call-time attribute lookup
+    on the ``re`` module) whenever an expectation must be computed while the
+    interposition shim may be installed.
+    """
+    return _STOCK[name]
+
+
 S_MIN = 64 * 1024          # R2: 64 KiB
 N_REUSE = 32               # R2: N_reuse
 ABI_EXPECTED = 0x00010000  # R37 / AC-0-8: ABI 1.0.0 packed MAJOR<<16|MINOR<<8|PATCH
@@ -70,32 +112,35 @@ def assert_equivalent(pyro_mod, pattern, subject, flags=0, label=""):
 
     Covers search/match/fullmatch/findall/finditer/sub/subn/split (R16, R29,
     R54).  ``pyro_mod`` is normally ``pyro.re`` (or the patched ``re`` under
-    install()).  Expectations come from stock ``re`` computed here.
+    install()).  Expectations come from the STOCK ``re`` callables captured at
+    oracle import (``_STOCK``) — never from a call-time attribute lookup on
+    the ``re`` module — so the comparison stays honest while pyro.install()
+    is active (see the booby-trap note at the top of this module).
     """
     tag = f"[{label}] pat={pattern!r} flags={int(flags)} subj={subject!r}"
 
     for name in ("search", "match", "fullmatch"):
-        exp = canon_match(getattr(_re, name)(pattern, subject, flags))
+        exp = canon_match(_STOCK[name](pattern, subject, flags))
         act = canon_match(getattr(pyro_mod, name)(pattern, subject, flags))
         assert act == exp, f"{name} mismatch {tag}\n  expected={exp}\n  actual  ={act}"
 
-    exp_fa = _re.findall(pattern, subject, flags)
+    exp_fa = _STOCK["findall"](pattern, subject, flags)
     act_fa = pyro_mod.findall(pattern, subject, flags)
     assert act_fa == exp_fa, f"findall mismatch {tag}\n  expected={exp_fa}\n  actual={act_fa}"
 
-    exp_fi = canon_iter(_re.finditer(pattern, subject, flags))
+    exp_fi = canon_iter(_STOCK["finditer"](pattern, subject, flags))
     act_fi = canon_iter(pyro_mod.finditer(pattern, subject, flags))
     assert act_fi == exp_fi, f"finditer mismatch {tag}\n  expected={exp_fi}\n  actual={act_fi}"
 
     for repl in _repls(subject):
-        exp_s = _re.sub(pattern, repl, subject, 0, flags)
+        exp_s = _STOCK["sub"](pattern, repl, subject, 0, flags)
         act_s = pyro_mod.sub(pattern, repl, subject, 0, flags)
         assert act_s == exp_s, f"sub mismatch {tag} repl={repl!r}\n  expected={exp_s!r}\n  actual={act_s!r}"
-        exp_sn = _re.subn(pattern, repl, subject, 0, flags)
+        exp_sn = _STOCK["subn"](pattern, repl, subject, 0, flags)
         act_sn = pyro_mod.subn(pattern, repl, subject, 0, flags)
         assert act_sn == exp_sn, f"subn mismatch {tag} repl={repl!r}\n  expected={exp_sn!r}\n  actual={act_sn!r}"
 
-    exp_sp = _re.split(pattern, subject, 0, flags)
+    exp_sp = _STOCK["split"](pattern, subject, 0, flags)
     act_sp = pyro_mod.split(pattern, subject, 0, flags)
     assert act_sp == exp_sp, f"split mismatch {tag}\n  expected={exp_sp!r}\n  actual={act_sp!r}"
 

@@ -62,7 +62,20 @@ _ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
              # passing pr_verify (R82c) that flips pr_flow_present true (R83a). No
              # default; fail-closed. Populates ToolchainConfig.pr_evidence_manifest.
              # Saved/cleared/restored per test so the full-true polarity leaves no residue.
-             "PYRO_PR_EVIDENCE_MANIFEST")
+             "PYRO_PR_EVIDENCE_MANIFEST",
+             # Harness-only knob (Phase 1/2/3 workers + phase3_support.poll_tier):
+             # worker-side synthesis-poll deadline in seconds. Not sampled by pyro
+             # itself, but registered here so a test that writes it into os.environ
+             # can never make later tests' workers inherit a skewed deadline
+             # (order-independence; Phase-3 trap 5). Tests normally pass it to
+             # workers via extra_env (subprocess env only).
+             "PYRO_TEST_SYNTH_TIMEOUT")
+# NOTE (deliberate NON-registration): PYRO_NO_NATIVE is NOT in _ENV_KEYS. It
+# selects the pure-Python router at pyro import time and the suite is run once
+# natively and once under PYRO_NO_NATIVE=1; per-test clearing would silently
+# flip worker SUBPROCESSES back to the native router mid-run, making the
+# pure-Python run's coverage vacuous. Tests must never write it to os.environ;
+# workers inherit it pass-through (see phase3_support._worker_env).
 
 
 # --------------------------------------------------------------------------

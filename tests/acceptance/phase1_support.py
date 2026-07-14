@@ -31,8 +31,13 @@ def _worker_env(cache_dir, extra_env):
     env["PYRO_CACHE_DIR"] = str(cache_dir)
     env["PYTHONPATH"] = REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
     # Start from a clean routing / test-hook config; caller/worker opt in.
+    # PYRO_TEST_SYNTH_TIMEOUT (harness poll deadline) is popped for the same
+    # reason: workers take it via extra_env, never from ambient os.environ, so
+    # no test can skew another test's worker deadline (order-independence).
+    # PYRO_NO_NATIVE is deliberately NOT popped: the router selection of the
+    # enclosing suite run (native vs pure-Python) must pass through to workers.
     for k in ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
-              "PYRO_N_SYNTH"):
+              "PYRO_N_SYNTH", "PYRO_TEST_SYNTH_TIMEOUT"):
         env.pop(k, None)
     if extra_env:
         env.update({k: str(v) for k, v in extra_env.items()})

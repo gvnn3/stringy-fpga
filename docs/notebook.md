@@ -17,14 +17,121 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-2. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-3. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-4. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-5. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-6. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-7. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-8. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+2. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+3. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+4. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+5. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+6. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+7. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+8. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+9. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+
+---
+
+# EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found :complete:
+
+## 1. Hypothesis
+
+AC-3-1 (R60 transparency regression under `install()`, incl. mid-run tier
+transitions) and AC-3-4 (stats/lifecycle counters under fault + synth-failure
+injection) can be delivered **without any spec change** — R60 deliberately does
+not enumerate its corpus, and the R67 seam set suffices if tier transitions are
+deadline-polled rather than awaited (the `await_synthesis` seam is amendment
+A2, pending owner review). The known failure mode for this class of test is
+the **vacuous pass** — a suite that passes on a broken build — so every
+mechanism must carry a positive assertion that it *fired*, and the review
+must attempt real sabotage, not code reading.
+
+## 2. How
+
+- **Infra:** fixed the oracle booby-trap (`oracle.py` captured stock callables
+  at call time, so under `install()` it compared pyro against pyro —
+  vacuously green; it now captures a `_STOCK` table at import and *refuses to
+  import* while installed). `phase3_support.py`/`phase3_workers.py`: corpus
+  programs run in worker processes with isolated `PYRO_CACHE_DIR`, mock
+  toolchain forced (`_worker_env` pops `PYRO_TOOLCHAIN`/`PYRO_VIVADO` so a
+  leaked vivado pin can never reach a corpus worker — Vivado is installed on
+  this host now, and that leak would launch real hours-long synthesis from a
+  unit test).
+- **AC-3-1:** `programs.py` — the R60 corpus (the module *is* the corpus
+  definition): log-scanner (≥64 KiB subjects — the tier-transition vehicle),
+  tokenizer, config parser, `re.sub` with callable repl, walrus, `finditer`/
+  `groupdict` dispatch, `except re.error` flow, AC-1-7 bug-derived shapes.
+  Full per-call sequence compared stock-vs-installed (jsonify both sides;
+  exceptions by type AND `str(e)` AND `re.error` fields). Deliberate
+  exclusions (HybridMatch type name, `m.re`, `repr`, pickle — R36a/spec-known)
+  documented in the docstring as spec-level, not bugs.
+- **AC-3-4:** counter shape/monotonicity (the two gauges rise AND fall),
+  dispatch attribution per regime, `hardware` reported honestly as 0 and
+  never incremented by model dispatches, `inject_synth_failure` → R65
+  permanent-fallback with byte-identical results, fault seams →
+  `fallback_after_error`, and N×M threaded loss-regime calls → `fallback ==
+  N*M` exactly (exercises the native per-thread TLS blocks + retired-thread
+  fold). Both builds.
+- **Verification:** three adversarial lenses; the vacuous-pass lens ran REAL
+  sabotage — `install()` no-op'd, oracle fix reverted, tier promotion stubbed,
+  injection no-op'd — and confirmed each suite FAILS loudly under its
+  sabotage, then restored.
+
+## 3. Observations
+
+- Suites (native / `PYRO_NO_NATIVE=1`), clean box, after removing stray state:
+  **1186 passed / 3 skipped** and **1149 passed / 40 skipped** — ledgers
+  reconcile at 1189; zero failures; no `~/.cache/pyro` residue; no leaked
+  workers (earlier forkserver orphans traced to killed pytest runs, not to
+  clean runs).
+- Tier transition positively observed from test code, both R51-step-4 arms:
+  size arm (`log_hunter`, ≥64 KiB, `PYRO_N_SYNTH=2`) sequence
+  cold→synthesizing→warm→resident; reuse arm (`field_extractor`, ≥32 reuses,
+  first hot snapshot ≥ call 33). `synth_launched > 0 AND synth_succeeded > 0`
+  asserted; outputs byte-identical before AND after the flip.
+- All three lenses: **refuted=false**. Caveats worth keeping: the
+  transition assertions are timing-fragile under heavy host load (45 s poll
+  deadline); the conftest `~/.cache/pyro` residue check is vacuous when the
+  cache pre-exists (it only detects *creation*).
+- **A genuine product bug (NOT fixed here — needs triage): the counter wedge.**
+  If the residency manager / HDL estimator is *first constructed while
+  `install()` is active* (e.g. the process's first `explain()` happens
+  post-install), pyro's own internal `re` usage re-enters the patched module
+  during lazy construction, and from then on the R4a launch policy silently
+  stops ticking for the whole process: eligible dispatches are no longer
+  counted, `circuit_status` stays `cold`, and `explain()`'s internal
+  try/except hides the failure. Install-then-dispatch works; the wedge needs
+  explain-before-first-dispatch-while-installed. One review run hit it
+  **despite** the documented prime-before-install workaround, so the trigger
+  surface is broader than currently understood. This lands squarely on
+  AC-3-2 (automatic tier dispatch), which cannot honestly pass while the
+  wedge exists.
+
+## 4. Data analysis
+
+The oracle booby-trap is the single most consequential fix in this batch:
+every future differential test under `install()` would have been silently
+vacuous. The sabotage protocol (break the mechanism, demand the test fail,
+restore) is cheap — minutes per mechanism — and it is the only review step
+that distinguishes an acceptance test from a green rubber stamp; reading the
+test code does not. It also produced the one nearest-miss worth recording:
+`test_results_byte_identical_throughout_failure_injection` survives an
+injection no-op *alone* (result-identity genuinely holds either way), and is
+non-vacuous only because its sibling assertions over the same fixture fail —
+class-level coverage, acceptable but worth knowing.
+
+The counter wedge is a re-entrancy bug with the same shape as the oracle trap:
+pyro consuming its *own* patched surface. Anything pyro-internal that touches
+`re` after `install()` is suspect; the fix direction is for pyro's internals
+to hold pre-install references (exactly what the oracle fix did for tests).
+
+## 5. Ideas for future experiments
+
+- **Fix the counter wedge** as the opening act of AC-3-2 (blocked on amendment
+  A2 for the `await_synthesis`/strict-residency seams). Reproduce it
+  deterministically first — the workaround-defeating trigger seen in review is
+  not yet characterised.
+- AC-3-3 benchmark suite once A1 (R3b.1–R3b.4) is ruled on.
+- Harden the conftest residue check: record `~/.cache/pyro`'s mtime/contents
+  at session start rather than mere existence.
+- Consider a `performance`-governor calibration run before AC-3-3 lands in CI.
 
 ---
 
