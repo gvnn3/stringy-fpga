@@ -3,6 +3,9 @@ build/
 __pycache__/
 *.pyc
 
+# Native routing extension (pyro._fast) — built in-tree, not committed (R3b/R3c)
+pyro/_fast*.so
+
 # Vivado / DFX build outputs and run detritus
 hw/dfx/build/
 clockInfo.txt

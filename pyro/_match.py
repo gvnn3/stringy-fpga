@@ -12,6 +12,7 @@ through the decision logic in :mod:`pyro._route`.
 
 from __future__ import annotations
 
+import os
 from typing import Tuple
 
 # Module-level binding (not name import) so the _match <-> _route cycle
@@ -183,11 +184,18 @@ class HybridMatch:
         return "<pyro.Match span=%r match=%r>" % (self._span0, self._slice0)
 
 
-class PyroPattern:
-    """Drop-in for ``re.Pattern`` (R27).
+class PyPattern:
+    """Pure-Python drop-in for ``re.Pattern`` (R27).
 
     Wraps a compiled stdlib pattern (used for validation, fallback, and the
     hybrid re-run) plus the cached HW-eligibility classification (R4/R8).
+
+    This class is kept in the tree **permanently** and is always constructible,
+    even when the native ``pyro._fast.Pattern`` is active: it is the byte-for-byte
+    behavioural reference the differential tests drive the native type against,
+    and the fallback the whole package uses when the extension cannot be built
+    (no C toolchain).  ``PyroPattern`` below is an alias for whichever class is
+    selected at import.
     """
 
     __slots__ = ("_stock", "_classification", "_calls", "_prog", "__weakref__")
@@ -242,3 +250,28 @@ class PyroPattern:
 
     def __repr__(self):
         return "<pyro.Pattern %r>" % (self._stock.pattern,)
+
+
+# --- native-router selection (R3b/R3c) ------------------------------------
+# ``pyro._fast.Pattern`` is a C extension type that serves the §8 R51 routing
+# decision in compiled code (direct C call, no ctypes hop), deleting the four
+# costs that keep the pure-Python router at ~4.5x stock.  It is an accelerator,
+# never a fork: when it is absent (no C toolchain — a supported configuration)
+# or explicitly disabled, ``PyroPattern`` is ``PyPattern`` and everything still
+# works, just slow (R3a governs; R3b honestly SKIPs).
+#
+# PYRO_NO_NATIVE is read ONCE here, at import — it selects a class object, so it
+# is explicitly outside the R35a per-call sampling contract and outside the
+# R5/R3a per-call budget (R68).  CI runs the full suite with and without it so
+# the pure-Python semantics can never rot behind the accelerator.
+_fast = None
+if not os.environ.get("PYRO_NO_NATIVE"):
+    try:
+        from . import _fast as _f
+        # ROUTE_ABI guards a stale .so from an older build sitting in-tree.
+        if getattr(_f, "ROUTE_ABI", 0) == 1:
+            _fast = _f
+    except ImportError:
+        pass
+
+PyroPattern = _fast.Pattern if _fast is not None else PyPattern

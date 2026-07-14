@@ -34,9 +34,19 @@ class _VerifyError(Exception):
         self.span = span
 
 
-# Offload thresholds (R2/R3): reuse count and minimum corpus size.
-S_MIN = 64 * 1024   # 64 KiB
-N_REUSE = 32
+# Offload thresholds (R2/R3): reuse count and minimum corpus size.  Re-exported
+# from the single source of truth (pyro/_thresholds.py); tests read
+# ``_route.S_MIN`` / ``_route.N_REUSE`` and the native routing extension bakes in
+# a header generated from that SAME module, so the two can never diverge.
+from ._thresholds import S_MIN, N_REUSE   # noqa: F401  (re-export)
+
+# The native routing extension, or ``None`` on a pure-Python build.  Selected in
+# _match (which owns the PYRO_NO_NATIVE / ROUTE_ABI guards); mirrored here so the
+# dispatch/counter/env code can pick the native or pure-Python implementation
+# with a single ``is not None`` check.  Populated at the BOTTOM of this module
+# (after the run_* functions it configures exist); ``None`` until then, which is
+# why ``sample_env()`` at import is a no-op push and is re-run once wired.
+_fast = None
 
 # --- diagnostics counters (stats(), R52/AC-3-4) ---------------------------
 _STATS_LOCK = threading.Lock()
@@ -50,24 +60,59 @@ _STATS = {
 }
 
 
+# Index of each single-path counter in the native extension's per-thread block
+# (CNT_HW..CNT_DEVERR); the order is identical to _STATS' insertion order, which
+# the native module asserts via its CNT_* module constants.  Used only by the
+# cold-path _record shim when the extension is present.
+_CNT_IDX = {
+    "hardware": 0,
+    "model": 1,
+    "fallback": 2,
+    "fallback_after_error": 3,
+    "device_errors": 4,
+}
+
+
 def stats() -> dict:
+    """Dispatch counters (R52/R66).
+
+    When the native extension is present the per-thread counters it owns are the
+    ONE source of truth (the Python ``_STATS`` dict is not used at all); it
+    returns a dict with exactly the six ``_STATS`` keys in exactly that order.
+    Otherwise the Python lock+dict counters are returned verbatim.
+    """
+    if _fast is not None:
+        return _fast.stats()
     with _STATS_LOCK:
         return dict(_STATS)
 
 
 def reset_stats() -> None:
+    if _fast is not None:
+        _fast.reset_stats()
+        return
     with _STATS_LOCK:
         for k in _STATS:
             _STATS[k] = 0
 
 
 def _record(path: str) -> None:
+    # When native, funnel the cold Python paths (model dispatch, sub/subn/split)
+    # into the SAME per-thread counters the C hot path bumps — two counter stores
+    # would make the aggregate wrong; there is exactly one.  The ~50 ns Python->C
+    # hop is on paths that already cost microseconds, never the measured path.
+    if _fast is not None:
+        _fast.count(_CNT_IDX[path])
+        return
     with _STATS_LOCK:
         _STATS[path] += 1
         _STATS["total"] += 1
 
 
 def _record_error_fallback() -> None:
+    if _fast is not None:
+        _fast.count_error()
+        return
     with _STATS_LOCK:
         _STATS["device_errors"] += 1
         _STATS["fallback_after_error"] += 1
@@ -201,6 +246,12 @@ def sample_env() -> None:
             _mod.apply_n_synth()
         except Exception:
             pass
+    # Push the freshly-sampled (disabled, force) pair onto the native router's
+    # single atomic env word (R35d): one _Atomic uint32 store, so an in-flight
+    # native call can never split across the old/new values — the same argument
+    # as the one-tuple rebind of _ENV above.  No-op on a pure-Python build.
+    if _fast is not None:
+        _fast.set_env(disabled, force)
 
 
 def test_hooks_enabled() -> bool:
@@ -274,40 +325,56 @@ def _is_full_span(string, pos, endpos) -> bool:
     return True
 
 
-def _decide(patt: PyroPattern, string, pos, endpos) -> str:
-    """Return 'model' or 'fallback' per R51; updates the reuse counter.
+def _decide_hot(patt: PyroPattern, string, pos, endpos) -> str:
+    """The native-equivalent routing decision: steps S0..S6, no UTF-8 probe.
+
+    This is the EXACT contract the C ``pyro_route_decide`` reproduces bit-for-bit
+    (the 288-point equivalence test enumerates the full domain against a Python
+    transcription of it).  The O(n) UTF-8 transportability probe (R51a(d)/R14a) is
+    deliberately NOT here — it is model-bound-only and lives in
+    :func:`_serve_model_single`/:func:`_serve_model_finditer`, so the short
+    fallback fast path never pays for it.
 
     Consults only the cached env snapshot (R35a); no os.environ access here.
-    Applies the Phase-0 routing gates of spec v1.2.1: only exact ``str``/``bytes``
-    subjects are HW-eligible, and ``str`` subjects must be strict-UTF-8
-    transportable.  Both gate to *plain* fallback (no device touched, so counted
-    as ``fallback``, not ``fallback_after_error``).
+    Updates the per-pattern reuse counter as its FIRST action (S0), before every
+    gate including PYRO_DISABLE — the side effect is observable even for a
+    disabled or fallback-only pattern (AC-1-6/R51).
     """
     reuse = patt._calls
-    patt._calls = reuse + 1
+    patt._calls = reuse + 1                         # S0 (side effect first)
 
-    disabled, force = _ENV                         # atomic snapshot (R35d)
-    if disabled:                                   # R51.1 (cached flag)
+    disabled, force = _ENV                          # atomic snapshot (R35d)
+    if disabled:                                    # S1  R51.1 (cached flag)
         return "fallback"
-    if not patt._classification.eligible:          # R51.2
+    if not patt._classification.eligible:           # S2  R51.2
         return "fallback"
-    # C2: subclasses of str/bytes and bytearray/memoryview would make group(0)
-    # (subject[s:e]) a different / unhashable / mutable type than stock re's
-    # bytes result -- route them to the genuine re objects (Phase 0).
+    # S3  C2: subclasses of str/bytes and bytearray/memoryview would make
+    # group(0) (subject[s:e]) a different / unhashable / mutable type than stock
+    # re's bytes result -- route them to the genuine re objects (Phase 0).
     tstr = type(string)
-    if tstr is not str and tstr is not bytes:      # gate (v1.2.1)
+    if tstr is not str and tstr is not bytes:       # gate (v1.2.1)
         return "fallback"
-    if not _is_full_span(string, pos, endpos):     # anchor-context safety
+    if not _is_full_span(string, pos, endpos):      # S4  anchor-context safety
         return "fallback"
     if not force and len(string) < S_MIN and reuse < N_REUSE:
-        return "fallback"                          # R51.4 loss regime (R3a)
+        return "fallback"                           # S5  R51.4 loss regime (R3a)
+    return "model"                                  # S6  R51.6 (no device in Ph0)
+
+
+def _decide(patt: PyroPattern, string, pos, endpos) -> str:
+    """Return 'model' or 'fallback' per the full R51 decision (S0..S6 + the
+    UTF-8 gate).  Kept for the aggregate ops (findall/sub/subn/split), which run
+    it purely for the S0 reuse side effect and discard the verdict.
+
+    Semantics are identical to the pre-refactor ``_decide``: a 'model' verdict
+    that fails the UTF-8 probe becomes 'fallback' exactly as before.
+    """
+    verdict = _decide_hot(patt, string, pos, endpos)
     # C1: only strict-UTF-8-encodable str subjects can be transported to the
     # model; a lone surrogate (which stock re still matches) must fall back.
-    # Checked here -- on the model-bound path only -- to keep the short fallback
-    # fast path free of the O(n) encode probe.
-    if tstr is str and not _utf8_transportable(string):
+    if verdict == "model" and type(string) is str and not _utf8_transportable(string):
         return "fallback"
-    return "model"                                 # R51.6 (no device in Ph0)
+    return verdict
 
 
 def _utf8_transportable(s: str) -> bool:
@@ -449,11 +516,20 @@ def _model_finditer(patt, string, pos, endpos):
     return out
 
 
-# --- public dispatch entry points -----------------------------------------
-def run_single(patt, op, string, pos=0, endpos=None):
-    """search / match / fullmatch (R51/R52)."""
-    path = _decide(patt, string, pos, endpos)
-    if path == "fallback":
+# --- post-decision service (the single shared model/cold path) ------------
+# Both the pure-Python router (run_single/run_finditer below) and the native
+# router (pyro._fast.Pattern) reach the model/cold path through THESE functions
+# and no other, so the model/error/UTF-8 semantics exist exactly once.  Neither
+# touches ``patt._calls`` — the S0 side effect already happened in the caller's
+# _decide_hot (Python) or in C (native).
+def _serve_model_single(patt, op, string, pos, endpos):
+    """Serve a 'model' verdict for search/match/fullmatch (R51.6/R52).
+
+    Order matters (contract): the model-bound UTF-8 gate first (R51a(d)/R14a),
+    then the residency consultation (R65), then the model with device-error
+    (R52) and unsupported-pattern fallbacks.
+    """
+    if type(string) is str and not _utf8_transportable(string):
         _record("fallback")
         return _stock_op(patt, op, string, pos, endpos)
     if _consult_residency(patt, string):       # R65 permanent fallback -> routing
@@ -471,9 +547,9 @@ def run_single(patt, op, string, pos=0, endpos=None):
     return result
 
 
-def run_finditer(patt, string, pos=0, endpos=None):
-    path = _decide(patt, string, pos, endpos)
-    if path == "fallback":
+def _serve_model_finditer(patt, string, pos, endpos):
+    """Serve a 'model' verdict for finditer (mirrors _serve_model_single)."""
+    if type(string) is str and not _utf8_transportable(string):
         _record("fallback")
         return _stock_op(patt, "finditer", string, pos, endpos)
     if _consult_residency(patt, string):       # R65 permanent fallback -> routing
@@ -489,6 +565,26 @@ def run_finditer(patt, string, pos=0, endpos=None):
         return _stock_op(patt, "finditer", string, pos, endpos)
     _record("model")
     return iter(matches)
+
+
+# --- public dispatch entry points -----------------------------------------
+# The native router calls _decide_hot in C and _serve_model_* directly; these
+# Python entry points are the pure-Python router AND the bail-out target the
+# native router hands exotic argument shapes to (weird pos/endpos types, kwargs)
+# so their rich-compare semantics are reproduced by construction, not re-coded.
+def run_single(patt, op, string, pos=0, endpos=None):
+    """search / match / fullmatch (R51/R52)."""
+    if _decide_hot(patt, string, pos, endpos) == "fallback":
+        _record("fallback")
+        return _stock_op(patt, op, string, pos, endpos)
+    return _serve_model_single(patt, op, string, pos, endpos)
+
+
+def run_finditer(patt, string, pos=0, endpos=None):
+    if _decide_hot(patt, string, pos, endpos) == "fallback":
+        _record("fallback")
+        return _stock_op(patt, "finditer", string, pos, endpos)
+    return _serve_model_finditer(patt, string, pos, endpos)
 
 
 # Aggregate ops (findall/sub/subn/split): only the match SCAN is offloadable
@@ -518,3 +614,27 @@ def run_split(patt, string, maxsplit=0):
     _decide(patt, string, 0, None)
     _record("fallback")
     return patt._stock.split(string, maxsplit)
+
+
+# --- native routing wiring (R3c) ------------------------------------------
+# The module DAG is _fast (leaf C module) <- _match <- _route.  _match owns the
+# PYRO_NO_NATIVE / ROUTE_ABI selection; we mirror its choice and, when the
+# extension is active, hand it strong references to the SAME post-decision and
+# bail-out functions the pure-Python router uses.  After configuring, re-run
+# sample_env() so the env word is pushed now that set_env is wired (the import
+# sample above ran with _fast still None).
+from . import _match as _match_mod   # noqa: E402  (bottom import breaks the cycle)
+
+_fast = _match_mod._fast
+if _fast is not None:
+    _fast.configure(
+        _serve_model_single,
+        _serve_model_finditer,
+        run_single,
+        run_finditer,
+        run_findall,
+        run_sub,
+        run_subn,
+        run_split,
+    )
+    sample_env()

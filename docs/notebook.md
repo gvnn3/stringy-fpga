@@ -17,13 +17,131 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-2. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-3. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-4. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-5. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-6. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-7. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+2. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+3. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+4. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+5. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+6. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+7. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+8. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+
+---
+
+# EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe :complete:
+
+## 1. Hypothesis
+
+R3b requires loss-regime wall-clock within **1.15×** of stock CPython `re`; it
+becomes a **hard PASS at AC-3-3** (R3c), where a SKIP is forbidden. The Python
+router measures **4.53×** (repo recipe) / 6.3× (timer-free) — overhead ~915 ns
+against a 26–39 ns budget. Question: is 1.15× physically reachable by a native
+(C) routing hot path, and if so, does a *shippable* implementation (thread-safe
+counters, kwargs signature, GC support, byte-identical semantics) still fit?
+
+## 2. How
+
+- **Method:** measured spike → adversarial refutation → real implementation →
+  adversarial refutation again (three lenses each, verifiers instructed to
+  default to *refuted* when uncertain). All timing on `nf-server06` (Xeon E5
+  v4, `schedutil` governor), serial runs on a quiet box, medians of ≥5
+  process-level trials, noise floor established by stock-vs-stock (±1.5%).
+- **Recipe:** `tests/acceptance/test_ac2_5_throughput.py:86-115` verbatim —
+  132-byte subject, 1500 non-matching literal patterns, reuse = 2 (< N_REUSE),
+  loss regime asserted at runtime via `stats()`.
+- **Implementation:** `pyro._fast`, a C extension `Pattern` type
+  (`src/pyro_ext.c` + `src/pyro_route.c` + `include/pyro_route.h`): the §8 R51
+  decision (S0–S6, transcribed from `_route.py:263-303`) as a **direct C call**
+  (no ctypes — one ctypes hop measures 175.9 ns = 4.5× the whole budget);
+  fallback delegation via cached bound stock method + `PyObject_Vectorcall`;
+  per-thread counters (initial-exec TLS, single `%fs`-relative load — verified
+  zero `__tls_get_addr` in the binary); model verdicts hand off to the SAME
+  Python `_serve_model_*` the pure-Python router uses (one semantics, no fork).
+  Anti-drift: thresholds live once in `pyro/_thresholds.py` (generated C
+  header + runtime round-trip test); a 288-point exhaustive decision-table
+  equivalence test; full differential vs `PyPattern` (the pure-Python class,
+  kept permanently as the behavioural reference). `PYRO_NO_NATIVE=1` selects
+  pure Python; CI runs the whole suite both ways.
+
+## 3. Observations
+
+- **Overhead anatomy of the Python router** (ablation, sums to 917.6 ns =
+  measured total to 0.4%): `threading.Lock` in `_record()` **435 ns** (11× the
+  entire R3b budget on its own); 5 Python frames **208 ns**; Python decision
+  arithmetic **175 ns** (missing from all prior analyses); `getattr` **99 ns**.
+  The R51 decision itself, in C: **3.5–9 ns**. The decision was never the cost.
+- **Native floor:** a C wrapper that does nothing but vectorcall the cached
+  stock bound method measures **~1.01×**. Physics is not the obstacle; the
+  spec's rationale for 1.15× is vindicated, not falsified.
+- **First adversarial pass killed the headline.** Implementation initially
+  reported 1.10 median; a verifier reproduced every control yet measured
+  **1.29/1.28/1.29/1.12** on the same quiet host — per-process modes at
+  pyro ≈277 ns vs ≈337 ns with stock flat.
+- **Root cause of the "bimodality": the recipe's own warmup.** It warms with a
+  *single* throwaway pattern × 3000 calls; that pattern crosses `N_REUSE=32`
+  at call 33 and routes to the **model** verdict for the remaining 2967 calls
+  — so for the native router, warmup exercises the Python model-handoff path
+  and leaves the *measured* C fast path cold. Controlled A/B, warmup style the
+  only variable: single-pattern warmup → **1.26–1.30** (5/5 fail); rotating
+  warmup (100 × 30 uses, all < N_REUSE) → **1.05–1.09 typical**, median of 5 =
+  **1.094** (passes; residual excursions to ~1.2 correlate with `schedutil`
+  frequency drift — stock itself swings 255→330 ns between processes).
+- **Second adversarial pass, real implementation:** correctness lens **CLEAN**
+  (no divergence vs `PyPattern` anywhere, including pos/endpos edge cases —
+  the spike's `search(s, 0, None)` TypeError bug was designed out by
+  differencing against `PyroPattern`, not stock). Regression lens found a real
+  **segfault**: `gate()` vectorcalled a NULL `_serve_model_*` when the native
+  type was imported directly under `PYRO_NO_NATIVE=1` (configure() skipped).
+  Fixed: NULL guard → `RuntimeError`; regression test added.
+- **Suite, both build shapes, zero failures:** native **1127 passed / 3
+  skipped**; `PYRO_NO_NATIVE=1` **1090 passed / 40 skipped** (the native-only
+  tests standing down; ledgers reconcile at 1130).
+- **A now-false skip reason found:** with the extension active,
+  `test_ac2_5_throughput.py:127` still SKIPs claiming "the §8 R51 routing
+  decision is served at Python level" — untrue on a native build (and its
+  single-trial 1.33× is the warmup artifact). Recorded in the amendments doc
+  (A1.4); not changed unilaterally, since it moves a normative bind point.
+
+## 4. Data analysis
+
+**R3b is reachable, marginal, and the constant is right.** A shippable native
+router lands at **~1.09–1.10 median** against 1.15×, with a floor of 1.01×.
+The margin (~4–5%) is smaller than single-trial excursions under `schedutil`,
+which is precisely why the owner-approved resolution amends the *measurement
+protocol* (median of ≥5 trials — R3b.1; pinned 132-byte subject — R3b.2;
+binds against the compiled build — R3b.3) and not the constant. This session
+added **R3b.4**: warmup must remain in the loss regime, with the A/B above as
+evidence — the old warmup violates its own stated intent.
+
+**The adversarial layer earned its cost twice.** It killed a wrong headline
+(1.055/1.10 → honest ~1.24 under the defective recipe) and found an
+interpreter-killing NULL call — both before commit, both on paths a happy-path
+verification would have blessed. Conversely it *cleared* the semantics port,
+which is where the real danger lived: a fast, subtly-wrong router silently
+corrupts user results.
+
+**Measurement lessons for this notebook:** (1) per-process modes with a flat
+control are a *warmup/layout* signature, not load — diagnose by controlled
+A/B before blaming the host; (2) `perf_counter_ns` self-cost (~112–116 ns on
+this box) inflates both sides of a paired ratio and *flatters* it — report
+timer-free cross-checks for any claim finer than ~10 ns; (3) on `schedutil`,
+per-process CPU frequency is a hidden variable — medians across processes,
+never single shots.
+
+## 5. Ideas for future experiments
+
+- **Owner review of `docs/spec-amendments-phase3.md`** (A1 R3b.1–R3b.4 + the
+  A1.4 test edits, A2 R67 seams, A3 R73a PR-timing scope, A4 F2/F3). A1's
+  adoption converts the R3b machinery from "measured here" to normative; the
+  AC-3-3 benchmark suite then implements R3b.1–R3b.4 directly.
+- **AC-3-1/3-2/3-4** are unblocked and unaffected by any of this; build next
+  (transparency corpus + tier-transition seams + stats-under-injection).
+- On a `performance`-governor host the residual trial spread should collapse;
+  worth one calibration run if AC-3-3 flakes in CI.
+- The `_run_pr` global-WNS bug (A3) still destroys every good pattern partial
+  after `pr_verify` passes — hardware partials stay blocked until A3 is ruled
+  on. R1/R2 remain honest SKIPs regardless (1 B/cycle datapath ⇒ 0.233 GiB/s
+  < R1's own 1 GiB/s floor; not a bring-up problem).
 
 ---
 

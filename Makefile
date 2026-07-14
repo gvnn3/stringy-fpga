@@ -24,9 +24,24 @@ TESTFLAGS := -DPYRO_TESTING
 LIB      := $(BUILD)/libpyro_rt.so
 SRC      := src/pyro_rt.c
 
-.PHONY: all lib abi-check valgrind clean
+# --- native routing extension (Phase 3, R3b/R3c) --------------------------
+# `pyro._fast` is the CPython interposition extension that serves the §8 R51
+# routing decision in compiled code, reached by a DIRECT C call (no ctypes: one
+# ctypes hop costs 175.9 ns, 4.5x the whole R3b budget).  It is OPTIONAL: with
+# no extension present, pyro falls back to the pure-Python router and everything
+# still works (R3a governs; R3b honestly SKIPs).  Built IN-TREE because the test
+# suite imports `pyro` straight from the source directory.
+PYTHON     ?= python3
+EXT_SUFFIX := $(shell $(PYTHON) -c 'import sysconfig;print(sysconfig.get_config_var("EXT_SUFFIX"))')
+# sysconfig rather than python3-config: a venv interpreter has no python3-config.
+PYINC      := $(shell $(PYTHON) -c 'import sysconfig;print("-I"+sysconfig.get_paths()["include"]+" -I"+sysconfig.get_paths()["platinclude"])')
+EXT        := pyro/_fast$(EXT_SUFFIX)
+EXT_SRC    := src/pyro_ext.c src/pyro_route.c
+GEN_HDR    := $(BUILD)/include/pyro_thresholds.h
 
-all: lib abi-check
+.PHONY: all lib abi-check valgrind ext clean
+
+all: lib abi-check ext
 
 # --- shared library (position-independent, C11, warnings-as-errors) --------
 # Built with $(TESTFLAGS) because its only consumers today are the ABI /
@@ -69,8 +84,25 @@ valgrind: $(BUILD)/abi_conformance
 $(BUILD)/abi_conformance: tests/c/abi_conformance.c $(SRC) include/pyro_rt.h | $(BUILD)
 	$(CC) $(CFLAGS) $(TESTFLAGS) tests/c/abi_conformance.c $(SRC) -o $@ $(LDLIBS)
 
+# --- pyro._fast: the native routing hot path (R3b/R3c, AC-3-3) ------------
+# -O2 is load-bearing: the shipped ratio is ~1.10x against a 1.15x bound.
+# -Werror stays here (and in CI) but NOT in setup.py -- a user's compiler must
+# never fail an install on a warning.
+ext: $(EXT)
+
+$(EXT): $(EXT_SRC) include/pyro_route.h $(GEN_HDR)
+	$(CC) -O2 -std=c11 -Wall -Werror -fPIC -shared \
+	  -Iinclude -I$(BUILD)/include $(PYINC) $(EXT_SRC) -o $@
+
+# The ONE literal for S_min / N_reuse lives in pyro/_thresholds.py; the C never
+# carries its own copy (anti-drift).
+$(GEN_HDR): pyro/_thresholds.py scripts/gen_route_config.py | $(BUILD)
+	@mkdir -p $(BUILD)/include
+	$(PYTHON) scripts/gen_route_config.py --out $@
+
 $(BUILD):
 	@mkdir -p $(BUILD)
 
 clean:
 	@rm -rf $(BUILD)
+	@rm -f pyro/_fast*.so

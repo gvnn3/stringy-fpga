@@ -12,6 +12,7 @@ subset (R16) and delegated otherwise (R29).
 
 from __future__ import annotations
 
+import os
 import re as _stdlib_re
 import threading
 
@@ -83,6 +84,34 @@ def refresh_env() -> None:
 
 def is_installed() -> bool:
     return bool(_ORIGINALS)
+
+
+def native_router() -> dict:
+    """R3c evidence seam: is the §8 R51 routing decision served by native code?
+
+    Returns ``{'active': bool, 'reason': str, 'route_abi': int}``.  ``active`` is
+    True iff ``pyro._fast.Pattern`` (the compiled routing extension) is the live
+    ``PyroPattern`` — i.e. a below-threshold call's R51 decision runs in compiled
+    code reached by a direct C call, with no Python frame and no ctypes hop
+    (R3c.1).  AC-3-3 asserts ``active is True`` before enforcing the R3b 1.15x
+    bound and records SKIP-with-reason (never FAIL) when it is False.
+
+    This is PYRO-specific and is NOT patched onto the stdlib ``re`` namespace
+    (§7.2, like ``explain``/``stats``/``prewarm``); it does not add a key to
+    ``stats()`` (R52/R66 shape stays byte-identical).
+    """
+    from . import _match
+    fast = _match._fast
+    if fast is not None:
+        return {"active": True,
+                "reason": "pyro._fast native routing extension active",
+                "route_abi": int(fast.ROUTE_ABI)}
+    if os.environ.get("PYRO_NO_NATIVE"):
+        reason = "PYRO_NO_NATIVE set: pure-Python router forced"
+    else:
+        reason = ("pyro._fast extension not built/importable: pure-Python "
+                  "router (build it with `make ext`)")
+    return {"active": False, "reason": reason, "route_abi": 0}
 
 
 def prewarm(patterns, flags=0) -> None:
