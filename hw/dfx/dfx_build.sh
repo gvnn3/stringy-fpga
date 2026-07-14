@@ -61,15 +61,23 @@ log() { echo "=== [pyro-dfx] $* ==="; }
 # R81 BUILD16: low 16 bits of the build's Unix-epoch MINUTE count. The host does
 # not require a fixed value (only the SPEC16 half is checked), but it identifies
 # which build a running shell is, via ID_REPLY's static_shell_id.
-BUILD16="$(printf '0x%04X' $(( ($(date +%s) / 60) & 0xFFFF )))"
-log "BUILD16 = ${BUILD16}"
+#
+# MUST be passed to synth_design as a DECIMAL integer. Vivado's `-generic` does
+# NOT accept a `0x...` literal: it silently binds it as a *string*, and a string
+# in a [15:0] parameter becomes its ASCII bytes. `-generic BUILD16=0xB18A` bound
+# to the string "8A" -> 0x3841 ('8'=0x38, 'A'=0x41), which is what the shell
+# flashed on 2026-07-14 actually reports. Vivado logs this as
+# "Parameter BUILD16 bound to: 8A - type: string" and does not warn.
+BUILD16_DEC=$(( ($(date +%s) / 60) & 0xFFFF ))
+BUILD16="$(printf '0x%04X' "$BUILD16_DEC")"
+log "BUILD16 = ${BUILD16} (${BUILD16_DEC} decimal)"
 
 # ---- 1. ID stub: OOC synthesis (always; this is the --fast gate) ------------
 log "OOC synth: pyro_rp ID stub @250MHz"
 cat > "${OUT}/_ooc_id_stub.tcl" <<TCL
 read_verilog -sv [list ${HWSRC}/pyro_id_stub.sv]
 synth_design -top pyro_rp -part ${PART} -mode out_of_context \\
-  -generic BUILD16=${BUILD16}
+  -generic BUILD16=${BUILD16_DEC}
 create_clock -name clk -period 4.0 [get_ports clk]
 set wns [get_property SLACK [get_timing_paths -delay_type max -nworst 1]]
 puts "OOC_ID_STUB_WNS = \$wns"
@@ -81,6 +89,15 @@ vivado -mode batch -nojournal -notrace -source "${OUT}/_ooc_id_stub.tcl" \
   -log "${OUT}/_ooc_id_stub.log" -journal /dev/null | tee "${OUT}/_ooc_id_stub.out"
 grep -q OOC_ID_STUB_TIMING_MET "${OUT}/_ooc_id_stub.out" || {
   echo "ID stub failed 250MHz OOC timing (or did not synthesize)"; exit 1; }
+
+# Guard the -generic footgun: Vivado binds a bad literal as a *string* without
+# warning, silently corrupting the shell's build identity (see BUILD16 above).
+if grep -qi "Parameter BUILD16 bound to.*type: string" "${OUT}/_ooc_id_stub.log"; then
+  echo "ERROR: BUILD16 bound as a STRING, not an integer -- shell identity would be ASCII garbage." >&2
+  grep -i "Parameter BUILD16 bound to" "${OUT}/_ooc_id_stub.log" >&2
+  exit 1
+fi
+grep -i "Parameter BUILD16 bound to" "${OUT}/_ooc_id_stub.log" | sed 's/^/    /'
 
 if [ "$FAST" = "1" ]; then
   log "--fast complete (ID stub synthesizes and meets 250MHz)"

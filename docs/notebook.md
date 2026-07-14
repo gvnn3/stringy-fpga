@@ -17,7 +17,7 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash](#14-jul-2026-084952) :in_progress:
+1. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
 2. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
 3. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
 4. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
@@ -27,7 +27,7 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 ---
 
-# EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash :in_progress:
+# EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true :complete:
 
 ## 1. Hypothesis
 
@@ -127,7 +127,8 @@ PYRO_FLASH_ALLOW_LIVE_PCIE=1 scripts/flash_u250.sh flash \
 - Artifacts: `open_nic_shell.bit` 43 MB (sha256 `ee5094ae…`),
   `open_nic_shell.mcs` 118 MB (sha256 `165c2480…`),
   `static_routed_locked.dcp` 76 MB, `partials/id_stub.bit` 3.9 MB.
-  **BUILD16 = `0xB18A`.**
+  Build script computed and logged **BUILD16 = `0xB18A`** — but that is *not*
+  what got baked into the shell; see the `BUILD16` defect below.
 
 **Flash — and the zanetti hazard did not reproduce.**
 
@@ -138,7 +139,55 @@ PYRO_FLASH_ALLOW_LIVE_PCIE=1 scripts/flash_u250.sh flash \
   `Flash programming completed successfully` — **FLASH_DONE, rc=0, 15m33s**.
 - **The host did not crash.** Uptime unbroken across the whole operation.
 - Card still enumerates `10ee:d004` (golden) post-flash — **expected**: the
-  FPGA only reads QSPI at power-up. **Cold power cycle pending.**
+  FPGA only reads QSPI at power-up.
+
+**Cold power cycle — the shell boots, and `device_usable` flips true.**
+
+- **`BOOT_STATUS.SLR0 = 0x00000005`** (was `0x00000d07`): `STATUS_VALID` +
+  `IPROG`, with **`FALLBACK` and `WTO_ERROR` now CLEAR**. The multiboot jump to
+  `0x01002000` completed. This one register is the whole before/after.
+- `02:00.0` enumerates **`10ee:903f`**, PCI class **`0280`** (Network
+  controller), subsystem **`10ee:0007`** — the same subsystem the 9 Jul entry
+  recorded for the working shell. Gen3 8.0 GT/s ×16. BARs changed from golden's
+  32M+64K to OpenNIC's **256K + 4M**.
+- **One** physical function, not two (zanetti had `903f` + `913f`): we build
+  `pf=cmac=1`, and the driver confirms — `onic: Number of CMAC instances = 1`.
+- `onic` driver: **`make` alone produces a broken module.** Stale objects in
+  `NetFPGA-PLUS/sw/driver/open-nic-driver` (from the 6.8.0-124 build) survive an
+  incremental build; the link stamps the right vermagic but the objects carry
+  old symbol CRCs, so `insmod` dies with `disagrees about version of symbol
+  netdev_info` / `Unknown symbol ... (err -22)` and the misleading userspace
+  message **"Invalid parameters"**. `make clean && make` fixes it (3.5 MB, the
+  size ebpf-os recorded). The three kernel-6.8 API fixes were already applied.
+- **The netdev is `ens2`**, not `enp2s0f0`: systemd used slot-based naming
+  (`onic 0000:02:00.0 ens2: renamed from onic2s0f0`).
+- Interface up (**NO-CARRIER, as expected** — CMAC is tied off), `CAP_NET_RAW`
+  granted to a copied venv interpreter, then:
+
+  ```
+  device_usable = True
+  reason = device_usable=true — static_shell_id=0x02023841, transport: CAP_NET_RAW present
+  ```
+
+- Protocol round-trip on real silicon:
+
+  | request | reply | spec |
+  |---|---|---|
+  | `ID_REQUEST` | `ID_REPLY` (0x02), `SPEC16=0x0202`, **`rp_child_id = 0`** | R80/R81 |
+  | `MATCH_REQUEST` | `STATUS/ERROR` (0x05), **code 7 = `PYRO_E_NOT_RESIDENT`** | R78.8 |
+
+**Defect found and fixed: `BUILD16` is ASCII garbage in the flashed shell.**
+
+- The shell reports `static_shell_id = 0x02023841`, i.e. **`BUILD16 = 0x3841`**,
+  not the `0xB18A` the build script computed and logged.
+- Cause: `synth_design -generic BUILD16=0xB18A`. **Vivado's `-generic` does not
+  accept a `0x` literal** — it silently binds it as a *string*, and a string in
+  a `[15:0]` parameter becomes its ASCII bytes. Vivado logs
+  `Parameter BUILD16 bound to: 8A - type: string` and **does not warn**.
+  `'8'=0x38`, `'A'=0x41` → `0x3841`. Exactly what the card reports.
+- Fixed: pass BUILD16 as a **decimal** integer. Verified —
+  `Parameter BUILD16 bound to: 16'b1011001100101110` (= `0xB32E`). `dfx_build.sh`
+  now hard-fails if the parameter ever binds as a string again.
 
 ## 4. Data analysis
 
@@ -184,6 +233,30 @@ future work: `axis_aclk_0` closes at only **+30 ps**. The 250 MHz box has
 essentially no margin left, so a per-pattern child materially larger than the
 ID stub may not close — watch this when the first real pattern partial is built.
 
+**Two silent-corruption failures, same shape.** Both the `BUILD16` bug and the
+`onic` build failure share a structure worth naming: **a tool accepted bad input
+and produced a plausible artifact instead of an error.** Vivado took
+`BUILD16=0xB18A`, decided it was a string, bound `"8A"`, logged it in a form
+nobody reads, and emitted a bitstream that synthesizes, routes, passes
+`pr_verify`, flashes, boots, and answers the probe — while carrying an identity
+that is ASCII text. `make` took stale 6.8.0-124 objects, linked them with a
+6.8.0-134 vermagic, and produced an `onic.ko` that is byte-for-byte a valid
+module and fails only at `insmod`, where the kernel's honest complaint
+("disagrees about version of symbol") is flattened by userspace into the
+actively misleading **"Invalid parameters"** — which sends you hunting for a
+module parameter that does not exist. Neither failure was caught by anything
+except *checking the value on the far side*. The lesson is to assert on what the
+tool actually bound, not on what you passed it: `dfx_build.sh` now greps the
+synth log for `type: string` and hard-fails, and `make clean` is not optional
+when the kernel has moved under a driver tree.
+
+**`ens2` breaks the shape of F3, not just its value.** The spec's F3 fact names
+a netdev (`enp175s0f0`) as though it were derivable from the card. It is not:
+systemd chose *slot-based* naming here, so the interface is `ens2` — a name that
+encodes the physical slot, not the BDF. No amount of re-deriving `enp<bus>s<slot>f<fn>`
+from `02:00.0` would have produced it. A netdev name is a property of the host's
+naming policy, and the spec should treat it as configuration, not as a fact.
+
 **Root cause of the whole episode: the shell lived outside version control.**
 `open-nic-shell` + the `pyro` plugin + the floorplan + the DFX scripts existed
 only as a build tree under `/usr/local/cad/gn262/pyro/` on zanetti. Nothing in
@@ -195,23 +268,34 @@ produced them was committed. It is all now under `hw/` and
 
 ## 5. Ideas for future experiments
 
-- **Immediate (blocking):** cold power cycle (full AC-off — a warm reboot
-  leaves the card powered, so the FPGA never re-reads QSPI). Then:
-  `lspci -d 10ee: -nn` → expect `02:00.0 [10ee:903f]` / `02:00.1 [10ee:913f]`.
-- Build + load the `onic` driver — **not present on nf-server06**. Source:
-  `NetFPGA-PLUS/sw/driver/open-nic-driver`; the three kernel-6.8 API fixes are
-  recorded in `ebpf-os/docs/fpga-bs.md`. Netdevs will be **`enp2s0f0`/`f1`**
-  (bus 02), not zanetti's `enp175s0f*`.
-- First real probe: `PYRO_DEVICE_IFACE=enp2s0f0`, grant `CAP_NET_RAW`, run
-  `pyro.device.probe_device()`. Success = `ID_REPLY` with `SPEC16=0x0202`,
-  `BUILD16=0xB18A`, `rp_child_id == 0` — `device_usable` flipping true for the
-  first time on real hardware (R83), and AC-2b-2's SKIP becoming a PASS.
-- **Spec debt (R71/F2/F3):** the spec still declares `af:00.0` (F2) and
-  `enp175s0f0` (F3) as normative facts, and `pyro/_route.py` /
-  `pyro/device.py` still default `PYRO_DEVICE_IFACE` to `enp175s0f0`. Both are
-  false for this host. Needs a spec decision, not a silent code edit.
-- Load the ID-stub **partial** over JTAG against the locked static — the first
-  live PR test, and the cheapest possible exercise of `load_partial` (R86.5).
+- **Spec debt, now urgent (R71/F2/F3).** The spec declares `af:00.0` (F2) and
+  `enp175s0f0` (F3) as normative facts, and `pyro/_route.py` / `pyro/device.py`
+  default `PYRO_DEVICE_IFACE` to `enp175s0f0`. On this host the card is
+  `02:00.0` and the netdev is **`ens2`** — so *all three* are false and the
+  library default cannot reach the device. Everything above only works with an
+  explicit `PYRO_DEVICE_IFACE=ens2`. This needs a spec decision (re-declare F2/F3,
+  or demote them from facts to per-host configuration), not a silent code edit.
+  Note `ens2` also falsifies the *shape* of F3, not just its value: systemd's
+  slot-based naming means the netdev name is not derivable from the BDF.
+- **Reflash to get an honest `BUILD16`.** The running shell reports `0x3841`
+  (ASCII `"8A"`). Harmless — R81 only constrains the SPEC16 half — but the
+  discriminator fails at its one job: identifying which build is on the card.
+  The fix is in `dfx_build.sh`; it costs a rebuild (~2.5 h) + reflash (~18 min).
+  Worth folding into the next shell change rather than doing on its own.
+- **AC-2b ledger:** AC-2b-2's hardware path (the real `(True, …)` flip against
+  the physical board) is now **LIVE**, not SKIP. AC-2b-3 still needs a real
+  per-pattern `pr_bitstream` loaded over JTAG.
+- Load the ID-stub **partial** (`hw/dfx/build/partials/id_stub.bit`) over JTAG
+  against the locked static — the cheapest possible exercise of `load_partial`
+  (R86.5), and the first live PR reconfiguration. It should be a no-op
+  observationally (same child), which is exactly what makes it a safe first test.
+- Then a **real pattern child**: generate via `pyro.hdl.rp_wrapper`, build the
+  partial against `static_routed_locked.dcp`, load it, and confirm `ID_REPLY`
+  flips `rp_child_id` to the non-zero R78.5a value and `MATCH_REQUEST` returns
+  actual matches instead of `PYRO_E_NOT_RESIDENT`.
+  **Watch timing:** `axis_aclk_0` closed at only **+30 ps** with the 32-LUT ID
+  stub in the RP. A pattern child is 197–410 LUTs. There is no guarantee the
+  250 MHz box still closes — this is the most likely next failure.
 - Re-run the AC-2-4 estimator calibration corpus under 2025.2 (R74a): the
   §6 table is 2023.1-derived and is not evidence for the current pin.
 

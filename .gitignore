@@ -12,3 +12,4 @@ hd_visual/
 *.jou
 vivado*.log
 tight_setup_hold_pins.txt
+.venv-pyro/
