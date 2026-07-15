@@ -20,6 +20,7 @@ minutes-long real flow without actually waiting.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -41,6 +42,9 @@ from .manifest import Manifest, payload_crc32
 # R66 stats / reuse ticks, launch-policy pollution; AC-3-1 counter-wedge
 # review).  ``re`` is still imported above for the (unpatched) flag constants.
 from .._model import _stock_compile
+
+# R73a.6 job diagnostics channel (whole-design WNS record, never a gate).
+_log = logging.getLogger("pyro.synth.toolchain")
 
 # Pinned tool/shell versions — part of the R4/R47b cache key precisely because
 # artifacts are NOT portable across tool/shell versions (P11).  A real Phase-2
@@ -263,6 +267,13 @@ _RE_CLB_FFS = _stock_compile(r"^\|\s*CLB Registers\*?\s*\|\s*(\d+)\s*\|", re.MUL
 # matched separately and mapped to SynthesisFailed (R65).
 _RE_WNS = _stock_compile(r"^PYRO_METRIC:WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
 _RE_WNS_NONE = _stock_compile(r"^PYRO_METRIC:WNS:NONE\s*$", re.MULTILINE)
+# R73a.1 (v2.5.0): the RP-scoped WNS marker for the PR link flow — the DECISIVE
+# post-route WNS, taken over exactly the reconfigurable module's paths
+# (startpoint and/or endpoint in the pyro_rp cell, axis_aclk domain).  Same
+# fixed-point `format %.4f` guarantee as the whole-design WNS marker above.
+_RE_RP_WNS = _stock_compile(r"^PYRO_METRIC:RP_WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
+# R73a.3: an EMPTY scoped path set is a job failure, not a pass.
+_RE_RP_WNS_NONE = _stock_compile(r"^PYRO_METRIC:RP_WNS:NONE\s*$", re.MULTILINE)
 # R82c: emitted only after pr_verify -full_check passes (the PR flow's hard gate).
 _RE_PR_VERIFY_PASS = _stock_compile(r"^PYRO_METRIC:PR_VERIFY:PASS\s*$", re.MULTILINE)
 # `vivado -version` first line: "vivado v2025.2 (64-bit)" (R70a-pin).  The
@@ -310,7 +321,11 @@ class VivadoToolchain:
     #   1. OOC-synth the wrapped RP child (pyro_rp instantiating the engine).
     #   2. Open the LOCKED static DCP (R82b substrate); black-box + read the RM
     #      into the reconfigurable cell (R80), implement in-context.
-    #   3. Timing (R73) via the same WNS marker as the OOC flow.
+    #   3. Timing (R73/R73a): the DECISIVE post-route query is scoped to the
+    #      reconfigurable module (startpoint and/or endpoint in the RP cell,
+    #      axis_aclk 250 MHz domain, R73a.1); an empty scoped set fails the job
+    #      (R73a.3).  The whole-design WNS is emitted too, but as job
+    #      diagnostics ONLY (R73a.6) — it never feeds met_timing.
     #   4. pr_verify against the reference routed DCP (R82c) — HARD GATE: a
     #      failure errors the job (non-zero exit) => SynthesisFailed (R65).
     #   5. write_bitstream -cell => the partial .bit (R85 loadable artifact).
@@ -352,7 +367,39 @@ class VivadoToolchain:
         # resources (consistent with the OOC path / R74), not static+RM whole-device.
         "report_utilization -cells [_rp_cell] -file util.rpt\n"
         "report_timing_summary -file timing.rpt\n"
-        "set _p [get_timing_paths -max_paths 1 -nworst 1 -setup]\n"
+        # R73a.1: the DECISIVE post-route timing query is scoped to the
+        # reconfigurable module — setup paths whose startpoint AND/OR endpoint
+        # lies in the RP cell (both boundary directions IN scope), evaluated in
+        # the axis_aclk 250 MHz user-box clock domain (F4).  Paths lying
+        # entirely in the static region are OUT of scope: they are the static
+        # build's flash-time record (R73a.4/R73a.5), not a per-pattern fact.
+        # -quiet: an empty result is handled explicitly below (R73a.3), never
+        # papered over by tool warnings.
+        "set _rp_scope {GROUP == axis_aclk}\n"
+        "set _pf [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup "
+        "-from [_rp_cell] -filter $_rp_scope]\n"
+        "set _pt [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup "
+        "-to [_rp_cell] -filter $_rp_scope]\n"
+        "set _scoped [concat $_pf $_pt]\n"
+        "if {[llength $_scoped] == 0} {\n"
+        # R73a.3: an empty scoped path set is a FAILURE, not a pass — a
+        # narrower gate must not degrade into no gate.  Emit the sentinel (the
+        # Python side raises SynthesisFailed on it) and let the flow continue,
+        # so pr_verify/write_bitstream still produce the diagnostics artifacts
+        # the A3.5 preservation path keeps for the post-mortem.
+        "    puts \"PYRO_METRIC:RP_WNS:NONE\"\n"
+        "} else {\n"
+        "    set _rp_wns 1.0e9\n"
+        "    foreach _pp $_scoped {\n"
+        "        set _s [get_property SLACK $_pp]\n"
+        "        if {$_s < $_rp_wns} { set _rp_wns $_s }\n"
+        "    }\n"
+        "    puts \"PYRO_METRIC:RP_WNS:[format %.4f $_rp_wns]\"\n"
+        "}\n"
+        # R73a.6: the whole-design WNS is recorded for job diagnostics ONLY —
+        # it MUST NOT feed met_timing (the known-accepted -0.427 ns static CMAC
+        # violation, R73a.5, lives on this query).
+        "set _p [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup]\n"
         "if {[llength $_p] == 0} {\n"
         "    puts \"PYRO_METRIC:WNS:NONE\"\n"
         "} else {\n"
@@ -601,6 +648,14 @@ class VivadoToolchain:
         serve a non-device artifact under a device-loadable claim).  pr_verify is
         a HARD GATE (R82c): if it does not pass, no partial is written and the job
         fails (permanent fallback, R65).
+
+        Timing (R73a, v2.5.0): ``met_timing``/``fmax_mhz`` are decided by the
+        RP-SCOPED post-route WNS (paths with startpoint and/or endpoint in the
+        ``pyro_rp`` cell, axis_aclk 250 MHz domain — R73a.1/R73a.2); an empty
+        scoped path set fails the job (R73a.3); the whole-design WNS is recorded
+        in job diagnostics only and never gates (R73a.6).  A3.5: the payload is
+        read as soon as pr_verify passes, and a post-verify failure preserves
+        the workdir instead of destroying the verified partial.
         """
         exe = self._vivado_exe()
         cfg = self.config
@@ -626,6 +681,12 @@ class VivadoToolchain:
         from ..hdl.rp_wrapper import generate_rp_child
 
         workdir = tempfile.mkdtemp(prefix="pyro_vivado_pr_")
+        # A3.5: once the pr_verify gate has passed, a good (verified) partial
+        # exists on disk; any later failure must PRESERVE the workdir (the .bit
+        # + reports) under a diagnostics path instead of rmtree-destroying
+        # hours of P&R output unread.
+        preserve_on_failure = False
+        preserved: Optional[str] = None
         try:
             with open(os.path.join(workdir, "design.v"), "w") as f:
                 f.write(job.rtl)                       # generated engine (pyro_circuit)
@@ -690,6 +751,25 @@ class VivadoToolchain:
             # token, so a false PASS cannot slip past the marker alone.
             _validate_pr_verify_report(os.path.join(workdir, "pr_verify.rpt"))
 
+            # A3.5: the pr_verify gate has passed — a good verified partial now
+            # exists on disk.  From here on, a failure preserves the workdir.
+            preserve_on_failure = True
+
+            # A3.5: read the partial bitstream payload IMMEDIATELY — before any
+            # metric-parse or timing-gate failure can raise — so the artifact
+            # can never again be destroyed unread on a post-verify failure.
+            # Payload = the REAL partial bitstream bytes (R72/R85 device artifact).
+            bit_path = os.path.join(workdir, "pyro_rp_partial.bit")
+            try:
+                with open(bit_path, "rb") as f:
+                    payload = f.read()
+            except OSError as exc:
+                raise SynthesisFailed(
+                    f"pr_verify passed but no partial bitstream was written: {exc} "
+                    f"(R82c)")
+            if not payload:
+                raise SynthesisFailed("partial bitstream is empty (R82c)")
+
             # Post-route metrics (R72c/R73), same parsing as the OOC flow.
             util_path = os.path.join(workdir, "util.rpt")
             try:
@@ -704,33 +784,43 @@ class VivadoToolchain:
                 raise SynthesisFailed(
                     "could not parse CLB LUTs / CLB Registers from PR util report")
             period_ns = 1000.0 / float(cfg.target_clock_mhz)
-            if _RE_WNS_NONE.search(out):
+
+            # R73a.6: the whole-design WNS is job diagnostics ONLY.  It MUST
+            # NOT feed met_timing — the flashed static's known-accepted
+            # -0.427 ns CMAC violation (R73a.5) lives on this query, and gating
+            # on it would fail every partial forever.
+            m_whole = _RE_WNS.search(out)
+            whole_wns: Optional[float] = (
+                float(m_whole.group(1)) if m_whole else None)
+
+            # R73a.1/R73a.2: met_timing and fmax_mhz are decided by the
+            # RP-SCOPED WNS (startpoint and/or endpoint in the pyro_rp cell,
+            # axis_aclk domain), never by the whole-design worst path.
+            if _RE_RP_WNS_NONE.search(out):
+                # R73a.3: an empty scoped path set is a FAILURE, not a pass — a
+                # narrower gate must not degrade into no gate.
                 raise SynthesisFailed(
-                    "no post-route setup timing paths in PR link — cannot verify "
-                    "timing (R65)")
-            m = _RE_WNS.search(out)
+                    f"R73a.3: the RP-scoped post-route timing query returned NO "
+                    f"setup paths — refusing to pass an ungated partial "
+                    f"(whole-design WNS={whole_wns}, diagnostics only) (R65)")
+            m = _RE_RP_WNS.search(out)
             if m is None:
                 raise SynthesisFailed(
-                    "could not parse post-route WNS from PR vivado output")
-            wns = float(m.group(1))
-            met_timing = wns >= 0.0
-            fmax_mhz = 1000.0 / max(period_ns - wns, 1e-6)
+                    "could not parse RP-scoped post-route WNS from PR vivado "
+                    "output (R73a.1)")
+            wns = float(m.group(1))               # the R73a.1 scoped WNS
+            met_timing = wns >= 0.0               # R73/R73a.1
+            fmax_mhz = 1000.0 / max(period_ns - wns, 1e-6)   # R73a.2
+            _log.info(
+                "PR link post-route timing: RP-scoped WNS=%.4f ns (decides "
+                "met_timing, R73a.1); whole-design WNS=%s ns (diagnostics "
+                "only, R73a.6)", wns,
+                "NONE" if whole_wns is None else format(whole_wns, ".4f"))
             if not met_timing:
                 raise SynthesisFailed(
                     f"PR link timing not met at {cfg.target_clock_mhz:g} MHz: "
-                    f"WNS={wns:.3f} ns (R73)")
-
-            # Payload = the REAL partial bitstream bytes (R72/R85 device artifact).
-            bit_path = os.path.join(workdir, "pyro_rp_partial.bit")
-            try:
-                with open(bit_path, "rb") as f:
-                    payload = f.read()
-            except OSError as exc:
-                raise SynthesisFailed(
-                    f"pr_verify passed but no partial bitstream was written: {exc} "
-                    f"(R82c)")
-            if not payload:
-                raise SynthesisFailed("partial bitstream is empty (R82c)")
+                    f"RP-scoped WNS={wns:.3f} ns (R73/R73a.1; whole-design "
+                    f"WNS={whole_wns} recorded per R73a.6, not gated)")
 
             manifest = Manifest(
                 pattern_hash=job.pattern_hash,
@@ -755,8 +845,37 @@ class VivadoToolchain:
                 pr_verified=True,                     # R47b/R82c: pr_verify passed
             )
             return payload, manifest
+        except Exception as exc:
+            # A3.5: after the pr_verify gate has passed, the workdir holds a
+            # good verified partial (+ reports) — preserve it for diagnosis
+            # instead of destroying it.  R65 semantics are unchanged: the job
+            # still fails as SynthesisFailed (permanent fallback); only the
+            # disposal of the on-disk evidence changes.  KeyboardInterrupt /
+            # SystemExit are BaseException and propagate untouched (see run()).
+            if not preserve_on_failure:
+                raise
+            preserved = _preserve_pr_workdir(workdir)
+            raise SynthesisFailed(
+                f"pr_bitstream job failed AFTER pr_verify passed: {exc} — "
+                f"workdir (partial .bit + reports) preserved for diagnosis at "
+                f"{preserved} (A3.5)") from exc
         finally:
-            shutil.rmtree(workdir, ignore_errors=True)
+            if preserved is None:
+                shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _preserve_pr_workdir(workdir: str) -> str:
+    """A3.5: keep a ``pr_verify``-passed PR workdir (the partial ``.bit`` plus
+    ``util.rpt``/``timing.rpt``/``pr_verify.rpt``/``vivado.log``) under a
+    diagnostics path instead of destroying it.  Renames the directory to a
+    ``-preserved`` sibling; if the rename fails the original directory is left
+    in place (still preserved).  Returns the path holding the artifacts."""
+    diag = workdir + "-preserved"
+    try:
+        os.rename(workdir, diag)
+        return diag
+    except OSError:
+        return workdir
 
 
 # W6: pr_verify report failure/critical tokens and the required compatibility token.
