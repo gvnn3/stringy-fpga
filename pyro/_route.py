@@ -159,17 +159,20 @@ _N_SYNTH = None
 _TOOLCHAIN = "mock"
 _VIVADO_DIR = None
 
-# R68 device knobs (v2.2.2) — sampled at the SAME R35a points, never per call.
-# PYRO_DEVICE_IFACE is the onic netdev the R86 device transport binds (default
-# enp175s0f0, F3); PYRO_HW_SERVER is the Vivado hw_server URL the R85/R86.5 JTAG
+# R68 device knobs (v2.2.2; iface no-default rule v2.5.0) — sampled at the SAME
+# R35a points, never per call.  PYRO_DEVICE_IFACE is the onic netdev the R86
+# device transport binds — **no default, fail-closed** (F3/R68 v2.5.0): the
+# netdev name is host configuration, not derivable from any spec fact, so an
+# unset knob yields None and probe_device fails closed with the R83 canonical
+# `transport: PYRO_DEVICE_IFACE not configured` reason (never a guess, never a
+# scan — R70).  PYRO_HW_SERVER is the Vivado hw_server URL the R85/R86.5 JTAG
 # loader connects to (default TCP:localhost:3121).  These are the ONLY two
 # env-sampled device inputs (R68/R86): pyro.device.DeviceConfig reads this cached
 # snapshot for its iface/hw_server field defaults — the device functions
 # themselves never touch os.environ (R5/R35a).  Every other device parameter
 # (SPEC16, R84 timeouts, R78 frame constants) is a spec-fixed constant.
-_DEVICE_IFACE_DEFAULT = "enp175s0f0"
 _HW_SERVER_DEFAULT = "TCP:localhost:3121"
-_DEVICE_IFACE = _DEVICE_IFACE_DEFAULT
+_DEVICE_IFACE = None
 _HW_SERVER = _HW_SERVER_DEFAULT
 
 # R68 PR-substrate knobs (v2.2.4) — sampled at the SAME R35a points, never per
@@ -223,9 +226,10 @@ def sample_env() -> None:
         _vd = os.environ.get("PYRO_VIVADO")
         _VIVADO_DIR = _vd if _vd else None
         # R68 device knobs (v2.2.2): the only two env-sampled device inputs.  An
-        # unset/empty value keeps the spec default (F3 iface, stock hw_server).
+        # unset/empty PYRO_DEVICE_IFACE has NO default (None — fail-closed,
+        # F3/R68 v2.5.0); an unset PYRO_HW_SERVER keeps the stock spec default.
         _di = os.environ.get("PYRO_DEVICE_IFACE")
-        _DEVICE_IFACE = _di if _di else _DEVICE_IFACE_DEFAULT
+        _DEVICE_IFACE = _di if _di else None
         _hs = os.environ.get("PYRO_HW_SERVER")
         _HW_SERVER = _hs if _hs else _HW_SERVER_DEFAULT
         # R68 PR-substrate knobs (v2.2.4): no default (fail-loud is enforced by the
@@ -275,8 +279,11 @@ def toolchain_selection():
 
 
 def device_iface():
-    """Cached PYRO_DEVICE_IFACE (R68/v2.2.2), the onic netdev for the device
-    transport (default ``enp175s0f0``).  Sampled only at R35a points; read by
+    """Cached PYRO_DEVICE_IFACE (R68/v2.2.2; no-default rule v2.5.0), the onic
+    netdev for the device transport — ``None`` when unset (**no spec default;
+    fail-closed**, F3/R68: the name is host configuration, and probe_device then
+    returns the R83 canonical ``transport: PYRO_DEVICE_IFACE not configured``
+    reason instead of guessing or scanning).  Sampled only at R35a points; read by
     :mod:`pyro.device`'s ``DeviceConfig`` for its ``iface`` default — never on the
     per-call hot path, never via os.environ inside the device functions (R86)."""
     return _DEVICE_IFACE

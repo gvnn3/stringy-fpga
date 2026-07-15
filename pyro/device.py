@@ -278,14 +278,17 @@ def _as_byte(value: int) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _sampled_iface() -> str:
-    """The sampled PYRO_DEVICE_IFACE (R68), else the spec default (F3).  Reads
-    :mod:`pyro._route`'s cached R35a snapshot, NOT ``os.environ`` (R86/R5)."""
+def _sampled_iface() -> Optional[str]:
+    """The sampled PYRO_DEVICE_IFACE (R68), else ``None`` — **no spec default,
+    fail-closed** (F3/R68 no-default rule, v2.5.0): the netdev name is host
+    configuration, not derivable from any spec fact, so nothing is guessed and
+    nothing is scanned (R70).  Reads :mod:`pyro._route`'s cached R35a snapshot,
+    NOT ``os.environ`` (R86/R5)."""
     try:
         from . import _route
         return _route.device_iface()
     except Exception:
-        return "enp175s0f0"
+        return None
 
 
 def _sampled_hw_server() -> str:
@@ -313,7 +316,12 @@ class DeviceConfig:
     usable with no introspection; the functions never read ``os.environ``.  Only
     ``iface``/``hw_server`` derive from env knobs (PYRO_DEVICE_IFACE /
     PYRO_HW_SERVER, R68) — via :mod:`pyro._route`'s R35a-sampled snapshot at
-    construction, not an ad-hoc environment read.  Every other field is a
+    construction, not an ad-hoc environment read.  From v2.5.0 ``iface`` is the
+    deliberate exception to full usability (F3/R68 no-default rule): it has **no
+    spec constant to default from** and is ``None`` when PYRO_DEVICE_IFACE is
+    unset — fail-closed, :func:`probe_device` then returns ``(False, <R83
+    canonical reason>)`` naming ``transport: PYRO_DEVICE_IFACE not configured``
+    (never raises, never guesses, never scans — R70).  Every other field is a
     spec-fixed constant (SPEC16 per R81, R84 timeouts, R70a-pin Vivado) a test
     MAY override on the config.
 
@@ -332,7 +340,8 @@ class DeviceConfig:
     """
 
     # -- probe (R83/R84); iface from PYRO_DEVICE_IFACE (R68) -----------------
-    iface: str = field(default_factory=_sampled_iface)   # onic netdev (F3)
+    # onic netdev (F3); None = unconfigured => fail-closed (R68 v2.5.0)
+    iface: Optional[str] = field(default_factory=_sampled_iface)
     expected_spec16: int = PYRO_SHELL_SPEC16             # expected SPEC16 (R81)
     probe_timeout_s: float = PYRO_PROBE_TIMEOUT          # per attempt (R84)
     probe_attempts: int = PYRO_PROBE_ATTEMPTS            # attempt count (R84)
@@ -352,7 +361,10 @@ class DeviceConfig:
 # probe_device (R86.4 / R83 / R84 / R81)
 # ---------------------------------------------------------------------------
 
-# R83 canonical unmet-condition clauses, in the fixed enumeration order.
+# R83 canonical unmet-condition clauses, in the fixed enumeration order
+# (v2.5.0/A4: the unconfigured-interface condition is condition 1 — you cannot
+# probe an interface you do not have — renumbering the previous two to 2 and 3).
+_REASON_IFACE = "transport: PYRO_DEVICE_IFACE not configured"
 _REASON_PROBE = (
     "probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, "
     "or static_shell_id SPEC16 mismatch)")
@@ -371,15 +383,28 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
     ``ID_REPLY`` handshake (up to ``probe_attempts`` × ``probe_timeout_s``, R84)
     validates the ``static_shell_id`` ``SPEC16`` (R81).
 
-    Returns ``(True, reason)`` only when **both** conditions hold; otherwise
+    **Fail-closed on an unconfigured netdev (F3/R68 no-default rule, v2.5.0).**
+    When ``config.iface`` is ``None`` (PYRO_DEVICE_IFACE unset and no caller-
+    supplied value) and no ``transport_factory`` seam supplies the transport,
+    the ``AF_PACKET`` binding has no interface: no probe is attempted (a probe
+    that never ran is not enumerated as a probe failure) and the reason names
+    ``transport: PYRO_DEVICE_IFACE not configured`` as the **first** R83
+    condition.  Never raises, never guesses a name, never scans the system for
+    candidate interfaces (R70).  An injected ``transport_factory`` (R86.6
+    explicit config injection) needs no netdev, so the seam paths are unaffected.
+
+    Returns ``(True, reason)`` only when **all** conditions hold; otherwise
     ``(False, <R83 canonical enumeration>)``.  May raise :class:`PyroFrameError`
     only on a genuinely malformed reply frame (R86.4), which the caller treats as
     not-usable.
     """
     cap = config.cap_check() if config.cap_check is not None else _has_cap_net_raw()
+    # R68 (v2.5.0) fail-closed gate: the real AF_PACKET transport needs a
+    # configured netdev; an injected transport (R86.6 seam) does not.
+    iface_missing = config.iface is None and config.transport_factory is None
 
     static_shell_id: Optional[int] = None
-    if cap:
+    if cap and not iface_missing:
         # CAP_NET_RAW present: attempt the live probe.  OSError from the raw
         # socket is contained (R86.1 — no OSError leakage); a malformed reply
         # surfaces as PyroFrameError (R86.4, permitted).
@@ -398,9 +423,14 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
                 f"device_usable=true — static_shell_id=0x{static_shell_id:08x}, "
                 f"transport: CAP_NET_RAW present")
 
-    # R83 canonical enumeration of exactly the unmet conditions, in fixed order.
+    # R83 canonical enumeration of exactly the unmet conditions, in fixed order
+    # (1. iface not configured, 2. no valid ID_REPLY, 3. CAP_NET_RAW absent).
+    # When the iface is unconfigured no probe ran, so condition 2 — which would
+    # report a probe failure for a probe that never happened — is not claimed.
     unmet = []
-    if not probe_ok:
+    if iface_missing:
+        unmet.append(_REASON_IFACE)
+    elif not probe_ok:
         unmet.append(_REASON_PROBE)
     if not cap:
         unmet.append(_REASON_TRANSPORT)
@@ -508,7 +538,14 @@ def read_perf_counters(config: DeviceConfig,
     Precondition: ``CAP_NET_RAW`` (as for the live probe); ``OSError`` is
     contained to ``None`` (R86.1).  Raises :class:`PyroFrameError` only on a
     genuinely malformed ``PERF_REPLY`` to our ``seq`` (short payload).
+
+    Fail-closed on an unconfigured netdev (F3/R68 no-default rule, v2.5.0):
+    with ``config.iface is None`` and no ``transport_factory`` seam there is no
+    interface to bind, so this returns ``None`` (counters unavailable) — never
+    a raise, a guess, or a scan (R70).
     """
+    if config.transport_factory is None and config.iface is None:
+        return None  # R68 fail-closed: no netdev configured (v2.5.0)
     try:
         transport = (config.transport_factory(config)
                      if config.transport_factory is not None
@@ -597,6 +634,12 @@ class _EthTransport(_Transport):
 
     def __init__(self, config: DeviceConfig):
         import socket  # local import: keeps package import off the socket module
+        if config.iface is None:
+            # R68 no-default rule (v2.5.0): no configured netdev to bind.
+            # OSError keeps the R86.1 containment contract at every call site
+            # (probe/perf swallow OSError into their (False, reason)/None paths)
+            # instead of leaking a bind() TypeError.
+            raise OSError("PYRO_DEVICE_IFACE not configured (R68, fail-closed)")
         self._socket_mod = socket
         self._sock = socket.socket(
             socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETHERTYPE))

@@ -45,6 +45,9 @@ import phase2_support
 CANON_PROBE = ("device_usable=false — probe: no valid ID_REPLY (no reply within "
                "PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)")
 CANON_TWO_CONDITION = CANON_PROBE + ", transport: CAP_NET_RAW absent"
+# v2.5.0 (A4/R68/R83): condition 1 of the renumbered canonical enumeration —
+# emitted first, fail-closed, when no netdev is configured.
+CANON_IFACE_UNSET = "device_usable=false — transport: PYRO_DEVICE_IFACE not configured"
 
 
 # --------------------------------------------------------------------------
@@ -342,10 +345,36 @@ def test_load_partial_never_leaks_os_permission_error(tmp_path):  # AC-2b-3 (R86
 # ==========================================================================
 # R68 device env knobs -> DeviceConfig defaults (v2.2.2), sampled at R35a points.
 # ==========================================================================
-def test_device_iface_default_is_spec_default():  # AC-2b (R68/R86.6)
-    """Unset PYRO_DEVICE_IFACE -> DeviceConfig().iface default 'enp175s0f0' (F3).
-    (conftest clears the knob and refresh_env()s before each test.)"""
-    assert pdev.DeviceConfig().iface == "enp175s0f0"
+def test_device_iface_default_is_none_fail_closed():  # AC-2b (R68/R86.6, v2.5.0)
+    """Unset PYRO_DEVICE_IFACE -> DeviceConfig().iface is None: **no spec
+    default, fail-closed** (F3/R68 no-default rule, v2.5.0 — the netdev name is
+    host configuration, not a spec fact, so nothing is guessed and nothing is
+    scanned).  (conftest clears the knob and refresh_env()s before each test.)"""
+    assert pdev.DeviceConfig().iface is None
+
+
+def test_probe_unconfigured_iface_fails_closed_canonical():  # AC-2b-2 (R68/R83, v2.5.0)
+    """No iface configured (and no transport seam): probe_device returns
+    (False, <R83 canonical reason>) whose FIRST condition is
+    `transport: PYRO_DEVICE_IFACE not configured` — it never raises, never
+    guesses, never scans (R68/R70).  No probe ran, so the probe condition
+    (no valid ID_REPLY) is NOT enumerated; the CAP_NET_RAW condition follows
+    when the capability is also absent (fixed R83 order: 1 then 3)."""
+    # Privilege present (cap_check seam): the unconfigured iface is the ONLY
+    # unmet condition.
+    usable, reason = pdev.probe_device(pdev.DeviceConfig(cap_check=lambda: True))
+    assert usable is False
+    assert reason == CANON_IFACE_UNSET, f"{reason!r}"
+    # Privilege absent: conditions 1 and 3, in the fixed canonical order.
+    usable, reason = pdev.probe_device(pdev.DeviceConfig(cap_check=lambda: False))
+    assert usable is False
+    assert reason == CANON_IFACE_UNSET + ", transport: CAP_NET_RAW absent", f"{reason!r}"
+
+
+def test_perf_readout_unconfigured_iface_is_unavailable():  # R78.11/R68 (v2.5.0)
+    """read_perf_counters with no iface and no transport seam fails closed to
+    None (counters unavailable) — never a raise, a guess, or a scan (R70)."""
+    assert pdev.read_perf_counters(pdev.DeviceConfig()) is None
 
 
 def test_hw_server_default_is_spec_default():  # AC-2b (R68/R86.6)
