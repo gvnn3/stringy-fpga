@@ -1,10 +1,10 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.3.0
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified, device clauses still SKIP until the probe answers; Vivado toolchain re-pinned to 2025.2)
+- **Version:** 2.4.0
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2)
 - **Owner:** Spec Writer
-- **Date:** 2026-07-08
+- **Date:** 2026-07-10
 
 ---
 
@@ -878,7 +878,9 @@ synthesis time and identified via the identity block (R47a).
   This addition bumps `HARNESS_VERSION`/`GENERATOR_VERSION` to `0x00020100`
   (2.1.0): identity hashes (R47a) and cache keys (R4) roll over, so pre-2.1.0
   cached artifacts are stale (rejected by the R47b harness check) and
-  re-synthesize on demand.
+  re-synthesize on demand. On hardware, where AXI-Lite is tied off at the R80
+  boundary, the counters are read out **in-band** via
+  `PERF_REQUEST`/`PERF_REPLY` (R78.11, v2.4.0).
 
 - **R47a (circuit-identity register block — trust boundary).** Before dispatching
   any scan, the host runtime MUST read the identity block (`CIRC_ID0..3`,
@@ -1813,8 +1815,9 @@ clauses, the flashed PR shell and validated PR flow (P1).
 - **AC-2b-1.** The host-side control-frame codec `pyro.device.encode_frame`/
   `decode_frame` (R78/R86) round-trips the **normative test vectors** byte-for-byte
   on their PYRO-header-onward portion (R78 frame offset 14+): encoding an
-  `ID_REQUEST`, a `MATCH_REQUEST`, an `ID_REPLY`, a `MATCH_REPLY`, and a
-  `STATUS`/`ERROR` (R78.10(a)–(e)) from their field values produces **exactly** the
+  `ID_REQUEST`, a `MATCH_REQUEST`, an `ID_REPLY`, a `MATCH_REPLY`, a
+  `STATUS`/`ERROR`, a `PERF_REQUEST`, and a `PERF_REPLY` (R78.10(a)–(g)) from
+  their field values produces **exactly** the
   R78.10 bytes, and decoding those bytes
   recovers **exactly** the R78-named fields (big-endian PYRO header; little-endian
   embedded `pyro_match` entries in `MATCH_REPLY`). The codec MUST raise
@@ -1933,9 +1936,13 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     | `0x03` | `MATCH_REQUEST` | host → device  |
     | `0x04` | `MATCH_REPLY`   | device → host  |
     | `0x05` | `STATUS`/`ERROR`| device → host  |
+    | `0x06` | `PERF_REQUEST`  | host → device  | *(v2.4.0, R78.11)* |
+    | `0x07` | `PERF_REPLY`    | device → host  | *(v2.4.0, R78.11)* |
 
     Any other value is invalid and MUST be dropped (device) or treated as a
-    protocol error routing the call to fallback (host, R52).
+    protocol error routing the call to fallback (host, R52). A device built
+    before a kind was defined treats it as "any other value" and drops it —
+    this is the normative forward-compatibility behavior R78.11 relies on.
   - **R78.5 (`ID_REQUEST` / `ID_REPLY`).** `ID_REQUEST` carries an **empty payload**
     (`length == 0`, `slot == 0`). `ID_REPLY` echoes `seq` and carries a **12-byte**
     payload (`length == 12`):
@@ -2068,6 +2075,53 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     it is byte-consistent with (c) by MAC-swap, `slot`/`seq` echo, and `kind = 0x05`.
     A `STATUS`/`ERROR` frame MAY carry UTF-8 diagnostic text after `code` (R78.8); the
     ID stub emits none, so this vector's `length` is exactly `4`.)
+
+    **(f) `PERF_REQUEST`** (host → device; `slot = 1`, `seq = 3`, empty payload —
+    v2.4.0, R78.11):
+    ```
+    02 00 00 00 00 02  02 00 00 00 00 01  88 B5
+    50 01 06 00  00 01  00 00 00 03  00 00  00 00
+    ```
+    (28 meaningful bytes; zero-padded to 60 on the wire.)
+
+    **(g) `PERF_REPLY`** (device → host; echoes `slot = 1`, `seq = 3`; example
+    counter values from the (c) scan — corpus `"abcabc"`, 6 bytes fed one
+    byte/cycle ⇒ `cycles = 6`, `bytes = 6`. The **byte layout** is normative;
+    the counter **values** are measurements and are illustrative here, exactly
+    as the window values in (d) are):
+    ```
+    02 00 00 00 00 01  02 00 00 00 00 02  88 B5
+    50 01 07 00  00 01  00 00 00 03  00 10  00 00
+    00 00 00 00 00 00 00 06   00 00 00 00 00 00 00 06 ; payload: cycles(8 BE) | bytes(8 BE)
+    ```
+    (44 meaningful bytes; `length = 0x10 = 16`; zero-padded to 60 on the wire.
+    The round-trip (f)→(g) is the normative `PERF` vector for AC-2b-1.)
+  - **R78.11 (`PERF_REQUEST` / `PERF_REPLY` — R45a counter read-out, v2.4.0).**
+    `PERF_REQUEST` carries an **empty payload** (`length == 0`); `slot` selects the
+    resident circuit exactly as in R78.6. A resident pattern child replies
+    `PERF_REPLY`, echoing `seq` and `slot`, with a **16-byte** payload:
+
+    | Off | Size | Field    | Endian | Meaning                                            |
+    |-----|------|----------|--------|----------------------------------------------------|
+    | 0   | 8    | `cycles` | BE     | R45a `CYCLES` (`{CYCLES_HI,CYCLES_LO}`) of the most recent scan |
+    | 8   | 8    | `bytes`  | BE     | R45a `BYTES` (`{BYTES_HI,BYTES_LO}`) of the most recent scan    |
+
+    A `PERF_REQUEST` for a slot that is not resident MUST get `STATUS`/`ERROR`
+    `PYRO_E_NOT_RESIDENT` (mirroring R78.8). **Semantics:** the child's responder is
+    single-threaded (one request is parsed only after the previous reply is sent), so
+    the engine is never BUSY when a `PERF_REQUEST` is served; the returned values are
+    therefore the R45a post-`DONE` stable counters of the most recent completed scan
+    (`0/0` if no scan has run since the partial was configured), read **coherently**
+    (no R45a half-tearing) and **non-destructively** (the counters clear only on the
+    next scan's `CTRL.START`/`CTRL.RESET`, R45a). **Compatibility:** kinds
+    `0x06`/`0x07` are additive. A child built before v2.4.0 (artifact
+    `harness_version < 0x00020200`) — including the flashed default ID stub — drops
+    `PERF_REQUEST` per R78.4; the host MUST treat a reply timeout as **"counters
+    unavailable"** (the wire analogue of R45a's harness < 2.1.0 zero-read rule),
+    never as a device fault, and MUST NOT route the *scan* path to fallback because
+    of it. Support is host-detectable a priori from the loaded artifact's manifest
+    `harness_version` (R47b). Per R79 this is a **partial-bitstream-only** change:
+    the static shell and the R80 boundary are untouched, and no reflash is required.
 
 - **R79 (frame parsing lives inside `pyro_rp`).** The PYRO control-frame parser and
   responder are implemented **inside the reconfigurable partition `pyro_rp`**
@@ -2364,9 +2418,10 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     `length=len(payload)`, `reserved=0`, encoding all header fields **big-endian**
     (R78.2/R78.3). It MUST raise `PyroFrameError` if `len(payload) > 1486` (R78.9),
     if `flags != 0`, or if `kind` is not a **sendable** kind. The **sendable kinds
-    are exactly `0x01`–`0x05`** (R78.4). **`0x00` is `reserved` and is NOT a message
+    are exactly `0x01`–`0x07`** (R78.4; `0x06`/`0x07` added by v2.4.0, R78.11).
+    **`0x00` is `reserved` and is NOT a message
     kind** — `encode_frame` MUST reject it (confirming the coder's reading, v2.2.2);
-    likewise any value `> 0x05` or otherwise undefined in R78.4 is rejected.
+    likewise any value `> 0x07` or otherwise undefined in R78.4 is rejected.
   - **R86.3 (`decode_frame`).** `decode_frame(data: bytes) -> result` parses the PYRO
     control header + payload (the same slice `encode_frame` returns) and returns a
     structured result whose fields are named exactly for the R78 header:
@@ -2662,6 +2717,51 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.4.0** (2026-07-10) — *R78.11 in-band PERF counter read-out (MINOR — added
+  requirement), spec-writer.* Closes the R45a **observability gap on hardware**:
+  the v2.3.0 counters exist in the R45 CSR block, but AXI-Lite is tied off at
+  the R80 boundary and no R78.4 kind read them, so on the real device they were
+  unreachable (observable only in the model and xsim) and R59/AC-3-3 could not
+  attribute on-chip scan cost. Per R79 this is a **partial-bitstream-only**
+  change — the flashed static shell (boot-verified 2026-07-10) and the R80
+  boundary are untouched; no reflash. No interface/AC break, no renumbering;
+  frozen invariants untouched (C ABI 2.0.0, `PYROART1`, `SHELL_VERSION
+  0x0A000001`, `PYRO_SHELL_SPEC16 0x0202`, wire harness namespace `0x00010000`
+  (R78.5b), existing AC numbers).
+  - **R78.4 (additive).** New kinds `0x06` `PERF_REQUEST` / `0x07` `PERF_REPLY`;
+    explicit note that pre-definition devices drop unknown kinds (the
+    forward-compatibility behavior R78.11 relies on).
+  - **R78.11 (NEW).** Empty-payload request; 16-byte big-endian
+    `cycles(8)|bytes(8)` reply; `STATUS`/`ERROR` `PYRO_E_NOT_RESIDENT` for a
+    non-resident slot; served only between scans ⇒ coherent post-DONE values,
+    non-destructive read; pre-2.4.0 children (incl. the flashed ID stub) drop
+    the request and the host MUST treat the timeout as counters-unavailable,
+    never a device fault.
+  - **R78.10 (additive).** Normative vectors **(f)** `PERF_REQUEST` /
+    **(g)** `PERF_REPLY`; AC-2b-1 now spans (a)–(g).
+  - **R86.2.** Sendable kinds now exactly `0x01`–`0x07`.
+  - **Engine RTL fixes (2.2.0, found by the R78.11 xsim gate).** Three latent
+    generator bugs, invisible until the counters became wire-observable:
+    (1) `CTRL.START` was level-triggered and never cleared, so the engine
+    **restarted itself** the cycle after `DONE`, wiping both R45a counters and
+    reducing `DONE` to a one-cycle pulse — R45a's hold-after-DONE was
+    unimplementable; START now fires on the bit's **rising edge** only.
+    (2) A window's exclusive `end` was reported **+1 too large** (accepts are
+    harvested from the closure of the registered state, one cycle after the
+    accepting byte, when `byte_index` already equals the correct `end`).
+    (3) The **final byte's accept was dropped** (`running` cleared at
+    `in_last` before the accept became visible) — a missed-match correctness
+    bug on the device path; a one-cycle `finishing` harvest now catches it and
+    then latches `DONE`. Wire-proven by the pattern-child xsim tb (ID, MATCH,
+    PERF pre/post, non-resident PERF) against host-codec-generated vectors.
+  - **Version rollover.** `HARNESS_VERSION`/`GENERATOR_VERSION` → `0x00020200`
+    (2.2.0), mirrored in `src/pyro_rt.c`: identity hashes (R47a), cache keys
+    (R4), and the R47b manifest harness check roll over, so pre-2.2.0 artifacts
+    (including any 2.1.0 rebuilds) are stale and re-synthesize on demand.
+    The R74 estimator is untouched: the PERF responder lives in the RP-child
+    **wrapper** (§10.2), which is outside the estimator's engine
+    (`pyro_circuit`) scope; the engine's emitted RTL changes only its
+    `HARNESS_VER` localparam value (no resource change).
 - **2.3.0** (2026-07-08) — *R45a on-chip performance counters (MINOR — added
   requirement), spec-writer.* Closes the benchmark-attribution gap: the R45 CSR
   block had no on-chip cycle/byte counters, so R59/AC-3-3 could only measure

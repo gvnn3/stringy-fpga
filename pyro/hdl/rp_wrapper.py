@@ -28,6 +28,9 @@ Wire behavior of a pattern child vs. the default stub (R78.5/R78.8):
     bit when the engine truncated the set (R78.7).
   * ``MATCH_REQUEST`` for any other slot (0, or ≥ 2) → ``STATUS``/``ERROR``
     ``PYRO_E_NOT_RESIDENT`` (R78.8/R87).
+  * ``PERF_REQUEST`` for this child's ``SLOT`` → ``PERF_REPLY`` carrying the
+    R45a ``CYCLES``/``BYTES`` counters of the most recent scan (R78.11, v2.4.0);
+    any other slot → ``STATUS``/``ERROR`` ``PYRO_E_NOT_RESIDENT``.
 
 **v2.2.4 blessings (design choices ratified by the spec — cited, not invented):**
   1. **R78.5a** — ``rp_child_id`` is the **low 32 bits of the R47a pattern hash,
@@ -134,8 +137,10 @@ _TEMPLATE = r"""// *************************************************************
 // PYRO control frames in-RP (R79), answers ID_REQUEST with a non-zero rp_child_id
 // (R78.5a, "loaded pattern"), serves MATCH_REQUEST for its SLOT by streaming the
 // corpus through the generated engine and replying with R47 pyro_match entries
-// (R78.7), and returns PYRO_E_NOT_RESIDENT for a MATCH_REQUEST to any other slot
-// (R78.8/R87).  Byte k of a frame occupies tdata[8*k +: 8].
+// (R78.7), returns PYRO_E_NOT_RESIDENT for a MATCH_REQUEST to any other slot
+// (R78.8/R87), and serves PERF_REQUEST with the R45a CYCLES/BYTES counters of
+// the most recent scan (R78.11, v2.4.0).  Byte k of a frame occupies
+// tdata[8*k +: 8].
 // *************************************************************************
 `timescale 1ns/1ps
 
@@ -186,6 +191,8 @@ module pyro_rp #(
   localparam [7:0]  KIND_MATCH_REQ   = 8'h03;
   localparam [7:0]  KIND_MATCH_REPLY = 8'h04;
   localparam [7:0]  KIND_STATUS_ERR  = 8'h05;
+  localparam [7:0]  KIND_PERF_REQ    = 8'h06;  // R45a read-out (R78.11, v2.4.0)
+  localparam [7:0]  KIND_PERF_REPLY  = 8'h07;
   localparam [7:0]  PYRO_MAGIC       = 8'h50;  // 'P'
   localparam [7:0]  PYRO_VER         = 8'h01;  // protocol version 1
   localparam [7:0]  ETH_HI           = 8'h88;  // EtherType 0x88B5 big-endian
@@ -196,6 +203,10 @@ module pyro_rp #(
   localparam [15:0] CSR_CTRL    = 16'h0010;    // bit0 START, bit1 RESET
   localparam [15:0] CSR_STATUS  = 16'h0014;    // bit0 BUSY, bit1 DONE, bit3 OVF
   localparam [15:0] CSR_OUT_CAP = 16'h0048;
+  localparam [15:0] CSR_CYCLES_LO = 16'h0058;  // R45a perf counters (v2.3.0)
+  localparam [15:0] CSR_CYCLES_HI = 16'h005C;
+  localparam [15:0] CSR_BYTES_LO  = 16'h0060;
+  localparam [15:0] CSR_BYTES_HI  = 16'h0064;
   localparam [31:0] CTRL_START  = 32'h0000_0001;
   localparam [31:0] CTRL_RESET  = 32'h0000_0002;
 
@@ -311,10 +322,15 @@ module pyro_rp #(
                    ST_DRAIN     = 4'd7,   // wait for DONE, latch OVF (B2)
                    ST_BHDR      = 4'd8,   // build reply header + framing
                    ST_BENT      = 4'd9,   // serialize pyro_match entries
-                   ST_TX        = 4'd10;  // drive reply beats (combinational out)
+                   ST_TX        = 4'd10,  // drive reply beats (combinational out)
+                   ST_PERF      = 4'd11;  // R78.11: read R45a counters from CSRs
   reg [3:0]  state;
-  reg [1:0]  reply_kind;   // 0 = ID_REPLY, 1 = STATUS/ERROR, 2 = MATCH_REPLY
+  reg [1:0]  reply_kind;   // 0 = ID_REPLY, 1 = STATUS/ERROR, 2 = MATCH_REPLY, 3 = PERF_REPLY
   reg [15:0] tx_beat;
+
+  // R78.11 PERF_REPLY scratch: the four R45a counter halves, latched in ST_PERF.
+  reg [31:0] perf_cyc_lo, perf_cyc_hi, perf_byt_lo, perf_byt_hi;
+  reg [2:0]  perf_idx;
 
   integer k;
 
@@ -401,6 +417,11 @@ module pyro_rp #(
       reply_kind    <= 2'd0;
       corpus_len    <= 16'd0;
       reply_cap     <= 16'd0;
+      perf_cyc_lo   <= 32'd0;
+      perf_cyc_hi   <= 32'd0;
+      perf_byt_lo   <= 32'd0;
+      perf_byt_hi   <= 32'd0;
+      perf_idx      <= 3'd0;
       eng_csr_write <= 1'b0;
       eng_csr_addr  <= CSR_STATUS;
       eng_csr_wdata <= 32'b0;
@@ -490,10 +511,39 @@ module pyro_rp #(
                             ? {hdr[8*36 +: 8], hdr[8*37 +: 8]} : MAXENT[15:0];
               state <= ST_RESET_ENG;
             end
+          end else if (h_kind == KIND_PERF_REQ) begin
+            if ({hdr[8*18 +: 8], hdr[8*19 +: 8]} != SLOT) begin
+              reply_kind <= 2'd1;            // STATUS/ERROR NOT_RESIDENT (R78.11)
+              state <= ST_BHDR;
+            end else begin
+              reply_kind <= 2'd3;            // PERF_REPLY (R78.11)
+              perf_idx   <= 3'd0;
+              state <= ST_PERF;
+            end
           end else begin
             state   <= ST_RX;                // unknown kind -> drop (R78.4)
             rx_beat <= 16'd0;
           end
+        end
+
+        // ---- R78.11: read the R45a counters from the engine CSR block --------
+        // eng_csr_addr is a REGISTERED output and the engine's csr_rdata is a
+        // combinational mux on it, so the value for the address driven in cycle
+        // N is on eng_csr_rdata in cycle N+1: each cycle drives the next address
+        // and latches the previous read.  Served only between scans (this
+        // responder is single-threaded), so the engine is idle and the counters
+        // are post-DONE stable — a coherent, non-destructive read (R45a/R78.11).
+        // NOTE: the per-cycle default eng_csr_addr <= CSR_STATUS is overridden
+        // by the explicit drives below for exactly the cycles that matter.
+        ST_PERF: begin
+          case (perf_idx)
+            3'd0: eng_csr_addr <= CSR_CYCLES_LO;
+            3'd1: begin eng_csr_addr <= CSR_CYCLES_HI; perf_cyc_lo <= eng_csr_rdata; end
+            3'd2: begin eng_csr_addr <= CSR_BYTES_LO;  perf_cyc_hi <= eng_csr_rdata; end
+            3'd3: begin eng_csr_addr <= CSR_BYTES_HI;  perf_byt_lo <= eng_csr_rdata; end
+            default: begin perf_byt_hi <= eng_csr_rdata; state <= ST_BHDR; end
+          endcase
+          perf_idx <= perf_idx + 3'd1;
         end
 
         // ---- W4: explicitly RESET the engine before each scan ----------
@@ -573,7 +623,8 @@ module pyro_rp #(
           wacc[8*14 +: 8] = PYRO_MAGIC;
           wacc[8*15 +: 8] = PYRO_VER;
           wacc[8*16 +: 8] = (reply_kind == 2'd0) ? KIND_ID_REPLY :
-                            (reply_kind == 2'd1) ? KIND_STATUS_ERR : KIND_MATCH_REPLY;
+                            (reply_kind == 2'd1) ? KIND_STATUS_ERR :
+                            (reply_kind == 2'd3) ? KIND_PERF_REPLY : KIND_MATCH_REPLY;
           wacc[8*17 +: 8] = 8'h00;                       // flags
           wacc[8*18 +: 8] = hdr[8*18 +: 8];      // slot echo (BE)
           wacc[8*19 +: 8] = hdr[8*19 +: 8];
@@ -605,6 +656,23 @@ module pyro_rp #(
             word_acc <= wacc;
             txw_en = 1'b1; txw_sel = 5'd0; txw_data = wacc;      // flush word 0
             tx_len  <= 16'd32;
+            tx_beat <= 16'd0;
+            state   <= ST_TX;
+          end else if (reply_kind == 2'd3) begin
+            // PERF_REPLY payload (R78.11): cycles(8 BE) | bytes(8 BE), the R45a
+            // counter halves latched in ST_PERF ({HI,LO} = the 64-bit value).
+            wacc[8*24 +: 8] = 8'h00; wacc[8*25 +: 8] = 8'h10;   // length = 16
+            wacc[8*28 +: 8] = perf_cyc_hi[31:24]; wacc[8*29 +: 8] = perf_cyc_hi[23:16];
+            wacc[8*30 +: 8] = perf_cyc_hi[15:8];  wacc[8*31 +: 8] = perf_cyc_hi[7:0];
+            wacc[8*32 +: 8] = perf_cyc_lo[31:24]; wacc[8*33 +: 8] = perf_cyc_lo[23:16];
+            wacc[8*34 +: 8] = perf_cyc_lo[15:8];  wacc[8*35 +: 8] = perf_cyc_lo[7:0];
+            wacc[8*36 +: 8] = perf_byt_hi[31:24]; wacc[8*37 +: 8] = perf_byt_hi[23:16];
+            wacc[8*38 +: 8] = perf_byt_hi[15:8];  wacc[8*39 +: 8] = perf_byt_hi[7:0];
+            wacc[8*40 +: 8] = perf_byt_lo[31:24]; wacc[8*41 +: 8] = perf_byt_lo[23:16];
+            wacc[8*42 +: 8] = perf_byt_lo[15:8];  wacc[8*43 +: 8] = perf_byt_lo[7:0];
+            word_acc <= wacc;
+            txw_en = 1'b1; txw_sel = 5'd0; txw_data = wacc;      // flush word 0
+            tx_len  <= 16'd44;
             tx_beat <= 16'd0;
             state   <= ST_TX;
           end else begin

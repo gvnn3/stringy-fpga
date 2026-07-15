@@ -62,12 +62,15 @@ __all__ = [
     "decode_frame",
     "probe_device",
     "load_partial",
+    "read_perf_counters",
     # message-kind constants (R78.4)
     "KIND_ID_REQUEST",
     "KIND_ID_REPLY",
     "KIND_MATCH_REQUEST",
     "KIND_MATCH_REPLY",
     "KIND_STATUS",
+    "KIND_PERF_REQUEST",
+    "KIND_PERF_REPLY",
 ]
 
 # ---------------------------------------------------------------------------
@@ -92,11 +95,13 @@ KIND_ID_REPLY = 0x02
 KIND_MATCH_REQUEST = 0x03
 KIND_MATCH_REPLY = 0x04
 KIND_STATUS = 0x05  # STATUS/ERROR
+KIND_PERF_REQUEST = 0x06  # R45a counter read-out (R78.11, v2.4.0)
+KIND_PERF_REPLY = 0x07
 
 #: Sendable/receivable message kinds (R78.4); ``0x00`` reserved is not a kind.
 VALID_KINDS = frozenset({
     KIND_ID_REQUEST, KIND_ID_REPLY, KIND_MATCH_REQUEST,
-    KIND_MATCH_REPLY, KIND_STATUS,
+    KIND_MATCH_REPLY, KIND_STATUS, KIND_PERF_REQUEST, KIND_PERF_REPLY,
 })
 
 #: Expected shell SPEC16 the host runtime is compiled with (R81): spec 2.2.
@@ -483,6 +488,77 @@ def _parse_id_reply(frame: bytes, expect_seq: int) -> Optional[int]:
         raise PyroFrameError(
             f"malformed ID_REPLY: payload length {dec.length} < 12 (R78.5)")
     return struct.unpack(">I", dec.payload[0:4])[0]  # static_shell_id (R78.5)
+
+
+def read_perf_counters(config: DeviceConfig,
+                       slot: int = 1) -> Optional[Tuple[int, int]]:
+    """Read the resident circuit's R45a counters via ``PERF_REQUEST`` (R78.11).
+
+    Sends ``PERF_REQUEST`` for ``slot`` (up to ``probe_attempts`` attempts,
+    ``probe_timeout_s`` each — the R84 budget, same shape as the probe) and
+    returns ``(cycles, bytes)`` from the ``PERF_REPLY``.
+
+    Returns ``None`` when no ``PERF_REPLY`` arrives — the R78.11 **"counters
+    unavailable"** disposition, which is the *expected* outcome against a child
+    built before v2.4.0 (including the flashed default ID stub), which drops the
+    unknown kind per R78.4.  A ``STATUS``/``ERROR`` reply (non-resident slot,
+    R78.11) also yields ``None``.  Never a device fault: callers MUST NOT route
+    the scan path to fallback because of a ``None`` here.
+
+    Precondition: ``CAP_NET_RAW`` (as for the live probe); ``OSError`` is
+    contained to ``None`` (R86.1).  Raises :class:`PyroFrameError` only on a
+    genuinely malformed ``PERF_REPLY`` to our ``seq`` (short payload).
+    """
+    try:
+        transport = (config.transport_factory(config)
+                     if config.transport_factory is not None
+                     else _EthTransport(config))
+    except OSError:
+        return None
+    try:
+        eth_hdr = (bytes(config.dst_mac) + bytes(config.src_mac)
+                   + struct.pack(">H", ETHERTYPE))
+        for attempt in range(max(1, int(config.probe_attempts))):
+            seq = attempt + 1
+            frame = eth_hdr + encode_frame(KIND_PERF_REQUEST, slot, seq, b"")
+            try:
+                transport.send(frame)
+            except OSError:
+                return None
+            deadline = time.monotonic() + float(config.probe_timeout_s)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    break  # this attempt timed out; try the next seq
+                try:
+                    reply = transport.recv(remaining)
+                except OSError:
+                    return None
+                if reply is None:
+                    break
+                reply = bytes(reply)
+                if (len(reply) < 14 + PYRO_HEADER_LEN
+                        or struct.unpack(">H", reply[12:14])[0] != ETHERTYPE):
+                    continue  # not a PYRO frame (R78.1) — ignore
+                try:
+                    dec = decode_frame(reply[14:])
+                except PyroFrameError:
+                    continue  # stray/garbled 0x88B5 frame — keep listening (N1)
+                if dec.seq != seq:
+                    continue  # not the reply we're waiting for
+                if dec.kind == KIND_STATUS:
+                    return None  # non-resident slot (R78.11) — unavailable
+                if dec.kind != KIND_PERF_REPLY:
+                    continue
+                if dec.length < 16:
+                    raise PyroFrameError(
+                        f"malformed PERF_REPLY: payload length {dec.length} "
+                        f"< 16 (R78.11)")
+                cycles, nbytes = struct.unpack(">QQ", dec.payload[0:16])
+                return (cycles, nbytes)
+        return None
+    finally:
+        transport.close()
 
 
 class _Transport:

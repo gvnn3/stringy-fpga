@@ -51,7 +51,10 @@ ID_REPLY = 0x02
 MATCH_REQUEST = 0x03
 MATCH_REPLY = 0x04
 STATUS_ERROR = 0x05
-VALID_KINDS = (ID_REQUEST, ID_REPLY, MATCH_REQUEST, MATCH_REPLY, STATUS_ERROR)
+PERF_REQUEST = 0x06  # R78.11 (v2.4.0)
+PERF_REPLY = 0x07
+VALID_KINDS = (ID_REQUEST, ID_REPLY, MATCH_REQUEST, MATCH_REPLY, STATUS_ERROR,
+               PERF_REQUEST, PERF_REPLY)
 
 MTU_PAYLOAD_MAX = 1486  # R78.9 / R86.2 / R86.3 payload bound
 
@@ -89,6 +92,16 @@ VEC_D = _hx("50 01 04 00  00 01  00 00 00 02  00 38  00 00") + VEC_D_PAYLOAD
 VEC_E_PAYLOAD = _hx("00 00 00 07")  # code = 7 (BE)
 VEC_E = _hx("50 01 05 00  00 01  00 00 00 02  00 04  00 00") + VEC_E_PAYLOAD
 PYRO_E_NOT_RESIDENT = 7  # R38
+
+# (f) PERF_REQUEST (R78.10(f), v2.4.0): slot=1, seq=3, empty payload.
+VEC_F = _hx("50 01 06 00  00 01  00 00 00 03  00 00  00 00")
+VEC_F_PAYLOAD = b""
+
+# (g) PERF_REPLY (R78.10(g), v2.4.0): echoes slot=1, seq=3; length=16,
+#     payload = cycles(8 BE)=6 | bytes(8 BE)=6 (values illustrative, layout
+#     normative — R78.11).
+VEC_G_PAYLOAD = _hx("00 00 00 00 00 00 00 06  00 00 00 00 00 00 00 06")
+VEC_G = _hx("50 01 07 00  00 01  00 00 00 03  00 10  00 00") + VEC_G_PAYLOAD
 
 
 # ==========================================================================
@@ -147,6 +160,28 @@ def test_decode_status_error_vector_e_fields_and_code():  # AC-2b-1 (R78.8/R78.1
         "STATUS/ERROR code must be PYRO_E_NOT_RESIDENT (7) (R38/R78.10e)")
 
 
+def test_encode_perf_request_matches_vector_f():  # AC-2b-1 (R78.11/R78.10(f)/R86.2)
+    """R78.10(f) (v2.4.0): PERF_REQUEST — kind 0x06, slot=1, seq=3, empty payload."""
+    _need_pdev()
+    out = pdev.encode_frame(PERF_REQUEST, 1, 3, VEC_F_PAYLOAD)
+    assert out == VEC_F, f"{out.hex()} != {VEC_F.hex()}"
+    assert out[2] == 0x06, "kind must be PERF_REQUEST 0x06 (R78.10f)"
+    assert out[10:12] == (0).to_bytes(2, "big"), "length must be 0 (R78.11)"
+
+
+def test_encode_perf_reply_matches_vector_g():  # AC-2b-1 (R78.11/R78.10(g)/R86.2)
+    """R78.10(g) (v2.4.0): PERF_REPLY — kind 0x07, echoes slot=1/seq=3, length=16,
+    payload = cycles(8 BE) | bytes(8 BE) (R45a counters; layout normative)."""
+    _need_pdev()
+    out = pdev.encode_frame(PERF_REPLY, 1, 3, VEC_G_PAYLOAD)
+    assert out == VEC_G, f"{out.hex()} != {VEC_G.hex()}"
+    assert out[2] == 0x07, "kind must be PERF_REPLY 0x07 (R78.10g)"
+    res = pdev.decode_frame(out)
+    payload = bytes(_field(res, "payload"))
+    assert int.from_bytes(payload[0:8], "big") == 6    # cycles (BE, R78.11)
+    assert int.from_bytes(payload[8:16], "big") == 6   # bytes (BE, R78.11)
+
+
 def test_encode_sets_frozen_header_fields():  # AC-2b-1 (R78.3/R86.2)
     """magic=0x50, version=0x01, flags=0, reserved=0 are frozen for version 1."""
     _need_pdev()
@@ -177,8 +212,11 @@ def test_encode_header_fields_are_big_endian():  # AC-2b-1 (R78.2/R78.3/R86.2)
         (VEC_C, MATCH_REQUEST, 1, 2, 18, VEC_C_PAYLOAD),
         (VEC_D, MATCH_REPLY, 1, 2, 56, VEC_D_PAYLOAD),
         (VEC_E, STATUS_ERROR, 1, 2, 4, VEC_E_PAYLOAD),
+        (VEC_F, PERF_REQUEST, 1, 3, 0, VEC_F_PAYLOAD),
+        (VEC_G, PERF_REPLY, 1, 3, 16, VEC_G_PAYLOAD),
     ],
-    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR"],
+    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR",
+         "PERF_REQUEST", "PERF_REPLY"],
 )
 def test_decode_recovers_named_fields(vec, kind, slot, seq, length, payload):
     # AC-2b-1 (R78.3/R78.10/R86.3)
@@ -202,8 +240,11 @@ def test_decode_recovers_named_fields(vec, kind, slot, seq, length, payload):
         (MATCH_REQUEST, 1, 2, VEC_C_PAYLOAD),
         (MATCH_REPLY, 1, 2, VEC_D_PAYLOAD),
         (STATUS_ERROR, 0, 9, struct.pack(">I", 7) + b"not resident"),
+        (PERF_REQUEST, 1, 3, VEC_F_PAYLOAD),
+        (PERF_REPLY, 1, 3, VEC_G_PAYLOAD),
     ],
-    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR"],
+    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR",
+         "PERF_REQUEST", "PERF_REPLY"],
 )
 def test_encode_decode_roundtrip(kind, slot, seq, payload):  # AC-2b-1 (R86.2/R86.3)
     _need_pdev()
@@ -288,9 +329,10 @@ def test_encode_max_payload_is_accepted_boundary():  # AC-2b-1 (R78.9/R86.2)
     assert out[10:12] == MTU_PAYLOAD_MAX.to_bytes(2, "big")
 
 
-# R86.2 (v2.2.2): sendable kinds are EXACTLY 0x01-0x05.  0x00 is `reserved` and is
-# NOT a message kind — encode_frame MUST reject it, as must any value > 0x05.
-@pytest.mark.parametrize("bad_kind", [0x00, 0x06, 0x07, 0x10, 0x42, 0xFF])
+# R86.2 (v2.4.0): sendable kinds are EXACTLY 0x01-0x07 (0x06/0x07 added by
+# R78.11).  0x00 is `reserved` and is NOT a message kind — encode_frame MUST
+# reject it, as must any value > 0x07.
+@pytest.mark.parametrize("bad_kind", [0x00, 0x08, 0x09, 0x10, 0x42, 0xFF])
 def test_encode_invalid_kind_raises_frame_error(bad_kind):  # AC-2b-1 (R78.4/R86.2)
     _need_pdev()
     with pytest.raises(pdev.PyroFrameError):
@@ -305,10 +347,10 @@ def test_encode_reserved_kind_0x00_rejected():  # AC-2b-1 (R86.2 v2.2.2)
         pdev.encode_frame(0x00, 0, 1, b"")
 
 
-def test_encode_all_sendable_kinds_accepted():  # AC-2b-1 (R86.2 v2.2.2)
-    """The sendable kinds are exactly 0x01-0x05 (R78.4/R86.2); each MUST encode."""
+def test_encode_all_sendable_kinds_accepted():  # AC-2b-1 (R86.2 v2.4.0)
+    """The sendable kinds are exactly 0x01-0x07 (R78.4/R86.2); each MUST encode."""
     _need_pdev()
-    for kind in (0x01, 0x02, 0x03, 0x04, 0x05):
+    for kind in (0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07):
         out = pdev.encode_frame(kind, 0, 1, b"")
         assert out[2] == kind
 
@@ -381,11 +423,12 @@ def test_decode_truncated_payload_raises_frame_error():  # AC-2b-1 (R86.3)
 def test_decode_unknown_kind_does_not_raise():  # AC-2b-1 (R78.4/R86.3)
     """decode_frame's raise conditions (R86.3) do NOT include `kind`; an unknown
     kind is parsed and returned (the HOST, per R78.4/R52, routes to fallback — a
-    layer above the codec)."""
+    layer above the codec).  0x08 is the first kind undefined as of v2.4.0
+    (0x06/0x07 became PERF_REQUEST/PERF_REPLY, R78.11)."""
     _need_pdev()
-    frame = bytearray(_hx("50 01 06 00  00 00  00 00 00 01  00 00  00 00"))
+    frame = bytearray(_hx("50 01 08 00  00 00  00 00 00 01  00 00  00 00"))
     res = pdev.decode_frame(bytes(frame))
-    assert _field(res, "kind") == 0x06
+    assert _field(res, "kind") == 0x08
     assert bytes(_field(res, "payload")) == b""
 
 
