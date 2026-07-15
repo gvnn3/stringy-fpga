@@ -8,6 +8,9 @@ AC-3-3 (hard PASS), so the two ACs can never measure R3b two different ways:
     >= PAIRS_PER_TRIAL (>= 1000) paired calls on distinct loss-regime patterns
     (per-pattern reuse < N_reuse, subject < S_min), classification/compile
     caches primed on both sides before timing.  A single trial never decides.
+    Cyclic GC is collected then disabled around each timed loop (timeit's
+    discipline; see :func:`one_trial`) so the ratio reflects the routing path,
+    not GC passes over the harness's own live-pattern population.
   * R3b.2 — the subject is pinned at exactly 132 bytes of ASCII
     (:data:`SUBJECT_132`); ratios at any other size must not be used to claim
     or deny R3b compliance.
@@ -24,6 +27,7 @@ AC-3-3 (hard PASS), so the two ACs can never measure R3b two different ways:
     vs 1.05-1.09x properly warmed on the identical router).
 """
 
+import gc
 import re as stdre
 import statistics
 import time
@@ -119,15 +123,30 @@ def one_trial(tag, pairs=PAIRS_PER_TRIAL, subject=SUBJECT_132):
         re_c[i].search(subject)
         py_c[i].search(subject)
     rotating_warmup(tag + "w", subject=subject)
+    # GC is collected then disabled around the timed loop (timeit's own
+    # discipline, same rationale as R3b.4's warmup fix): each trial keeps
+    # ~2*pairs compiled-pattern objects alive, and cyclic-GC passes triggered
+    # mid-loop land in whichever timing window allocates — inflating the PYRO
+    # median only.  Measured (2026-07-15, this host): with GC free-running the
+    # process nondeterministically enters a ~1.32x mode (pyro median 336 ns vs
+    # 267 ns, stock flat); with collect+disable around the loop, 1.06-1.09x
+    # every trial.  Allocation cost itself is still fully measured.
+    gc.collect()
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
     stock_ns, pyro_ns = [], []
-    for i in range(pairs):
-        t0 = time.perf_counter_ns()
-        re_c[i].search(subject)
-        t1 = time.perf_counter_ns()
-        py_c[i].search(subject)
-        t2 = time.perf_counter_ns()
-        stock_ns.append(t1 - t0)
-        pyro_ns.append(t2 - t1)
+    try:
+        for i in range(pairs):
+            t0 = time.perf_counter_ns()
+            re_c[i].search(subject)
+            t1 = time.perf_counter_ns()
+            py_c[i].search(subject)
+            t2 = time.perf_counter_ns()
+            stock_ns.append(t1 - t0)
+            pyro_ns.append(t2 - t1)
+    finally:
+        if gc_was_enabled:
+            gc.enable()
     med_stock = statistics.median(stock_ns)
     med_pyro = statistics.median(pyro_ns)
     ratio = (med_pyro / med_stock) if med_stock else float("inf")
