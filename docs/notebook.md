@@ -17,16 +17,133 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-2. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-3. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-4. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-5. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-6. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-7. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-8. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-9. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-10. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+2. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+3. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+4. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+5. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+6. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+7. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+8. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+9. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+10. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+11. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+
+---
+
+# EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP :complete:
+
+## 1. Hypothesis
+
+The four owner-approved Phase-3 amendments (A1–A4) can be adopted as spec
+v2.5.0 and implemented without regression; with A3's PR-timing-gate scope
+fixed, the long-dead PR flow can finally produce a loadable pattern partial,
+which — loaded onto the flashed shell — will read the R45a CYCLES/BYTES
+counters over the R78.11 PERF path for the first time on real silicon.
+
+## 2. How
+
+Multi-agent workflow (single-writer git per wave; the sabotage-race lesson from
+the previous entry honoured): commit the pending v2.4.0 PERF work → adopt A1–A4
+as v2.5.0 → implement A1/A3/A4 on disjoint files in parallel → A2 seams →
+author AC-3-2/AC-3-3 → adversarial review. In parallel, a read-only design
+track profiled `~/snort3-community-rules.tar.gz` and drafted an FPGA
+rule-filtering spec. Then, by hand: build one real `pr_bitstream`, load it,
+read counters.
+
+## 3. Observations
+
+- **v2.5.0 adopted and implemented.** A1 (R3b measurement protocol —
+  median-of-≥5 trials, subject pinned at 132 B, rotating loss-regime warmup;
+  constant kept at 1.15×), A2 (R67 `await_synthesis` + `set_strict_residency`
+  / R51b-strict seams), A3 (R73a PR-gate scope + A3.5 bitstream preservation),
+  A4 (F2/F3 demoted; `PYRO_DEVICE_IFACE` no-default/fail-closed; R83 canonical
+  string gains `transport: PYRO_DEVICE_IFACE not configured` as condition 1).
+  Unit suite **593 passed / 1 skip**; full acceptance **715 passed / 10 skips**
+  (AC-3-2 + AC-3-3 among them: 16 passed / 2 honest device-gated skips).
+  *Test-brittleness note:* `test_ac2b2_probe::…privilege_free…` hard-asserts the
+  pytest interpreter LACKS `CAP_NET_RAW` rather than skipping — it fails if the
+  device transport's capability is granted to the venv `python`. Kept
+  `CAP_NET_RAW` on `python3` only (device commands) and the cap-free `python`
+  for the suite; the AC test should `skip`-under-privilege (recommended, not
+  changed here).
+- **First real HW partial, and the R73a gate bug it exposed.** A `pr_bitstream`
+  job for `abc[a-f]{2}` (est. 358 LUT / 519 FF) ran a full in-context P&R
+  against the locked static DCP. The A3 scoped-timing query returned **zero
+  paths** → R73a.3 refused to pass an ungated partial and **A3.5 preserved the
+  routed bitstream + reports** (instead of the old destroy-on-failure). This is
+  exactly the "residual risk 1 — mis-scoped query" A3.6 told us to check on the
+  first real job, and the safety nets the amendment mandated for that case both
+  fired correctly.
+- **Root cause (two bugs, confirmed against the routed checkpoint).**
+  (1) `get_timing_paths -from/-to` a **hierarchical** cell returns zero paths —
+  its pins are timing *through* points, not start/endpoints; the scope must be
+  the RP's **leaf cells** (`-from/-to`) plus its **boundary pins** (`-through`).
+  (2) The `GROUP == axis_aclk` filter mis-named the routed clock (it is
+  **`axis_aclk_0`**) and was redundant with cell scope. With a correct
+  leaf+boundary query the RM's true worst path is **WNS = +0.023 ns** — it
+  **meets** 250 MHz — and `pr_verify` reports the checkpoints **compatible**.
+  So the partial was always good; only the gate was wrong. Fixed in
+  `toolchain.py` (`ac749bb`); the preserved `.bit` loaded without a rebuild.
+- **JTAG partial load wedges the RP — the real wall.** Loading the (valid,
+  `pr_verify`-passed) partial over JTAG succeeded in ~17 s, but the child then
+  answered **no** R78 frame (ID/MATCH/PERF all silent). A **revert test**
+  settles it: reloading the *known-good boot ID stub* through the identical
+  JTAG path **also** goes silent — so the fault is the JTAG reconfig path, not
+  the pattern child. Boot brings the RP up responding; a JTAG
+  `program_hw_devices` does not, even for identical bits.
+- **Why:** raw JTAG bypasses the static shell's DFX sequencing. `pblock_pyro_rp`
+  carries `RESET_AFTER_RECONFIG 1` (GSR resets the RM's own flops), but there is
+  **no decoupler holding RP outputs quiet and no coordinated static-side
+  interface reset** during the ~17 s reconfig, so the static-side AXIS path
+  wedges. `device-bringup.md` §6 already records that the in-band ICAP/MCAP path
+  (which *would* sequence decouple+reset via the shell's PR controller) is
+  **explicitly deferred** — that missing plumbing is exactly what's needed.
+  PCIe/`onic`/`ens2` survive throughout (R85 holds); only the RP responder dies
+  → `device_usable=false`. JTAG reload does not restore it; recovery needs a
+  **cold power cycle**.
+- **On-chip counters remain unread on silicon.** R45a + R78.11 stay model/xsim/
+  host-codec verified only. The blocker is partial-reconfig bring-up, **not**
+  the counter or PERF path — which is an important distinction: everything from
+  the host codec through the wire format is proven; only the on-device
+  reconfig-then-respond handshake is missing.
+- **Snort design track.** Full parse of the 4,017-rule community set: 97.0%
+  have a usable anchor literal (median 12 B), 56% match only
+  inspector-normalized sticky buffers (raw-byte prefilter blind → nomination
+  only), 74% of PCRE is NFA-clean. Drafted `specs/snort-rule-offload.md`
+  (SNORT-PF v0.1.0, DRAFT): rule-group pattern-set circuits as PR partials on
+  the unmodified PYRO shell, FPGA nominates over a conjunct-drop
+  over-approximation, full Snort re-verifies (PYRO's R19 discipline applied to
+  NIDS). Honest headline: 97% *compilable* but ~6.4% *instantaneous resident*
+  coverage under single-tenant residency until a ROM-baked shared-anchor trie
+  is proven.
+
+## 4. Data analysis
+
+The A3 amendment's design paid off precisely where it was meant to: a narrowed
+safety gate that could have silently passed an ungated partial instead failed
+loud (R73a.3) and preserved the evidence (A3.5), turning a subtle Tcl-scope bug
+into a ten-minute diagnosis rather than a shipped-onto-marginal-static
+incident. The deeper finding is that the PR *mechanism* — not the PR *timing
+gate*, not the pattern circuit — is the true bring-up frontier: JTAG
+`program_hw_devices` reconfigures the fabric but cannot bring a child up
+responding the way power-on does, because the shell has no
+decoupler/reset-after-reconfig coordination for the out-of-band path. The
+counters are one working reconfig handshake away, and no closer.
+
+## 5. Ideas for future experiments
+
+- **Unblock counters — pick one:** (a) add a `dfx_decoupler` + post-reconfig
+  reset to the static shell engaged for JTAG loads (shell rebuild + reflash +
+  relock DCP); (b) implement the deferred ICAP/MCAP controller so the shell
+  sequences decouple+reset in-band; (c) probe the PCIe BAR (resource2) for a
+  host-reachable user-box soft-reset to pulse after JTAG load (unverified;
+  do not blind-poke).
+- **Verify the R73a fix on the next real build** — read the first
+  leaf+boundary-scoped `timing.rpt` by hand against the reported RP WNS before
+  trusting the gate (A3.6 residual-risk-1 discipline).
+- Cold-cycle the card to restore `device_usable=true`, then retry the load once
+  a reconfig-reset path exists.
 
 ---
 
