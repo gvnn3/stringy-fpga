@@ -1,7 +1,10 @@
 # Spec amendments for owner review — Phase 3 slate
 
 - **Target spec:** `specs/python-regex-offload.md` (currently **v2.4.0**, 2026-07-10)
-- **Status:** **DRAFT — FOR OWNER REVIEW. NOT APPLIED TO THE SPEC.**
+- **Status:** **ADOPTED into v2.5.0** — all four amendments A1–A4 APPROVED by the
+  owner (2026-07-15) with the recommended sub-options (A4.4(b) new canonical
+  condition inserted first; A4.4(d) neutralized URI examples; A4.5 option (b)
+  no-default fail-closed iface) and applied to the spec.
 - **Date:** 2026-07-14
 - **Author:** spec-writer (drafting), on evidence from the `phase1-pyro` working tree
 
@@ -203,7 +206,7 @@ Consequential touch-points: **R3c** (lines 193–206), **AC-2-5** (1782–1790),
 
 ### A1.7 Decision
 
-☐ APPROVE A1 ☐ REJECT A1 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A1** (owner, 2026-07-15) ☐ REJECT A1 ☐ APPROVE with changes: ______________________
 
 ---
 
@@ -393,7 +396,7 @@ derivable from the spec alone:
 
 ### A2.7 Decision
 
-☐ APPROVE A2 ☐ REJECT A2 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A2** (owner, 2026-07-15) ☐ REJECT A2 ☐ APPROVE with changes: ______________________
 
 ---
 
@@ -594,7 +597,7 @@ Stated plainly, because this amendment **narrows a safety gate**:
 
 ### A3.7 Decision
 
-☐ APPROVE A3 ☐ REJECT A3 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A3** (owner, 2026-07-15) ☐ REJECT A3 ☐ APPROVE with changes: ______________________
 
 ---
 
@@ -789,7 +792,7 @@ onic
 
 ### A4.8 Decision
 
-☐ APPROVE A4 ☐ REJECT A4 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A4** (owner, 2026-07-15; with A4.4(b) insert-first and A4.4(d) neutralized examples; A4.5 option (b)) ☐ REJECT A4 ☐ APPROVE with changes: ______________________
 
 ---
 

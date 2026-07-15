@@ -1,10 +1,10 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.4.0
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2)
+- **Version:** 2.5.0
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2; Phase-3 slate A1–A4 adopted 2026-07-15 — R3b measurement protocol, R67 seams extended, R73a PR timing-gate scope, F2/F3 demoted to configuration)
 - **Owner:** Spec Writer
-- **Date:** 2026-07-10
+- **Date:** 2026-07-15
 
 ---
 
@@ -16,8 +16,9 @@ executing pattern matching on the FPGA installed in this host, with automatic,
 correctness-preserving fallback to CPython's `re` module for any pattern or
 input the hardware path cannot serve.
 
-The target device is the Xilinx/AMD PCIe card at `af:00.0`/`af:00.1` running the
-**OpenNIC** shell (QDMA-based) under the in-tree `onic` kernel driver. Custom
+The target device is the AMD/Xilinx Alveo U250 running the **OpenNIC** shell
+(its BDF is host configuration, F2), QDMA-based, under the in-tree `onic`
+kernel driver. Custom
 matching logic is placed in the OpenNIC **user plugin / dynamic (250 MHz user
 box) region**, which is a **partial-reconfiguration (PR) partition**.
 
@@ -63,12 +64,35 @@ them; implementers MUST NOT assume different hardware.
 
 - **F1.** Host OS: Linux `6.8.0-124-generic` (Ubuntu), x86-64, Intel C620-chipset
   server.
-- **F2.** FPGA card exposes two PCIe functions: `af:00.0` (`10ee:903f`) and
-  `af:00.1` (`10ee:913f`), subsystem `10ee:0007`, PCI class `0280` ("Network
-  controller").
-- **F3.** Kernel driver in use is `onic` (AMD/Xilinx OpenNIC). The card runs the
-  OpenNIC shell (QDMA transport). Two ports appear as network interfaces
-  `enp175s0f0` and `enp175s0f1`.
+- **F2 (device identity — the stable part is a fact; the BDF is not).** The FPGA
+  card is an AMD/Xilinx Alveo U250 (part `xcu250-figd2104-2L-e`) presenting the
+  OpenNIC shell to the host as a PCIe **network controller** (vendor `10ee`, PCI
+  class `0280`), driven by the in-tree `onic` kernel driver. Its **BDF and its
+  function count are host/build configuration, NOT spec facts**: the number of PFs
+  is a *shell build parameter* (the PYRO PR shell is built `pf=cmac=1` ⇒ **one**
+  PF), and the BDF is a property of the slot and the PCIe topology. PYRO MUST NOT
+  hard-code a BDF or a function count; it reaches the device through configuration
+  (R68) and proves it has the right one with the **live probe** (R81/R83), which is
+  the only device-identity check the spec relies on.
+  *Current host (informative, 2026-07-14): a single PF at **`0000:02:00.0`**
+  (`10ee:903f`), driver `onic`. This **supersedes and falsifies** the v2.0.0–v2.4.0
+  reading of two functions at `af:00.0`/`af:00.1` (`10ee:903f`/`913f`), which
+  described the pre-PR-shell image and is **no longer true**: the second function
+  does not exist on the PYRO shell.*
+- **F3 (host netdev — CONFIGURATION, NOT A FACT).** The card's port appears as an
+  `onic` network interface. **The interface's NAME is host configuration and the
+  spec does not state it.** This is a correction of **shape**, not merely of value:
+  systemd's predictable-naming policy derives the name from whatever the platform's
+  firmware exposes (SMBIOS slot index, ACPI index, or PCI path), so the name is
+  **not derivable from the BDF by any rule** — the same card is `enp175s0f0` under
+  path-based naming and **`ens2`** on this host under SLOT-based naming. A netdev
+  name is therefore not the kind of thing that can be a ground-truth fact of this
+  spec; the old F3 asserted one, and that was a category error independent of the
+  particular string being wrong. The netdev PYRO binds is supplied by the operator
+  via **`PYRO_DEVICE_IFACE`** (R68), which consequently has **no spec default** and
+  is **fail-closed** (see the R68 amendment).
+  *Current host (informative, 2026-07-14): `ens2`, driver `onic`, PCI
+  `0000:02:00.0`.*
 - **F4.** The OpenNIC shell provides a **user plugin / dynamic region** clocked
   at 250 MHz intended for custom RTL. This is the region PYRO targets.
 - **F5.** As of this writing, **no** Vivado/Vitis/XRT tools are on `PATH`
@@ -184,12 +208,79 @@ proves them wrong, but they MUST NOT be silently ignored.
     once the loss-regime hot path is served by the native host runtime, L3, or by
     interposition at a level where the delegation cost is native-code cheap),
     PYRO SHALL additionally keep below-threshold wall-clock time within **1.15×**
-    of calling CPython `re` directly (routing/decision overhead ≤ 15%).
+    of calling CPython `re` directly (routing/decision overhead ≤ 15%). The
+    constant **1.15× is retained unchanged** (v2.5.0; see the vindication note
+    below). What this amendment adds is the **measurement protocol**: a ratio
+    bound whose statistic, trial count, and subject size are unstated is not a
+    decidable bound, and R3b was being checked by a single trial at an unpinned
+    subject size.
+    - **R3b.1 (statistic — median of ≥ 5 trials; normative).** The R3b verdict
+      SHALL be `median(trial_ratio_1 … trial_ratio_k)` with **k ≥ 5**. One
+      **trial** is a complete measurement run over the R3b.2 subject that yields
+      one `trial_ratio = median(PYRO per-call ns) / median(stock-`re` per-call
+      ns)`, measured over **≥ 1000 paired calls** on distinct loss-regime patterns
+      (each pattern's reuse kept `< N_reuse` and each subject `< S_min`, so every
+      call is a genuine §8 below-threshold routing decision), with the
+      classification/compile caches **primed on both sides** before timing so the
+      ratio reflects the routing path and not compilation (R4). A **single trial
+      MUST NOT** decide R3b. An individual trial MAY exceed 1.15× without
+      violating R3b; only the median of ≥ 5 trials binds.
+    - **R3b.2 (subject size is pinned — normative).** The R3b bound is stated
+      **at a subject of exactly 132 bytes** (ASCII; 132 code points in `str` mode).
+      The ratio is a strong function of subject size — the routing tax is a
+      roughly fixed per-call cost divided by a scan cost that grows with the
+      subject — so an unpinned R3b is meaningless: the same router measures
+      **≈1.31× at 3 bytes** and **≈1.02× at 1 KiB**. Ratios at other sizes MAY be
+      reported as informative, MUST be labelled with their size, and MUST NOT be
+      used to claim or deny R3b compliance.
+    - **R3b.3 (R3b binds against the compiled-extension build).** R3b's subject is
+      the **native** routing/decision hot path (R3c), which exists only in a build
+      with the compiled L3 extension present. R3b therefore **binds against the
+      compiled-extension build**. A **pure-Python install** (no compiled
+      extension) does **not** satisfy the R3c precondition and is **expected to
+      fail the ratio**; it MUST record the honest **R3c SKIP-with-measured-ratio**
+      (whose reason names the pure-Python build **and** states the measured
+      median), and — where R3b is a hard PASS requirement (AC-3-3) — the AC's R3b
+      clause MUST NOT be claimed PASS on such a build. A pure-Python install
+      **MUST NOT** report R3b as a silent PASS by any route, including by
+      degenerate measurement (too few trials, an over-large subject, or a ratio
+      taken at a size other than R3b.2). SKIP and FAIL are both honest; a silent
+      pass is a defect (R71 honesty discipline, applied to R3b).
+    - **R3b.4 (warmup must remain in the loss regime — normative).** Any CPU
+      warmup performed before timing MUST itself exercise the **loss-regime
+      routing path**: every warmup pattern's reuse count MUST stay `< N_reuse`
+      for the duration of warmup (e.g. by rotating ≥ ⌈warmup_calls / (N_reuse−1)⌉
+      throwaway patterns), and warmup subjects MUST stay `< S_min`. Rationale
+      (measured, 2026-07-14, nf-server06): the previous protocol warmed with a
+      **single** throwaway pattern for 3000 calls; that pattern crosses
+      `N_reuse = 32` at call 33 and is routed to the **model** verdict for the
+      remaining 2967 calls, so the code path being *measured* (the loss-regime
+      fast path) is left cold in the branch predictor and icache. Controlled A/B
+      on the native router, identical harness, warmup style the only variable:
+      single-pattern warmup → **1.26–1.30** (5/5 trials fail); rotating warmup
+      (100 patterns × 30 uses) → **1.05–1.09 typical** (median of 5 = 1.094,
+      passes). The single-pattern warmup violates its own stated intent ("CPU
+      warmup … so the measured patterns' reuse stays low") and measures a
+      half-cold path.
 
   Rationale: the 1.15× relative bound is only physically meaningful once the
   decision path is native; expressing it as an absolute bound for Phase 0 (R3a)
   preserves the intent — negligible routing tax — without demanding a ratio that
   is unachievable for a Python wrapper around sub-microsecond C code.
+
+  **Vindication of the 1.15× constant (v2.5.0, informative-but-load-bearing).**
+  Measurement on the native router (132-byte subject, R3b.2) gives a **median of
+  ≈1.10× ± 0.04**, with a worst observed trial of **≈1.15×**; a native
+  delegation **floor** — the irreducible cost of entering and leaving a native
+  routing decision at this subject size — measures **≈1.01×**. Two conclusions
+  follow, and both support keeping the constant. First, R3b's own rationale is
+  **vindicated**: the tax is ~1% once the decision path is native, so a 15% budget
+  is a real budget with genuine headroom, not an impossibility — exactly the claim
+  R3b/R3c rest on. Second, the constant is **defensible but not slack**: at
+  1.10× median the implementation sits ~4 points inside a 15-point budget, which
+  is why the single-trial check was flaky (±1.5% run-to-run noise against a 4-point
+  margin, with worst trials touching the bound) and why R3b.1's median-of-≥5
+  statistic — not a loosened constant — is the correct repair.
   - **R3c (R3b's native-hot-path precondition is the gate — normative).** The
     R3b relative bound binds **only when its own precondition holds**: the
     loss-regime **routing/decision hot path** (the §8 R51 decision) is itself
@@ -199,7 +290,9 @@ proves them wrong, but they MUST NOT be silently ignored.
     While the routing decision is Python-level, **R3a (absolute ≤ 2 µs)
     governs** and any R3b relative-ratio check MUST record a **SKIP** — not a
     FAIL — whose reason states the measured ratio and that the native routing hot
-    path is not yet in place (mirroring the Phase-0 disposition in AC-0-6). R3b
+    path is not yet in place (mirroring the Phase-0 disposition in AC-0-6). The
+    measured ratio cited in that SKIP MUST be the R3b.1/R3b.2 statistic (median of
+    ≥ 5 trials at the pinned 132-byte subject), not a single trial. R3b
     becomes a **hard PASS requirement at AC-3-3** (Phase 3 interposition +
     benchmarks), the point at which the native routing/dispatch path is a
     deliverable. This does not weaken R3: the negligible-routing-tax intent is
@@ -718,8 +811,8 @@ ABI is versioned.
   pyro_status pyro_ctx_open(pyro_ctx **out, const char *transport_uri);
   void        pyro_ctx_close(pyro_ctx *ctx);
   ```
-  `transport_uri` selects the binding, e.g. `"model://"`, `"qdma://af:00.0/q0"`,
-  or `"eth://enp175s0f0"`. On failure returns non-`PYRO_OK` and `*out == NULL`.
+  `transport_uri` selects the binding, e.g. `"model://"`, `"qdma://<bdf>/q0"`,
+  or `"eth://<iface>"`. On failure returns non-`PYRO_OK` and `*out == NULL`.
 - **R40 (generate / synthesize / load).** The former single-step "compile+load"
   becomes an explicit lifecycle across the cache tiers (R4):
   ```c
@@ -1278,6 +1371,75 @@ knob is set.
   for a real in-shell timing closure and is superseded when `pr_flow_present`
   becomes true (the real static+dynamic timing then governs).
 
+- **R73a (scope of the timing gate for a PR link — normative, v2.5.0).** R73 says
+  post-route timing "must be met at the 250 MHz target" without saying **over which
+  paths**. For an **out-of-context (OOC) `ooc_metrics` job** the question does not
+  arise: the only design in the tool is `pyro_circuit`, so every path is the
+  circuit's and R73 is unambiguous. For a **`pr_bitstream` in-context link job**
+  (R82/R88) the tool holds the **whole device** — the locked static shell plus the
+  reconfigurable module — and an unscoped worst-path query returns the worst path
+  **in the entire design**, including paths PYRO does not author, cannot influence,
+  and is not permitted to change. This clause scopes the gate.
+  - **R73a.1 (the gate is scoped to the reconfigurable module).** For a
+    `pr_bitstream` job, the post-route WNS that decides `met_timing` (R73) SHALL be
+    taken over exactly the paths of the **reconfigurable module** — those whose
+    startpoint **and/or** endpoint lies within the `pyro_rp` cell
+    (`HD.RECONFIGURABLE == 1`), evaluated in the **`axis_aclk` / 250 MHz user-box
+    clock domain** (F4). **Boundary paths are IN scope**: a path from a static-side
+    register into `pyro_rp`, or from `pyro_rp` out to a static-side register,
+    crosses the R80 interface and **is changed by the partial**, so it MUST be
+    gated. Paths lying **entirely** in the static region — neither endpoint in
+    `pyro_rp` — are **OUT of scope** and MUST NOT decide `met_timing` for a
+    partial: the partial did not create them and cannot repair them.
+  - **R73a.2 (`fmax_mhz` follows the scoped WNS).** `fmax_mhz` for a
+    `pr_bitstream` manifest is computed by R73's formula from the **R73a.1 scoped**
+    WNS. (This aligns the timing metric with the utilization metric, which is
+    already scoped to the RM cell — `report_utilization -cells <rp_cell>` — so that
+    a PR manifest describes the **pattern's** circuit throughout, as R74's
+    estimator calibration requires.)
+  - **R73a.3 (an empty scoped path set is a FAILURE, not a pass).** If the scoped
+    query returns **no** setup paths, the job MUST fail (`SynthesisFailed` → R65),
+    exactly as R73's unscoped "no paths" case does today. A narrower gate MUST NOT
+    be allowed to degrade into no gate.
+  - **R73a.4 (what protects the static side — the mitigation, normative).** The
+    narrower gate deliberately stops testing static-only paths per partial. That is
+    sound **only** because of the following, which together are the mitigation and
+    MUST hold:
+    1. the static shell is built and validated **once** (R82b), and its **whole-design
+       post-route timing MUST be recorded with the flashed image at flash time** and
+       kept with it as the static's timing record;
+    2. a partial **cannot change** the static: the static region is **bit-identical
+       across all configurations** (R82b, locked static DCP as the linking
+       substrate), which is exactly the property `pr_verify` **proves** and R82c
+       makes a **mandatory hard gate** before any `pr_bitstream` claim; and
+    3. the R80 boundary is **thin and frozen** — only `clk`/`rstn` and the two
+       512-bit AXI-Stream interfaces cross it, all in the `axis_aclk` domain —
+       so a partial cannot reach a static clock domain it does not touch.
+    A static-side timing violation is therefore a **static-build** fact, established
+    (or knowingly accepted) once at flash time, not a per-pattern fact. If any of
+    (1)–(3) ceases to hold — in particular if the R80 boundary ever gains a signal
+    in another clock domain — **R73a MUST be revisited before the next partial is
+    trusted.**
+  - **R73a.5 (the known static violation — recorded, not hidden).** The PYRO static
+    shell currently flashed on the U250 carries a **permanent** post-route setup
+    violation of **WNS = −0.427 ns** on clock **`txoutclk_out[0]`**, **inside
+    OpenNIC's own `cmac_usplus` IP**. It is **entirely outside `pyro_rp`**, in a CMAC
+    datapath PYRO **ties off** and instantiates no logic in; no PYRO partial
+    introduces it and no PYRO partial can repair it. It is recorded here as a known,
+    **accepted** property of the flashed static image (R73a.4(1)), and it MUST be
+    re-examined if PYRO ever carries traffic on the CMAC datapath.
+  - **R73a.6 (the whole-design WNS is still recorded — SHOULD).** The PR flow SHOULD
+    record the **whole-design** post-route WNS in the job diagnostics alongside the
+    R73a.1 scoped WNS, so a static-side regression stays visible even though it does
+    not gate a partial. If it is carried in the manifest it is an **additive** R47b
+    field with a default (R72a discipline) and it **MUST NOT** feed `met_timing`.
+  - **R73a.7 (relation to R73).** R73 is otherwise unchanged and continues to govern
+    the OOC (`ooc_metrics`) path verbatim. R73's closing sentence — that the proxy is
+    "superseded when `pr_flow_present` becomes true (the real static+dynamic timing
+    then governs)" — is **clarified**, not reversed: what governs a **partial** is the
+    real timing **of the reconfigurable module in context**, which is what R73a.1
+    specifies. The static's own timing governs the **static**, once, at flash time.
+
 - **R74 (AC-2-4 pre-registered calibration margin — normative constant).** The
   resource estimator's agreement with real P&R (AC-2-4) is judged against a margin
   **pre-registered here before any calibration data exists**, so tests cite a fixed
@@ -1395,6 +1557,20 @@ knob is set.
        clause, R53). **On hardware (Phase 2+), step 5 binds strictly**: a
        not-resident pattern falls back for this call while synthesis/PR-load
        proceeds in the background.
+       - **R51b-strict (test-seam suspension — normative, v2.5.0).** The
+         device-free precedence granted by R51b is **suspended** while the R67
+         seam `pyro.testing.set_strict_residency(True)` is active: step 5 then
+         binds strictly on a device-free host exactly as it does on hardware
+         (not-resident ⇒ fallback for this call; resident ⇒ dispatch to the model
+         standing in for the resident circuit, R7). This exists so that the
+         fallback→resident **upgrade** required by **AC-3-2** is observable
+         without a device — under plain R51b it is not, because the model serves
+         every tier and no dispatch-counter edge exists at the upgrade. The
+         suspension is gated by `PYRO_ENABLE_TEST_HOOKS` (R67), MUST NOT be
+         reachable in production, and MUST NOT change any caller-visible result
+         (R16/R36/R53) — only the R66 dispatch counters and the latency differ.
+         R64a's device-free residency/eviction bookkeeping is unchanged and
+         remains live in both modes.
   6. If no device and no model available → fallback.
   7. Otherwise (resident + verified) → hardware/model path.
 - **R51a (Phase-0 safety gates).** Under R16's "when in doubt, fall back"
@@ -1524,8 +1700,8 @@ following seams are **normative** so the spec-only test author can drive them
 without reading code. They are PYRO-specific and MUST NOT appear on the standard
 `re` namespace when interposing (§7.2), mirroring R31/R62.
 
-- **R67 (fault-injection seam — NEW obligation).** PYRO MUST expose a
-  test-hook namespace `pyro.testing` providing at least:
+- **R67 (test/verification seam — NEW obligation; extended v2.5.0).** PYRO MUST
+  expose a test-hook namespace `pyro.testing` providing at least:
   - `pyro.testing.inject_device_error(kind="device"|"timeout", count=1) -> None`
     — cause the next `count` hardware/model dispatches to raise the corresponding
     device error (`PYRO_E_DEVICE`/`PYRO_E_TIMEOUT`), exercising the R52 fallback-
@@ -1537,14 +1713,52 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     cause the model to emit `count` spurious candidate windows for the pattern,
     exercising R19 re-verification (the spurious windows MUST NOT leak into
     results);
-  - `pyro.testing.reset() -> None` — clear all injected faults.
+  - **`pyro.testing.await_synthesis(pattern, flags=0, timeout=30.0) -> str`**
+    (**NEW, v2.5.0**) — block the **calling test** until the named pattern's
+    circuit reaches a **terminal** lifecycle tier (R4/R31: `"resident"` or
+    `"fallback_only"`), or until `timeout` seconds elapse, and return the
+    `circuit_status` string (R31) actually reached — the last observed tier on
+    timeout. It exists because AC-3-2 asserts a **tier transition**, and a
+    spec-only test author has no other way to know when the background service
+    (R63) has finished: polling `pyro.re.explain()` in a sleep-loop is a race, and
+    reading service internals is forbidden by §9's premise. Constraints: it MUST
+    NOT make synthesis synchronous, MUST NOT block, slow, or reorder any **other**
+    caller's dispatch (R63/R2b asynchrony is unchanged and remains independently
+    asserted by AC-1-5/AC-2-3), MUST NOT alter routing or results (R16/R53), and
+    MUST be safe to call concurrently (R32). It is a **test observation point, not
+    a synchronization primitive of the system**, and an AC that must prove
+    asynchrony MUST NOT use it. When the R67 gate is disabled it returns the
+    pattern's current tier immediately without waiting.
+  - **`pyro.testing.set_strict_residency(enabled=True) -> None`** (**NEW,
+    v2.5.0** — the *strict-residency / simulated-device* seam) — while enabled,
+    the **R51b device-free precedence of R7 is suspended** and §8 **R51 step 5
+    binds strictly, exactly as on hardware**: a HW-eligible, gate-crossed pattern
+    whose circuit is **not resident** (cold / synthesizing / warm) is served by
+    **fallback** for that call and counted as a normal `fallback` dispatch (R66,
+    never `fallback_after_error`), while a **resident** circuit dispatches to the
+    software model standing in for it (R7) and is counted as a `model` dispatch.
+    Residency/eviction bookkeeping is unchanged (R64/R64a). It exists because
+    **AC-3-2 is unobservable without it** on a device-free host: R51b lets the
+    model serve *every* tier, so the fallback→resident **upgrade** AC-3-2 requires
+    has no observable edge — every dispatch is a `model` dispatch at every tier.
+    The seam does not invent new routing semantics; it **suspends an exception**
+    (R51b) so the *production* hardware rule (R51 step 5) is the one under test.
+    Results MUST remain byte-identical in both modes (R16/R36/R53): only the
+    dispatch counters and the latency differ. It is cleared by
+    `pyro.testing.reset()`.
+  - `pyro.testing.reset() -> None` — clear all injected faults **and disable
+    strict residency** (v2.5.0), restoring default R51b behavior.
   Injection MUST be **deterministic**, MUST NOT alter returned results relative
   to CPython `re` (R16 — an injected device error routes to fallback, an injected
-  false positive is re-verified away), and MUST be observable via
-  `pyro.re.stats()` (R66). To avoid production foot-guns, injection MUST take
+  false positive is re-verified away, a strict-residency fallback returns the same
+  bytes the model would have), and MUST be observable via
+  `pyro.re.stats()` (R66). To avoid production foot-guns, **every** seam in this
+  namespace — including the two added in v2.5.0 — MUST take
   effect only when `PYRO_ENABLE_TEST_HOOKS=1` was sampled (R35a sampling
   discipline); when disabled, the functions are importable but no-ops that raise
-  nothing. This seam is a **new implementation obligation** introduced in v2.0.5.
+  nothing (`await_synthesis` returns the current tier immediately;
+  `set_strict_residency` does nothing). This seam is a **new implementation
+  obligation** introduced in v2.0.5 and **extended in v2.5.0**.
 - **R68 (spec-named configuration knobs).** The following configuration overrides
   are **normative** and are sampled at the R35a sampling points (import,
   `install()`/`uninstall()`, `refresh_env()`):
@@ -1563,9 +1777,16 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     when `PYRO_TOOLCHAIN=vivado`; no default and no filesystem/`PATH` scanning by
     library code (R70). Unset/unresolvable ⇒ the real toolchain is unavailable
     (`toolchain_present=false`, R71).
-  - `PYRO_DEVICE_IFACE` (**NEW obligation, v2.2.2**) — the `onic` netdev name the
-    device transport (R86) binds for the AF_PACKET path. **Default `enp175s0f0`**
-    (F3). Registered as a knob because the interface name is host/operator-specific.
+  - `PYRO_DEVICE_IFACE` (v2.2.2; **no-default rule added v2.5.0**) — the `onic`
+    netdev name the device transport (R86) binds for the AF_PACKET path. **No
+    default; fail-closed** (F3): the name is not derivable from any spec fact, and a
+    baked-in default silently binds `AF_PACKET` to the wrong — or, as on this host,
+    a **nonexistent** — interface. If it is unset **and** the caller supplies no
+    `DeviceConfig.iface`, `probe_device` MUST return `(False, <R83 canonical
+    reason>)` naming `transport: PYRO_DEVICE_IFACE not configured`; it MUST NOT
+    raise, MUST NOT guess, and MUST NOT scan the system for candidate interfaces
+    (R70 no-scanning discipline). This is the same fail-loud rule already carried by
+    `PYRO_PR_STATIC_DCP` / `PYRO_PR_REFERENCE_DCP`.
   - `PYRO_HW_SERVER` (**NEW obligation, v2.2.2**) — the Vivado `hw_server` URL the
     JTAG loader (R85/R86.5) connects to. **Default `TCP:localhost:3121`** (the
     stock `hw_server` port). Registered as a knob because the server location is
@@ -1785,7 +2006,8 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   ≤ 2 µs median) are asserted against the model in all cases. The **relative**
   loss-regime bound (R3b, 1.15×) binds **only when its native-hot-path precondition
   holds (R3c)**; while the R51 routing decision is served at Python level it does
-  not, so the R3b clause records a **SKIP** whose reason states the measured ratio
+  not, so the R3b clause records a **SKIP** whose reason states the measured
+  **R3b.1 median-of-≥5** ratio at the R3b.2 subject size
   (not a FAIL), and R3b becomes a hard PASS requirement at **AC-3-3**. (R1, R2, R3,
   R3a, R3b, R3c, R5, R59, R71)
 - **AC-2-6.** Single-tenant PR arbitration on hardware: loading a second
@@ -1866,14 +2088,20 @@ automatic tier-based dispatch and prewarming.
 - **AC-3-2.** Automatic tier-based dispatch is transparent: a hot pattern is
   prewarmed/synthesized in the background and silently upgraded from fallback to
   resident-circuit dispatch with byte-identical results throughout; a cold or
-  fallback-only pattern is served by fallback. (R4a, R51, R53, R62)
+  fallback-only pattern is served by fallback. The tier-upgrade edge
+  is made observable on a device-free host by the R67 seams
+  `set_strict_residency` (R51b-strict) and `await_synthesis`. (R4a, R51, R51b,
+  R53, R62, R67)
 - **AC-3-3.** The benchmark suite emits machine-readable metrics for R1–R5 and,
   on hardware, demonstrates the win regime (R1/R2, resident circuits) and the
   loss-regime routing (R3), and records synthesis/PR-load costs separately from
   scan throughput. Without hardware, R1/R2 are SKIP, R3–R5 PASS. This is the phase
   at which the native routing/dispatch hot path is a deliverable, so the R3b
   **relative** 1.15× bound becomes a **hard PASS requirement** here (its R3c
-  precondition now holds) rather than a SKIP as in earlier phases. (R1–R5, R3b, R3c,
+  precondition now holds) rather than a SKIP as in earlier phases, measured per
+  the R3b.1/R3b.2 protocol against the compiled-extension build (R3b.3); on a
+  pure-Python install the clause records the R3c SKIP and AC-3-3 is not claimable
+  as PASS. (R1–R5, R3b, R3c,
   R59)
 - **AC-3-4.** `pyro.re.stats()` reports the dispatch counters (hardware / model /
   fallback / fallback-after-error) **and** the lifecycle counters (synth
@@ -1885,7 +2113,7 @@ automatic tier-based dispatch and prewarming.
 
 This subsection **lifts the R76 deferral** (v2.2.0). In Phase 2b all PYRO device
 communication is carried **in-band as raw Ethernet frames** on the `onic` netdev
-(`enp175s0f0`/`f1`, F3). The user box's **AXI-Lite window is tied off** in Phase 2b
+named by `PYRO_DEVICE_IFACE` (F3/R68). The user box's **AXI-Lite window is tied off** in Phase 2b
 (no MMIO CSR path): every §7.4 register meaning the host needs is reached through
 the frame protocol below. Sending/receiving frames uses `AF_PACKET` and therefore
 requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**.
@@ -2253,8 +2481,9 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
   - **Canonical SKIP string (normative).** When `device_usable == false`, the probe
     MUST emit `device_usable=false — ` followed by a comma-separated enumeration, in
     this fixed order, of **exactly the unmet conditions** among:
-    1. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)`
-    2. `transport: CAP_NET_RAW absent`
+    1. `transport: PYRO_DEVICE_IFACE not configured`
+    2. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)`
+    3. `transport: CAP_NET_RAW absent`
     A clause requiring `device_usable ∧ pr_flow_present` appends
     `; pr_flow_present=false — <first unmet R83a condition>` when that predicate is
     also false. This **supersedes** the fixed v2.1.3 literal
@@ -2468,9 +2697,13 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
   - **R86.6 (`DeviceConfig` type + spec-sanctioned private test seams — NEW, v2.2.2).**
     The device functions take a public **`pyro.device.DeviceConfig`** — a frozen
     dataclass whose fields are **config-in with no env reads**, each **defaulted from
-    a spec constant** so `DeviceConfig()` is fully usable without introspection:
-    - `iface: str` — netdev name, default from `PYRO_DEVICE_IFACE` (R68) sampled at
-      R35a, spec default `"enp175s0f0"` (F3);
+    a spec constant** so `DeviceConfig()` is fully usable without introspection
+    (from v2.5.0, `iface` is the deliberate exception — it has no spec constant to
+    default from, F3/R68):
+    - `iface: Optional[str]` — netdev name, default from `PYRO_DEVICE_IFACE` (R68)
+      sampled at R35a; **no spec default — `None` when unconfigured, fail-closed**
+      (F3, R68 no-default rule, v2.5.0): `probe_device` then returns `(False, <R83
+      canonical reason>)` naming `transport: PYRO_DEVICE_IFACE not configured`;
     - `hw_server: str` — default from `PYRO_HW_SERVER` (R68), spec default
       `"TCP:localhost:3121"`;
     - `expected_spec16: int` — default `PYRO_SHELL_SPEC16` = `0x0202` (R81);
@@ -2607,7 +2840,7 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
 - **P2 (transport enablement).** The performance-target QDMA char-dev binding
   requires the QDMA PF/queue setup and `/dev/qdma*` (or equivalent) char devices,
   which do not currently exist (F5). Until then, the **raw-Ethernet-frame
-  binding** to `enp175s0f0`/`f1` (F3) is the functional transport; its control-frame
+  binding** to the `onic` netdev (F3/R68) is the functional transport; its control-frame
   format is **specified in §10.1 (R78)** (v2.2.0, R76 lifted, R50) and it requires
   `CAP_NET_RAW` for the `AF_PACKET` path (the gate on `device_usable`, R83).
 - **P3 (privilege).** MMIO/DMA and raw-frame transport typically require root or
@@ -2717,6 +2950,42 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.5.0** (2026-07-15) — *Phase-3 slate: R3b measurement protocol, R67 seam
+  additions, R73a PR timing-gate scope, F2/F3 demoted to configuration (MINOR —
+  added requirements), spec-writer.* No interface/AC break, no renumbering; frozen
+  invariants untouched (C ABI 2.0.0, `PYROART1`, `SHELL_VERSION 0x0A000001`,
+  `PYRO_SHELL_SPEC16 0x0202`, wire harness namespace `0x00010000`, existing AC
+  numbers).
+  - **R3b (amended; constant UNCHANGED).** The 1.15× bound is retained and its
+    rationale vindicated by measurement (native floor ≈1.01×). Adds R3b.1
+    (median of ≥ 5 trials — the single-trial check was flaky against a 4-point
+    margin), R3b.2 (subject pinned at 132 bytes — the same router measures 1.31×
+    at 3 B and 1.02× at 1 KiB, so an unpinned bound is meaningless), R3b.3 (binds
+    against the compiled-extension build; a pure-Python install records an honest
+    R3c SKIP/FAIL, never a silent pass). R3c/AC-2-5/AC-3-3 cite the protocol.
+  - **R67 (extended).** Adds `await_synthesis()` (terminal-tier observation point)
+    and `set_strict_residency()` (suspends R51b's device-free precedence so R51
+    step 5 binds strictly). Both under the existing `PYRO_ENABLE_TEST_HOOKS` gate;
+    `reset()` clears strict residency. Without them **AC-3-2 is unobservable** on a
+    device-free host. New sub-clause **R51b-strict**.
+  - **R73a (NEW).** Scopes R73's post-route timing gate, for a `pr_bitstream` link,
+    to the **reconfigurable module's** paths (`pyro_rp` cell + R80 boundary paths,
+    `axis_aclk` domain) rather than the whole design. Without it every partial build
+    fails on the static's permanent −0.427 ns `cmac_usplus` violation — outside
+    `pyro_rp`, in a datapath PYRO ties off — **after** `pr_verify` has passed, so the
+    PR flow can never succeed. Mitigation is normative: the static is built and
+    validated once, its timing recorded at flash time, and it is provably unchanged
+    by any partial (R82b locked static + R82c mandatory `pr_verify`). The known
+    violation is recorded in-spec (R73a.5), and the whole-design WNS is still logged
+    (R73a.6).
+  - **F2/F3 (demoted from normative facts to per-host configuration).** Both were
+    **false**: the card is a single PF at `0000:02:00.0` (`10ee:903f`; the shell is
+    built `pf=cmac=1`), and the netdev is `ens2`. F3 was wrong in **shape**, not just
+    value — a netdev name is not derivable from the BDF by any rule, so it cannot be
+    a spec fact. `PYRO_DEVICE_IFACE` (R68) loses its `enp175s0f0` default and becomes
+    **no-default, fail-closed**; R83's canonical string gains
+    `transport: PYRO_DEVICE_IFACE not configured`. §0/R39/§10.1/P2 stop naming
+    `af:00.0`/`enp175s0f0`.
 - **2.4.0** (2026-07-10) — *R78.11 in-band PERF counter read-out (MINOR — added
   requirement), spec-writer.* Closes the R45a **observability gap on hardware**:
   the v2.3.0 counters exist in the R45 CSR block, but AXI-Lite is tied off at
