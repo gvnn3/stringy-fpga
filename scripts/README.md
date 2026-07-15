@@ -17,7 +17,7 @@ As of **2026-07-13** the card is in **nf-server06** (Supermicro X99, Xeon E5 v4)
 | Card BDF | `0000:af:00.0` / `.1` | **`0000:02:00.0`** (single fn — golden image) |
 | Root port | `ae:00.0` | `0000:00:02.0` |
 | Physical slot | 4 | 2 |
-| Netdevs (post-flash) | `enp175s0f0` / `f1` | expect **`enp2s0f0` / `f1`** |
+| Netdevs (post-flash) | `enp175s0f0` / `f1` | **`ens2`** (single fn; SLOT-based naming) |
 | BMC | iDRAC9 @ 10.66.3.9 | ASPEED (no iDRAC; **no slot-disablement path**) |
 | Vivado | `/usr/local/cad/2025.2/Vivado` | **not installed** |
 | PYRO shell build tree | `/usr/local/cad/gn262/pyro/…` | **not present** |
@@ -27,13 +27,15 @@ there is no user image in QSPI at `0x01002000` — so there is no static shell,
 and a *partial* bitstream has nothing to load into. Bring-up needs a **full**
 shell image.
 
-Note that `specs/python-regex-offload.md` still declares `af:00.0` (F2) and
-`enp175s0f0` (F3) as normative facts, and `pyro/_route.py` / `pyro/device.py`
-still default `PYRO_DEVICE_IFACE` to `enp175s0f0`. Those are now false for this
-host and need a spec decision; until then, **override the iface explicitly**:
+As of spec **v2.5.0** (amendment A4, 2026-07-15) this is resolved: F2/F3 are
+demoted from normative facts to per-host configuration, and
+`PYRO_DEVICE_IFACE` is **no-default / fail-closed** — `pyro/_route.py` /
+`pyro/device.py` no longer bake in `enp175s0f0`, and `probe_device` returns a
+clean `(False, "…transport: PYRO_DEVICE_IFACE not configured")` when it is
+unset. So the iface is **required**, not optional — set it explicitly:
 
 ```bash
-export PYRO_DEVICE_IFACE=enp2s0f0    # once the shell is flashed and onic binds
+export PYRO_DEVICE_IFACE=ens2    # the onic netdev on nf-server06
 ```
 
 ## The hazard
