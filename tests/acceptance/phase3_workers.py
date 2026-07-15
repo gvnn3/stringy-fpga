@@ -346,6 +346,138 @@ def cmd_corpus(program, mode):
 _COMMANDS = {"corpus": cmd_corpus}
 
 
+# --------------------------------------------------------------------------
+# AC-3-2 tier-upgrade worker (test_ac3_2_tier_upgrade.py).
+#
+# Runs the fixed AC-3-2 dispatch script against ONE hot pattern under either
+# 'strict' (R51b-strict: the R67 set_strict_residency seam suspends the R51b
+# device-free precedence, so R51 step 5 binds exactly as on hardware) or
+# 'default' (plain R51b) routing, and emits ONE JSON result line.  The worker
+# asserts NOTHING — the parent test owns every assertion over the record
+# stream (corpus ground rule above: otherwise the AC is self-confirming).
+#
+# §9 discipline: only public surfaces are driven — pyro.re.search / explain /
+# stats (R31/R66) and the R67 seams set_strict_residency / await_synthesis —
+# plus exactly ONE sanctioned diagnostic read at the end,
+# pyro._route._RESIDENCY_CONSULT_FAILURES (the counter-wedge canary; see the
+# notebook entry of 14 Jul 2026 20:26:10 and the test module's docstring).
+# --------------------------------------------------------------------------
+TIER_UPGRADE_PATTERN = r"tierupg\d+"
+# >= 64 KiB subject: every dispatch crosses R51 step 4 by SIZE, so each one
+# reaches the residency consultation and ticks the R4a launch policy.
+TIER_UPGRADE_SUBJECT = ("x" * S_MIN) + " tierupg7 mid tierupg88 end"
+SIDE_BACKREF_PATTERN = r"(tier)\1"      # backreference: never HW-eligible (R65/R31)
+SIDE_BACKREF_SUBJECT = "xx tiertier yy"
+SIDE_COLD_PATTERN = r"coldupg\d+"       # eligible, dispatched ONCE (< N_synth): stays cold
+SIDE_COLD_SUBJECT = ("x" * S_MIN) + " coldupg5"
+
+TERMINAL_TIERS = ("resident", "fallback_only")  # R4/R31 terminal lifecycle tiers
+
+
+def cmd_tier_upgrade(mode):
+    """AC-3-2 script: N_synth pre-launch dispatches -> pump (await_synthesis in
+    short slices, one dispatch between slices) -> 3 post-upgrade dispatches ->
+    two side dispatches (fallback-only pattern, cold pattern) -> canary read.
+
+    The pump interleaving exists because the warm->resident promotion happens
+    ON a dispatch (R64): a single long await_synthesis would sit at the
+    non-terminal "warm" tier until timeout.  Each pump dispatch is part of the
+    record stream (in strict mode it is a genuine `fallback` while the circuit
+    is cold/synthesizing — the very edge AC-3-2 asserts).
+    """
+    import time
+
+    assert mode in ("strict", "default"), mode
+    import pyro  # noqa: F401  R35a: env knobs were sampled here (parent set them)
+    import pyro.re as pre
+    import pyro.testing as pt
+
+    kp, subj = TIER_UPGRADE_PATTERN, TIER_UPGRADE_SUBJECT
+    # Reference value from STOCK re: this worker never calls pyro.install(),
+    # so the module-global ``re`` is the genuine stdlib (byte-identity oracle,
+    # R16/R53).  Canonicalised through the same _json_safe as pyro's results.
+    expected = _json_safe(re.search(kp, subj))
+    n_synth = int(os.environ.get("PYRO_N_SYNTH", "1000"))
+
+    if mode == "strict":
+        pt.set_strict_residency(True)   # R51b-strict seam (R67, v2.5.0)
+
+    records = []
+
+    def dispatch(phase):
+        tier_before = pre.explain(kp)["circuit_status"]
+        value = _json_safe(pre.search(kp, subj))
+        records.append({"phase": phase, "tier_before": tier_before,
+                        "value": value, "stats": pre.stats()})
+
+    baseline = pre.stats()
+
+    # Phase 'pre': exactly N_synth dispatches — the R4a launch boundary fires
+    # on the last one (PYRO_N_SYNTH pins it deterministically, R68).
+    for _ in range(n_synth):
+        dispatch("pre")
+
+    # Phase 'pump': await_synthesis paces the loop and is the AC-3-2
+    # observation point for "the background service finished" (R67).
+    timeout = float(os.environ.get("PYRO_TEST_SYNTH_TIMEOUT", "45"))
+    deadline = time.monotonic() + timeout
+    awaited_tier = None
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        awaited_tier = pt.await_synthesis(kp, timeout=min(0.5, remaining))
+        if awaited_tier in TERMINAL_TIERS:
+            break
+        dispatch("pump")
+
+    # Phase 'post': dispatches AFTER await_synthesis returned a terminal tier —
+    # AC-3-2 requires the resident stand-in (model, R7) to serve every one.
+    for _ in range(3):
+        dispatch("post")
+
+    # Side dispatches (AC-3-2 second sentence: "a cold or fallback-only
+    # pattern is served by fallback").  Recorded with their own before/after
+    # stats so the parent can attribute each dispatch exactly.
+    side = []
+
+    def side_dispatch(label, pattern, subject):
+        before = pre.stats()
+        value = _json_safe(pre.search(pattern, subject))
+        side.append({"label": label, "value": value,
+                     "expected": _json_safe(re.search(pattern, subject)),
+                     "before": before, "after": pre.stats(),
+                     "circuit_status": pre.explain(pattern)["circuit_status"]})
+
+    side_dispatch("backref", SIDE_BACKREF_PATTERN, SIDE_BACKREF_SUBJECT)
+    side_dispatch("cold", SIDE_COLD_PATTERN, SIDE_COLD_SUBJECT)
+
+    # Counter-wedge canary — the ONE sanctioned diagnostic read (§9): the
+    # residency-consult failure counter added by the 14 Jul 2026 20:26:10
+    # wedge fix.  Not part of the R31/R66 shapes; AC-3-2 reads it so a
+    # silently dead R4a launch policy (swallowed consult failures) can never
+    # let a tier-transition run pass vacuously.
+    from pyro import _route
+    _emit({
+        "type": "tier_upgrade",
+        "mode": mode,
+        "n_synth": n_synth,
+        "baseline": baseline,
+        "records": records,
+        "awaited_tier": awaited_tier,
+        "expected": expected,
+        "side": side,
+        "explain_final": pre.explain(kp),
+        "final_stats": pre.stats(),
+        "consult_failures": _route._RESIDENCY_CONSULT_FAILURES,
+    })
+    sys.stdout.flush()
+    return 0
+
+
+_COMMANDS["tier_upgrade"] = cmd_tier_upgrade
+
+
 def main(argv):
     return _COMMANDS[argv[1]](*argv[2:])
 
