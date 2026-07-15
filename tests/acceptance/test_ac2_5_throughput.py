@@ -8,11 +8,17 @@ Always-asserted absolute clauses (model/fallback path):
     HW-eligible calls route to fallback (R3/R29) with absolute added routing
     overhead <= 2 µs median per call (R3a/R5).
 
-R3b relative loss-regime bound (1.15×): per R3c (v2.1.1) this binds ONLY when the
-§8 R51 routing/decision hot path is itself native-code cheap.  While that path is
-Python-level, R3a governs and the R3b check records a SKIP-with-measured-ratio
-(never a FAIL), mirroring AC-0-6; R3b becomes a hard PASS at AC-3-3.
-(R1, R2, R3, R3b, R3c, R5, R59, R71)
+R3b relative loss-regime bound (1.15×): measured per the v2.5.0 normative
+protocol (R3b.1–R3b.4, shared implementation in r3b_protocol) — verdict is the
+median of >= 5 trials, each trial the median-over->=1000-paired-calls ratio at
+the pinned 132-byte ASCII subject (R3b.2), caches primed both sides, warmup kept
+in the loss regime by rotating throwaway patterns (R3b.4).  Per R3c the bound
+binds only when the §8 R51 routing decision is served by the compiled extension
+(R3b.3); the precondition is evaluated truthfully at runtime — when it holds the
+1.15× median bound is asserted, and on a pure-Python build the check records a
+SKIP whose reason names the build AND states the measured median (never a silent
+pass, never a FAIL; R3b is additionally a hard PASS at AC-3-3).
+(R1, R2, R3, R3a, R3b, R3c, R5, R59, R71)
 """
 import re as stdre
 import statistics
@@ -22,6 +28,7 @@ import pytest
 
 import pyro.re as pre
 import phase2_support
+import r3b_protocol
 
 # Short subject (< S_min = 64 KiB); each distinct pattern is called so per-pattern
 # reuse stays < N_reuse = 32 => every call is a genuine loss-regime routing
@@ -29,7 +36,6 @@ import phase2_support
 SUBJECT = "the quick brown fox jumps over the lazy dog " * 3
 N_PATTERNS = 1500
 ABS_BUDGET_NS = 2000        # R3a/R5: <= 2 µs median added routing overhead
-R3B_RATIO = 1.15           # R3b: within 1.15× of stock re
 
 
 def _distinct_patterns(n):
@@ -63,10 +69,9 @@ def test_absolute_routing_overhead_median():
     for i in range(len(pats)):          # prime classification caches (reuse->1)
         re_c[i].search(SUBJECT)
         py_c[i].search(SUBJECT)
-    warm_re, warm_py = stdre.compile("ac25warmzz"), pre.compile("ac25warmzz")
-    for _ in range(3000):
-        warm_re.search(SUBJECT)
-        warm_py.search(SUBJECT)
+    # R3b.4-style rotating warmup (the old single-pattern warmup crossed
+    # N_reuse at call 33 and warmed the model path, not the measured one).
+    r3b_protocol.rotating_warmup("ac25a", subject=SUBJECT)
 
     diffs = []
     for i in range(len(pats)):
@@ -84,50 +89,35 @@ def test_absolute_routing_overhead_median():
 
 @pytest.mark.perf
 def test_relative_loss_regime_bound_r3b():
-    """R3b (Phase 1+): below-threshold wall-clock stays within 1.15× of stock re.
+    """R3b (v2.5.0 protocol, R3b.1–R3b.4): below-threshold wall-clock stays
+    within 1.15× of stock re, decided by the median of >= 5 trials at the pinned
+    132-byte subject (R3b.2), each trial >= 1000 paired calls on distinct
+    loss-regime patterns with caches primed both sides (R3b.1) and R3b.4
+    rotating warmup.
 
-    Measured as median(pyro per-call) / median(stock per-call) over short-input
-    loss-regime calls.  Compile caches are primed on both sides first so the ratio
-    reflects the routing/decision path (native-runtime phase), not compilation."""
-    pats = _distinct_patterns(N_PATTERNS)
-    re_c = [stdre.compile(p) for p in pats]
-    py_c = [pre.compile(p) for p in pats]
-    for i in range(len(pats)):          # prime both sides (reuse stays < N_reuse)
-        re_c[i].search(SUBJECT)
-        py_c[i].search(SUBJECT)
-    warm_re, warm_py = stdre.compile("ac25rwarmzz"), pre.compile("ac25rwarmzz")
-    for _ in range(3000):
-        warm_re.search(SUBJECT)
-        warm_py.search(SUBJECT)
+    The R3c precondition is evaluated truthfully (R3b.3): when the compiled
+    extension actively serves the §8 R51 routing decision the bound is a hard
+    assertion; on a pure-Python build the check SKIPs with a reason that names
+    the build and states the measured median — SKIP and FAIL are both honest,
+    a silent pass is a defect (R71 honesty discipline applied to R3b)."""
+    native, build_desc = r3b_protocol.native_routing_active()
+    # Measure FIRST, unconditionally: the R3c SKIP reason MUST cite the
+    # R3b.1/R3b.2 statistic (median of >= 5 trials at 132 B), never a single
+    # trial and never nothing (R3b.3).
+    verdict, trial_ratios, detail = r3b_protocol.measure_r3b()
+    summary = r3b_protocol.format_detail(verdict, trial_ratios, detail)
 
-    stock_ns, pyro_ns = [], []
-    for i in range(len(pats)):
-        t0 = time.perf_counter_ns()
-        re_c[i].search(SUBJECT)
-        t1 = time.perf_counter_ns()
-        py_c[i].search(SUBJECT)
-        t2 = time.perf_counter_ns()
-        stock_ns.append(t1 - t0)
-        pyro_ns.append(t2 - t1)
+    if not native:
+        pytest.skip(
+            f"R3c precondition does not hold — {build_desc}. R3b binds only "
+            f"against the compiled-extension build (R3b.3), so this clause "
+            f"records an honest SKIP (never a FAIL and never a silent pass); "
+            f"R3a (absolute <= 2 µs, asserted above) governs, and R3b is a "
+            f"hard PASS requirement at AC-3-3. Measured anyway per "
+            f"R3b.1/R3b.2: {summary}; bound {r3b_protocol.R3B_RATIO}×.")
 
-    med_stock = statistics.median(stock_ns)
-    med_pyro = statistics.median(pyro_ns)
-    ratio = med_pyro / med_stock if med_stock else float("inf")
-
-    # R3c (v2.1.1): the R3b 1.15× relative bound binds ONLY when its precondition
-    # holds — the §8 R51 routing/decision hot path is itself served by native code.
-    # When it holds, the bound is a genuine PASS below.
-    if ratio <= R3B_RATIO:
-        return
-    # Otherwise the routing/decision hot path is still Python-level on this build
-    # (per-call overhead ~1 µs — within the R3a/R5 absolute 2 µs bound asserted
-    # above).  Per R3c, R3a governs and any R3b relative-ratio check MUST record a
-    # SKIP-with-measured-ratio (never a FAIL), mirroring AC-0-6; R3b becomes a hard
-    # PASS requirement only at AC-3-3 (Phase-3 native routing/dispatch).
-    pytest.skip(
-        f"R3c: native routing hot path not yet in place — below-threshold "
-        f"wall-clock ratio {ratio:.2f}× (median pyro {med_pyro} ns vs stock "
-        f"{med_stock} ns) exceeds 1.15×. The §8 R51 routing decision is served at "
-        "Python level, so R3a (absolute ≤ 2 µs, asserted above) governs and the "
-        "R3b relative bound SKIPs with the measured ratio (R3c, v2.1.1); R3b is a "
-        "hard PASS only at AC-3-3.")
+    assert verdict <= r3b_protocol.R3B_RATIO, (
+        f"R3b: {build_desc}, so the 1.15× relative bound binds (R3c) and the "
+        f"measured R3b.1 verdict exceeds it: {summary}; bound "
+        f"{r3b_protocol.R3B_RATIO}×. (Individual trials MAY exceed 1.15× "
+        f"without violating R3b; only this median binds.)")
