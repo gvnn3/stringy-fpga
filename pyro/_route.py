@@ -402,6 +402,39 @@ def _utf8_transportable(s: str) -> bool:
 # pattern (R65).  It never raises into a caller (R52/R65).
 _residency = None
 
+# --- R51b-strict (R67 set_strict_residency seam, v2.5.0) -------------------
+# While True AND the R67 test-hook gate is on, the R51b device-free precedence
+# of R7 is SUSPENDED and R51 step 5 binds strictly, exactly as on hardware: a
+# HW-eligible, gate-crossed dispatch whose circuit is NOT resident (cold /
+# synthesizing / warm) is served by genuine fallback for that call (counted as a
+# normal ``fallback`` dispatch, never ``fallback_after_error``), while a
+# resident circuit dispatches to the software model standing in for it (R7,
+# counted as ``model``).  Results are byte-identical in both modes (R16/R36/
+# R53) — only the R66 dispatch counters and the latency differ — and the
+# residency/eviction bookkeeping (R64/R64a) is unchanged: the consultation
+# below still ticks the launch policy and lifecycle either way.  Set only via
+# ``pyro.testing.set_strict_residency`` (gated), cleared by
+# ``pyro.testing.reset``.  A single module-global bool read once per consult
+# (atomic under the GIL) — concurrency-safe the same way _ENV is (R35d).
+_STRICT_RESIDENCY = False
+
+
+def set_strict_residency(enabled: bool = True) -> None:
+    """Enable/disable R51b-strict routing (R67 seam plumbing, v2.5.0).
+
+    Callers go through ``pyro.testing.set_strict_residency``, which owns the
+    PYRO_ENABLE_TEST_HOOKS gate; this setter is the ungated state holder (the
+    dispatch-path check below ALSO requires the gate, so a stale True can never
+    bind once hooks are off).
+    """
+    global _STRICT_RESIDENCY
+    _STRICT_RESIDENCY = bool(enabled)
+
+
+def strict_residency_active() -> bool:
+    """True iff R51b-strict binds: seam enabled AND the R67 gate is on."""
+    return _STRICT_RESIDENCY and _TEST_HOOKS
+
 # --- residency-consultation diagnostics (AC-3-1 counter-wedge review) ------
 # _consult_residency below MUST NOT raise into a dispatch (R52/R65), so it
 # swallows every exception.  But a swallowed failure here can mask a dead R4a
@@ -426,10 +459,15 @@ def _note_residency_failure(exc: BaseException) -> None:
 def _consult_residency(patt, string) -> bool:
     """Register a HW-eligible dispatch and return ``True`` to force fallback.
 
-    Returns ``True`` only when the pattern's circuit is **permanently
-    fallback-only** (synthesis failed, R65) — ordinary routing, counted as a
-    normal ``fallback`` (not ``fallback_after_error``, AC-1-6).  Otherwise ticks
-    the launch policy / lifecycle and returns ``False`` (proceed via the model).
+    Returns ``True`` when the pattern's circuit is **permanently fallback-only**
+    (synthesis failed, R65) — ordinary routing, counted as a normal ``fallback``
+    (not ``fallback_after_error``, AC-1-6) — and, while **R51b-strict** is
+    active (R67 ``set_strict_residency`` seam, v2.5.0), for ANY not-resident
+    tier (cold / synthesizing / warm): R51 step 5 then binds exactly as on
+    hardware.  Otherwise ticks the launch policy / lifecycle and returns
+    ``False`` (proceed via the model).  The bookkeeping side effects
+    (``note_eligible_dispatch``: launch counter, R4a policy, warm→resident
+    promotion, R66 counters) are identical in both modes.
     """
     global _residency
     try:
@@ -457,7 +495,14 @@ def _consult_residency(patt, string) -> bool:
         enc = ENC_UTF8 if isinstance(string, str) else ENC_BYTES
         outcome = res.get_manager().note_eligible_dispatch(
             patt._stock.pattern, patt._stock.flags, enc)
-        return outcome == res.ROUTE_PERMANENT_FALLBACK
+        if outcome == res.ROUTE_PERMANENT_FALLBACK:
+            return True
+        # R51b-strict (v2.5.0): while the R67 seam is active (and hooks gated
+        # on), a not-resident circuit routes to genuine fallback for this call —
+        # the production R51 step 5 rule — instead of the R51b model standin.
+        if _STRICT_RESIDENCY and _TEST_HOOKS and outcome != res.ROUTE_RESIDENT:
+            return True
+        return False
     except Exception as exc:
         _note_residency_failure(exc)
         return False
