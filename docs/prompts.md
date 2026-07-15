@@ -944,3 +944,257 @@ This was a discrete task (a spec amendment). I'd suggest **/compact** if your ne
 <usage><subagent_tokens>38708</subagent_tokens><tool_uses>20</tool_uses><duration_ms>207865</duration_ms></usage>
 </task-notification>
 
+## 2026-07-07 10:28:55
+
+This system was rebooted after a crash and the kernel may have been updatd.  Check the status of the system, the kernel and the FGPA card.
+
+## 2026-07-07 10:33:04
+
+Read the notebook and mamory, the crash happened when you tried to program the card over JTAG.  DO not try to program the card, just chekc the status of the work so far and see if that's where we were.
+
+## 2026-07-07 10:39:56
+
+Look into the ../ebpf-os directory for scripts and memories that explain how to safely program the FPGA.
+
+## 2026-07-07 10:45:12
+
+Copy the useful scripts to this repo.
+
+## 2026-07-07 10:48:28
+
+Commit this.
+
+## 2026-07-08 09:24:50
+
+Does the design have pieces that measure teh wins of offloading to the FPGA?  If so, list them here.
+
+## 2026-07-08 09:27:08
+
+Add on-chip cycle and byte counters to the CSR block.
+
+## 2026-07-08 09:58:07
+
+Commit this once the acceptance suite passes.
+
+## 2026-07-09 10:38:09
+
+The FPGA card is now disabled.  Program the images.
+
+## 2026-07-09 10:41:26
+
+Continue the FPGA proramming
+
+## 2026-07-10 00:45:40
+
+Resume.
+
+## 2026-07-10 08:39:16
+
+Has the card been programmed?
+
+## 2026-07-10 09:17:09
+
+sudo python3 -c "import mmap,struct; f=open('/sys/bus/pci/devices/0000:af:00.0/resource2','r+b'); m=mmap.mmap(f.fileno(),4096); print(hex(struct.unpack('<I',m[0:4])[0]))"
+[sudo] password for gn262:
+0x7060612
+
+## 2026-07-10 09:19:12
+
+yes, update the notebook entry
+
+## 2026-07-10 09:23:20
+
+Is there a benchmark to run?
+
+## 2026-07-10 09:26:21
+
+load the ID-stub partial over ICAP, rebuild ab+c with the 2.1.0 harness, then read CYCLES/BYTES after a match run
+
+## 2026-07-11 03:03:49
+
+sudo PYTHONPATH=/home/gn262/Repos/Yale/stringy-fpga python3 /home/gn262/Repos/Yale/stringy-fpga/scripts/pyro_hw.py probe
+device_usable=true — static_shell_id=0x020286ad, transport: CAP_NET_RAW present
+
+## 2026-07-11 03:05:25
+
+sudo PYTHONPATH=/home/gn262/Repos/Yale/stringy-fpga python3 /home/gn262/Repos/Yale/stringy-fpga/scripts/pyro_hw.py probe
+device_usable=false — probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)
+
+## 2026-07-13 13:36:35
+
+What is the FPGA card in this host?
+
+## 2026-07-13 13:39:19
+
+install XRT and flash the deployment shell
+
+## 2026-07-13 13:45:46
+
+Yes, do the fixes.  The vivado binary script is copied what are the install commands?
+
+## 2026-07-13 14:10:59
+
+There is a license now, continue
+
+## 2026-07-13 14:21:46
+
+Done, GO!
+
+## 2026-07-13 14:23:41
+
+Done
+
+## 2026-07-13 14:24:23
+
+Done. Go.
+
+## 2026-07-13 14:25:25
+
+Ignore all that was on zanettie.
+
+## 2026-07-13 14:30:25
+
+Understood, continue, build the whole thing and install it on the card.
+
+## 2026-07-13 14:37:31
+
+Keep going, write the plugin and DFX scripts
+
+## 2026-07-13 14:44:30
+
+Continue
+
+## 2026-07-14 02:15:31
+
+Continue
+
+## 2026-07-14 02:20:35
+
+Done, run the diagnostic
+
+## 2026-07-14 02:24:31
+
+Make a script for sudo the copy paste has issues.
+
+## 2026-07-14 02:26:50
+
+Done, run the diagnosticJTAG_UDEV_OK — the cable is now openable by a non-root hw_server.
+Next (as your normal user):  pkill hw_server; hw_server -d
+
+## 2026-07-14 06:04:28
+
+Flash it
+
+## 2026-07-14 08:49:27
+
+Write the notebook entry
+
+## 2026-07-14 08:52:42
+
+commit this
+
+## 2026-07-14 09:01:51
+
+Cold boot look at the card and let's continue
+
+## 2026-07-14 09:11:42
+
+sudo insmod  /home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko
+insmod: ERROR: could not insert module /home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko: Invalid parameters
+
+## 2026-07-14 09:14:51
+
+Done, check the netdev
+
+## 2026-07-14 09:15:07
+
+Now it is
+
+## 2026-07-14 09:17:20
+
+Done, run the probe
+
+## 2026-07-14 11:09:52
+
+Using ultracode continue wiht the work in the space through Phase 3.
+
+## 2026-07-14 11:35:06
+
+Done, continue
+
+## 2026-07-14 14:15:40
+
+Continue
+
+## 2026-07-14 15:47:43
+
+Continue
+
+## 2026-07-15 01:20:31
+
+Approve all four amendments, continue ultracode
+
+## 2026-07-15 01:22:45
+
+continue
+
+## 2026-07-15 01:22:54
+
+continue with ultracode of all A options
+
+## 2026-07-15 01:24:17
+
+continue with ultracode of all A options but also read in ~/snort3-community-rules.tar.gz. and start to design a system whereby these rules can be loaded into the FPGA for filtering.
+
+## 2026-07-15 01:42:24
+
+interface is up
+
+## 2026-07-15 01:45:44
+
+load a pattern partial and read the counters
+
+## 2026-07-15 01:48:38
+
+continue
+
+## 2026-07-15 03:03:20
+
+continue
+
+## 2026-07-15 05:03:04
+
+cold cycle the card and restore device_usable
+
+## 2026-07-15 06:25:27
+
+The card is back, run the probe
+
+## 2026-07-15 13:58:37
+
+System has been power cycled, continue.
+
+## 2026-07-15 14:03:25
+
+ens2             UP             00:0a:35:83:9c:71 <BROADCAST,MULTICAST,UP,LOWER_UP>
+
+## 2026-07-15 14:11:17
+
+build_timestamp=0x07140219  user_status(pre)=0xffffffff
+USER_RESET_DONE  user_status(post)=0xffffffff
+
+## 2026-07-15 14:17:06
+
+Done
+
+## 2026-07-15 14:21:13
+
+ens2             UP             00:0a:35:f3:6f:9a <BROADCAST,MULTICAST,UP,LOWER_UP>
+
+WEDGE_RECOVER_DONE — now probe as your normal user:
+    PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
+
+## 2026-07-15 14:24:56
+
+commit this
+

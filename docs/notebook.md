@@ -17,17 +17,122 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-2. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-3. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-4. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-5. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-6. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-7. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-8. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-9. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-10. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-11. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+2. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+3. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+4. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+5. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+6. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+7. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+8. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+9. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+10. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+11. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+12. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+---
+
+# EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon :complete:
+
+## 1. Hypothesis
+
+The previous entry's fix direction (c) — a host-reachable user-box soft reset —
+exists, is verifiable in the shell's own RTL rather than by blind-poking, and
+can reproduce the power-on reset ordering in-band; if so, a JTAG-wedged RP can
+be recovered without a cold power cycle, and the R45a CYCLES/BYTES counters
+become readable on real silicon at last.
+
+## 2. How
+
+- **Equipment:** U250 on nf-server06 (`0000:02:00.0`, PYRO PR shell build
+  `0x07140219`), after an operator cold power cycle restored the boot state
+- **Software:** Linux 6.8.0-134, matching `onic.ko`, Vivado 2025.2 `hw_server`,
+  `scripts/pyro_hw.py`, new `scripts/pyro_user_reset.py` and
+  `scripts/pyro_wedge_recover.sh`
+- **Method:** verify the reset chain in RTL first (never poke unverified);
+  validate the register on a healthy card; then the wedge-risking experiment
+  with the operator's explicit go: JTAG-load the preserved `abc[a-f]{2}`
+  partial → confirm wedge → escalate resets until the child answers.
+
+### Key commands
+
+```bash
+sudo python3 scripts/pyro_user_reset.py            # BAR2 0x014 user reset
+sudo bash scripts/pyro_wedge_recover.sh            # full in-band recovery
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py match "xxabcdeyyabcffz" --slot 1
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py perf --slot 1
+```
+
+## 3. Observations
+
+- **The reset register exists and the whole chain is verifiable in RTL.**
+  OpenNIC `system_config` (BAR2 `0x000–0xFFF`): `0x014` user reset (WO,
+  edge-triggered, self-clearing), `0x018` status (RO). Bit 0 →
+  `user_rstn[0]` (`open_nic_shell.sv:472`) → `box_250mhz.mod_rstn[0]`
+  (`user_plugin_250mhz_inst.vh:82`) → `pyro_250mhz`'s `generic_reset`
+  (100 cycles) → `axil_aresetn`, the reset of **both** `pyro_rp_inst` and the
+  box's static-side logic (`pyro_250mhz.sv:163`) — the coordinated
+  static+RP interface reset the JTAG path lacks.
+- **Healthy-card validation passed:** pulse → boot stub still answers.
+  (Status polls always read done: 100 cycles @125 MHz ≈ 0.8 µs, far below
+  mmap read latency.)
+- **User reset alone does NOT recover a wedged RP.** After JTAG-loading the
+  pattern partial (39.9 s, wedge confirmed), the pulse changed nothing.
+  Interface counters located the residual state: probe TX +3 (requests leave
+  the host), RX +0 (nothing returns), and 5 pre-existing oversized RX frames
+  (14,255 B / 5 pkts on a 1500-MTU link, 1 drop) — garbage the C2H path
+  emitted while RP outputs floated during reconfig, leaving the **QDMA C2H
+  stream engine stuck mid-frame**, outside every reset pulsed so far.
+- **The full power-on-equivalent sequence recovers it**
+  (`scripts/pyro_wedge_recover.sh`): `rmmod onic` → user reset (`0x014` b0) →
+  **QDMA subsystem soft reset** (`0x00C` b0 — drives only the QDMA IP's
+  `soft_reset_n`; `sys_rst_n` is `pcie_rstn` from the edge connector, so the
+  PCIe link survives, `qdma_subsystem_qdma_wrapper.v:299,458`) → `insmod` +
+  link up. Probe: **`device_usable=true`, `static_shell_id=0x02020000`** —
+  the *pattern child's* identity (BUILD16=0), not the boot stub's `0x3841`.
+  **The JTAG-loaded child answers. No power cycle.**
+- **First R45a counter read on real silicon.** `abc[a-f]{2}` on
+  `"xxabcdeyyabcffz"` → `MATCH_REPLY count=2` (both candidate windows,
+  host-re-verify flags set per R78.7); `PERF` → **`CYCLES=17 BYTES=15`**
+  (68 ns, 0.882 B/cyc @250 MHz). Negative control `"no pattern here at all"`
+  → `count=0`, `CYCLES=24 BYTES=22` — counters track the most recent scan
+  exactly. Probe remains `device_usable=true` afterwards.
+- `onic` assigns a fresh random MAC each insmod (`00:0a:35:83:9c:71` →
+  `00:0a:35:f3:6f:9a`) — nothing may key on it.
+
+## 4. Data analysis
+
+The wedge was never one fault but two, stacked: the box-side AXIS desync
+(cleared by the user reset) and stuck mid-frame state in the QDMA C2H engine
+(cleared only by the QDMA soft reset + fresh queue contexts). That is why the
+previous entry's power-cycle conclusion held — power-on is the only *single*
+action that resets both — and why each reset tried alone looked like a
+falsified hypothesis when it was half of the answer. The interface counters
+were the decisive instrument: TX advancing while RX stayed frozen split
+"child not answering" from "answers not arriving", and the five oversized RX
+frames dated the corruption to the reconfig window itself. Method point worth
+keeping: every register poke was RTL-verified end-to-end before touching the
+card (the previous entry's "do not blind-poke" discipline), which is what made
+escalation safe enough to run over a live PCIe link. With
+JTAG-load + `pyro_wedge_recover.sh` the project now has a **working
+partial-reconfig path** — the shell-rebuild/ICAP fix directions (a) and (b)
+drop from "blocking" to "nice to have". R45a/R78.11 are hardware-verified;
+the last model-only claims in the perf story are gone.
+
+## 5. Ideas for future experiments
+
+- Fold `pyro_wedge_recover.sh` into `pyro.device.load_partial` (or a
+  `load --recover` flag) so a JTAG load is one atomic, always-recovered
+  operation; then re-run the AC-3-2/AC-3-3 device-gated skips on real HW.
+- Real benchmark next: large corpora through MATCH with CYCLES/BYTES per run
+  (R1/R2 win-regime calibration on silicon, not just host-side timing).
+- Multi-child residency: build a second pattern partial, exercise slot
+  tier-upgrade (AC-3-2) on hardware with load+recover between swaps.
+- Root-cause the C2H garbage burst: a `dfx_decoupler` in the next shell spin
+  would suppress it at the source (fix direction (a), now unhurried).
+- Check whether the QDMA soft reset alone (without the user reset) suffices —
+  would simplify the recovery script; not tested because the ordering was
+  chosen to mirror power-on.
 
 ---
 
