@@ -369,18 +369,35 @@ class VivadoToolchain:
         "report_timing_summary -file timing.rpt\n"
         # R73a.1: the DECISIVE post-route timing query is scoped to the
         # reconfigurable module — setup paths whose startpoint AND/OR endpoint
-        # lies in the RP cell (both boundary directions IN scope), evaluated in
-        # the axis_aclk 250 MHz user-box clock domain (F4).  Paths lying
+        # lies in the RP cell (both boundary directions IN scope).  Paths lying
         # entirely in the static region are OUT of scope: they are the static
         # build's flash-time record (R73a.4/R73a.5), not a per-pattern fact.
+        #
+        # NB (2026-07-15, first real HW partial): a hierarchical cell's own pins
+        # are timing *through* points, not start/endpoints, so
+        # `get_timing_paths -from/-to [_rp_cell]` returns ZERO paths — it must be
+        # scoped over the RP's LEAF cells (-from/-to) plus its boundary pins
+        # (-through) to capture intra-RM and static<->RM boundary paths.  The RP
+        # is single-clock (the axis_aclk user-box 250 MHz domain, F4), so every
+        # cell-scoped path is in that domain by construction; the previous
+        # literal `GROUP == axis_aclk` filter both mis-named the routed clock
+        # (it is axis_aclk_0) and was redundant with the cell scope — it emptied
+        # the set and tripped R73a.3 on a partial that in fact met timing
+        # (RM WNS +0.023 ns).  If the RP ever becomes multi-clock, re-add a
+        # domain guard here (R73a.4).
         # -quiet: an empty result is handled explicitly below (R73a.3), never
         # papered over by tool warnings.
-        "set _rp_scope {GROUP == axis_aclk}\n"
+        "set _rpn [get_property NAME [_rp_cell]]\n"
+        "set _leaves [get_cells -quiet -hierarchical "
+        "-filter \"PRIMITIVE_LEVEL == LEAF && NAME =~ $_rpn/*\"]\n"
+        "set _bpins [get_pins -quiet -of_objects [_rp_cell]]\n"
         "set _pf [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup "
-        "-from [_rp_cell] -filter $_rp_scope]\n"
+        "-from $_leaves]\n"
         "set _pt [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup "
-        "-to [_rp_cell] -filter $_rp_scope]\n"
-        "set _scoped [concat $_pf $_pt]\n"
+        "-to $_leaves]\n"
+        "set _pb [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup "
+        "-through $_bpins]\n"
+        "set _scoped [concat $_pf $_pt $_pb]\n"
         "if {[llength $_scoped] == 0} {\n"
         # R73a.3: an empty scoped path set is a FAILURE, not a pass — a
         # narrower gate must not degrade into no gate.  Emit the sentinel (the

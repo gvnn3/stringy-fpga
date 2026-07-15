@@ -34,11 +34,19 @@ TCL = VivadoToolchain._PR_FLOW_TCL
 
 
 def test_pr_tcl_decisive_query_is_scoped_to_rp_cell_r73a1():
-    # Both boundary directions are IN scope: a -from query AND a -to query
-    # against the RP cell, setup analysis, axis_aclk domain filter.
-    assert "-setup -from [_rp_cell]" in TCL
-    assert "-setup -to [_rp_cell]" in TCL
-    assert "GROUP == axis_aclk" in TCL
+    # Both boundary directions AND intra-RM paths are IN scope.  A hierarchical
+    # cell's own pins are timing *through* points, not start/endpoints, so the
+    # scope is taken over the RP's LEAF cells (-from/-to) plus its boundary pins
+    # (-through) — not `-from/-to [_rp_cell]`, which returns zero paths on real
+    # hardware (confirmed 2026-07-15).
+    assert 'PRIMITIVE_LEVEL == LEAF && NAME =~ $_rpn/*' in TCL
+    assert "-setup -from $_leaves" in TCL
+    assert "-setup -to $_leaves" in TCL
+    assert "-setup -through $_bpins" in TCL
+    # The brittle literal clock-name filter is gone: it mis-named the routed
+    # clock (axis_aclk_0) and emptied the set, tripping R73a.3 on a partial that
+    # met timing.  Cell scope alone captures the single-clock RP domain (F4).
+    assert "GROUP == axis_aclk" not in TCL
     # The scoped result carries its own marker, distinct from the whole-design one.
     assert "PYRO_METRIC:RP_WNS:" in TCL
 
