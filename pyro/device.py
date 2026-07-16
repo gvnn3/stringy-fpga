@@ -114,6 +114,19 @@ PYRO_PROBE_ATTEMPTS = 3
 #: R65), not a permanent-fallback synthesis failure.
 PYRO_JTAG_LOAD_TIMEOUT = 600.0
 
+#: R85a (v2.5.1) in-band recovery command run by ``load_partial`` after a
+#: successful program step.  A raw JTAG reconfig leaves the child unreachable
+#: (box-side AXIS desync + stuck QDMA C2H stream state); the recovery script
+#: performs the mandated driver-detach -> user-box reset -> QDMA soft reset ->
+#: driver re-attach sequence.  ``sudo -n`` so an absent sudoers grant fails
+#: fast and loud instead of prompting inside a library call.  The script path
+#: is a pinned location relative to this package (not filesystem scanning, R70).
+PYRO_RECOVER_CMD = (
+    "sudo", "-n",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                 "scripts", "pyro_wedge_recover.sh"),
+)
+
 # Linux capability bit for AF_PACKET raw sockets (R83 transport gate).
 _CAP_NET_RAW = 13
 
@@ -351,6 +364,8 @@ class DeviceConfig:
     hw_server: str = field(default_factory=_sampled_hw_server)  # Vivado hw_server URL
     vivado_dir: str = field(default_factory=_default_vivado_dir)  # PINNED_VIVADO_DIR
     jtag_load_timeout_s: float = PYRO_JTAG_LOAD_TIMEOUT   # R84 (v2.2.2), transient
+    # R85a (v2.5.1) post-program in-band recovery; None disables (R86.5/R86.6)
+    recover_cmd: Optional[Tuple[str, ...]] = PYRO_RECOVER_CMD
     # -- spec-sanctioned private test seams (R86.6; None => real impl) -------
     cap_check: Optional[Callable[[], bool]] = None
     transport_factory: Optional[Callable[["DeviceConfig"], "_Transport"]] = None
@@ -714,8 +729,13 @@ def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
     diagnostic (R86.5).  ``PermissionError``/``OSError`` never leak (R86.1).
 
     R85: this uses **JTAG only** and does **not** disturb the live PCIe link — the
-    static shell owns PCIe and is bit-identical across configurations, so partial
-    reconfiguration of ``pyro_rp`` leaves the ``onic`` netdev intact.  Artifact
+    static shell owns PCIe and is bit-identical across configurations.  R85a
+    (v2.5.1): a raw JTAG program leaves the child **unreachable** (no decoupler;
+    stuck QDMA C2H stream state), so after a successful program step this runs the
+    in-band recovery command (``config.recover_cmd``, default ``PYRO_RECOVER_CMD``
+    = ``sudo -n scripts/pyro_wedge_recover.sh``) through the same ``load_runner``
+    seam; the load succeeds only if both steps do.  Recovery transiently detaches
+    the ``onic`` driver, so the netdev's MAC changes across a load.  Artifact
     admissibility (``payload_kind == "pr_bitstream"``, same-release, integrity —
     R72b/R82) is enforced by ``pyro_circuit_load`` upstream (R40); this function
     performs the JTAG mechanism and surfaces mechanism failures as PyroLoadError.
@@ -776,6 +796,34 @@ def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
             raise PyroLoadError(
                 f"JTAG hw_server load failed (vivado exit {rc}) (R86.5)"
                 + (f": {tail}" if tail else ""))
+
+        # R85a (v2.5.1): a raw JTAG program leaves the child unreachable (AXIS
+        # desync + stuck QDMA C2H state) — the load is complete only after the
+        # in-band recovery sequence.  Same runner seam, same timeout bound; a
+        # failure here is TRANSIENT per R85a (the fabric holds the new child;
+        # only reachability failed).  recover_cmd=None disables (R86.5/R86.6).
+        if config.recover_cmd is not None:
+            try:
+                rc, out = runner(list(config.recover_cmd), workdir,
+                                 float(config.jtag_load_timeout_s))
+            except _LoadTimeout:
+                raise PyroLoadError(
+                    f"R85a post-load recovery exceeded "
+                    f"{config.jtag_load_timeout_s:g}s; process tree killed "
+                    f"(R85a/R86.5)")
+            except PyroLoadError:
+                raise
+            except Exception as exc:
+                raise PyroLoadError(
+                    f"R85a post-load recovery failed: {exc!r} (R85a/R86.5)"
+                ) from exc
+            if rc != 0:
+                tail = _tail(out)
+                raise PyroLoadError(
+                    f"R85a post-load recovery failed (exit {rc}) — the fabric "
+                    f"holds the new child but it is unreachable until recovery "
+                    f"succeeds (R85a/R86.5)"
+                    + (f": {tail}" if tail else ""))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
     return None

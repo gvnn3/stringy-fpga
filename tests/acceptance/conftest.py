@@ -92,6 +92,23 @@ _ENV_KEYS = ("PYRO_DISABLE", "PYRO_FORCE_MODEL", "PYRO_ENABLE_TEST_HOOKS",
 # pyro_isolation teardown, so the pin can never survive past the test that set it.
 _PRISTINE_TOOLCHAIN = {k: os.environ.get(k) for k in ("PYRO_TOOLCHAIN", "PYRO_VIVADO")}
 
+# Operator's device netdev, snapshotted at conftest import BEFORE pyro_isolation
+# scrubs _ENV_KEYS.  PYRO_DEVICE_IFACE is a host fact (which netdev is the card,
+# F3/R68 no-default), not a behavior knob — but unlike PYRO_NO_NATIVE it IS
+# scrubbed per-test so probe-reason tests can assert the canonical
+# "not configured" condition.  Hardware-gated clauses that want the operator's
+# real configuration take the `device_iface` fixture instead of os.environ:
+# None on a device-free run keeps them fail-closed (honest R83 SKIP).
+_PRISTINE_DEVICE_IFACE = os.environ.get("PYRO_DEVICE_IFACE")
+
+
+@pytest.fixture
+def device_iface():
+    """The operator-configured PYRO_DEVICE_IFACE as of suite start (or None) —
+    the sanctioned way for hardware-gated clauses to reach the device while
+    pyro_isolation keeps os.environ hermetic for everyone else."""
+    return _PRISTINE_DEVICE_IFACE
+
 
 def pytest_configure(config):
     config.addinivalue_line(

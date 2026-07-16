@@ -6,7 +6,9 @@ JTAG per R85 — the spec-sanctioned partial-load path; it never touches the
 static shell or the PCIe link):
 
     probe                     R83/R84 ID_REQUEST probe (needs CAP_NET_RAW -> sudo)
-    load  <partial.bit>       R85/R86.5 JTAG partial load via hw_server (no root)
+    load  <partial.bit>       R85/R86.5 JTAG partial load via hw_server, then the
+                              R85a in-band recovery (sudo -n pyro_wedge_recover.sh
+                              -- needs the NOPASSWD sudoers grant for that script)
     match <corpus> [--slot N] R78.6/R78.7 MATCH round-trip (needs CAP_NET_RAW)
     perf  [--slot N]          R78.11 CYCLES/BYTES read-out (needs CAP_NET_RAW)
 

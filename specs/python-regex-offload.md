@@ -1,8 +1,8 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.5.0
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2; Phase-3 slate A1–A4 adopted 2026-07-15 — R3b measurement protocol, R67 seams extended, R73a PR timing-gate scope, F2/F3 demoted to configuration)
+- **Version:** 2.5.1
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2; Phase-3 slate A1–A4 adopted 2026-07-15 — R3b measurement protocol, R67 seams extended, R73a PR timing-gate scope, F2/F3 demoted to configuration; JTAG PR wedge root-caused and in-band recovery (R85a) folded into `load_partial` 2026-07-15 — first on-silicon R45a counter read)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-15
 
@@ -2002,7 +2002,14 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   `MAX_REPEAT` clauses still run. (R11–R13, R65, R73, R74, R77)
 - **AC-2-5.** Throughput of a resident circuit meets R1 on hardware (≥ 1 GiB/s
   floor, 5 GiB/s target). This requires `device_usable` (R71) → **SKIP** with
-  reason `device_usable=false`. The **absolute** routing/decision bounds (R3a/R5,
+  reason `device_usable=false`. **It additionally requires the P2
+  performance-target transport (v2.5.1):** with `device_usable` true but only
+  the functional raw-Ethernet control transport present (P2 QDMA char-devs
+  absent, F5), the R1 throughput clauses (here and at AC-3-3) are **measured
+  anyway** over the control transport (R3b.3 measure-first discipline) and
+  record a **SKIP whose reason states the measured control-plane throughput
+  and names the missing P2 prerequisite** — never a PASS (the floor is unmet)
+  and never a FAIL (what is missing is the P2 data plane, not the circuit). The **absolute** routing/decision bounds (R3a/R5,
   ≤ 2 µs median) are asserted against the model in all cases. The **relative**
   loss-regime bound (R3b, 1.15×) binds **only when its native-hot-path precondition
   holds (R3c)**; while the R51 routing decision is served at Python level it does
@@ -2606,15 +2613,43 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
   performed **out of band via JTAG** using Vivado `hw_server` (verified working on the
   owner's board). This is safe with respect to the live PCIe link: the **static shell
   owns PCIe** and is bit-identical across configurations (R82b), so partial
-  reconfiguration of `pyro_rp` over JTAG **does not disturb** the PCIe link or the
-  `onic` netdev. The async/non-blocking load contract (R63) and single-tenant
-  residency/eviction semantics (R64) are unchanged; only the load *mechanism* is JTAG.
+  reconfiguration of `pyro_rp` over JTAG **does not disturb** the PCIe link. (The
+  pre-2.5.1 claim that the `onic` netdev is also undisturbed was **half-true**: the
+  netdev survives the JTAG program itself, but the child comes up wedged — R85a —
+  and the R85a recovery transiently detaches/re-attaches the driver, so the netdev's
+  MAC changes across a load; nothing may key on it.) The async/non-blocking load
+  contract (R63) and single-tenant residency/eviction semantics (R64) are unchanged;
+  only the load *mechanism* is JTAG.
   **ICAP/MCAP-based (in-band, self-hosted) partial reconfiguration is explicitly
   deferred** to a later phase — like R76 deferred the frame format — because it
   requires additional shell plumbing (an ICAP/MCAP controller reachable from the host
   path) that the `ce85c8d` PR shell does not yet expose. Until that ruling is lifted
   under a future version bump, the **only** sanctioned on-device PR-load mechanism is
   the JTAG/`hw_server` path, and no AC may assume ICAP/MCAP self-reconfiguration.
+
+- **R85a (JTAG PR wedge + mandatory in-band recovery — NEW, v2.5.1, HW-proven
+  2026-07-15).** A raw JTAG `program_hw_devices` partial load reconfigures `pyro_rp`
+  correctly but leaves the child **unreachable**: the shell has no DFX decoupler and
+  performs no coordinated static-side reset during the ~17–40 s reconfig, so (i) the
+  box-side AXIS interface desyncs, and (ii) the RP's floating outputs emit garbage
+  frames that leave the **QDMA C2H stream engine stuck mid-frame**. Power-on masks
+  both only because it resets static, RP, and interface together. Recovery is
+  **in-band** (no power cycle) and MUST perform, in order:
+  1. detach the `onic` driver (quiesce host-side queue state);
+  2. **user-box reset** — BAR2 `0x014` bit 0 (`system_config`), which drives
+     `pyro_250mhz`'s `generic_reset` and resets `pyro_rp` **and** its static-side
+     box logic together;
+  3. **QDMA subsystem soft reset** — BAR2 `0x00C` bit 0, which drives the QDMA IP's
+     `soft_reset_n` **only** (`sys_rst_n` is the edge-connector `pcie_rstn`), so the
+     PCIe link survives — this clears the stuck C2H stream state;
+  4. re-attach the driver and bring the netdev up (fresh queue contexts).
+  The canonical implementation is **`scripts/pyro_wedge_recover.sh`** (root; hosts
+  grant it to the operator via a `NOPASSWD` sudoers entry scoped to exactly that
+  script). Neither step 2 nor step 3 **alone** recovers the child (both proven
+  insufficient in isolation on HW). A recovery failure is **transient** in the R84
+  sense (maps to not-resident/fallback upstream, never permanent fallback). With
+  R85a recovery, the JTAG path is a **complete, sanctioned PR-load mechanism**; the
+  R85 ICAP/MCAP deferral stands but is no longer a blocker for on-device residency.
 
 - **R86 (host-side device API surface — `pyro.device`, NEW obligation, v2.2.1).**
   PYRO MUST expose a public module **`pyro.device`** so the coder and the
@@ -2694,6 +2729,19 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     appropriate). It MUST bound the `program_hw_devices` step by
     `PYRO_JTAG_LOAD_TIMEOUT` (R84) and, on expiry, kill the programming process tree
     and raise `PyroLoadError`.
+    **R85a recovery is part of the load (v2.5.1):** after a successful programming
+    step, `load_partial` MUST run the R85a recovery command (`config.recover_cmd`,
+    default the spec constant `PYRO_RECOVER_CMD` — `sudo -n <repo>/scripts/
+    pyro_wedge_recover.sh`, non-interactive so an absent sudoers grant fails fast
+    and loud) **through the same runner seam** (`load_runner`, R86.7 contract) and
+    bounded by the same `jtag_load_timeout_s`; a nonzero rc or runner failure raises
+    `PyroLoadError` naming the recovery step (transient per R85a — the fabric holds
+    the new child; only reachability failed). `recover_cmd=None` disables the step
+    (explicit config injection, R86.6 discipline — for hosts/tests where the load
+    mechanism itself is faked or recovery is operator-managed). A load is
+    **successful only if both steps succeed**; `load_partial` performs no probe of
+    its own (probing needs `CAP_NET_RAW`, which the load path deliberately does not
+    require — R86.4 remains the reachability oracle).
   - **R86.6 (`DeviceConfig` type + spec-sanctioned private test seams — NEW, v2.2.2).**
     The device functions take a public **`pyro.device.DeviceConfig`** — a frozen
     dataclass whose fields are **config-in with no env reads**, each **defaulted from
@@ -2711,7 +2759,12 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     - `probe_attempts: int` — default `3` (R84);
     - `jtag_load_timeout_s: float` — default `PYRO_JTAG_LOAD_TIMEOUT` = `600.0` (R84);
     - `vivado_dir: str` — default `PINNED_VIVADO_DIR` (R70a-pin.2) for locating the
-      pinned `hw_server`/`vivado` used by `load_partial`.
+      pinned `hw_server`/`vivado` used by `load_partial`;
+    - `recover_cmd: Optional[tuple[str, ...]]` — the R85a recovery command run by
+      `load_partial` after a successful program step (v2.5.1); default the spec
+      constant `PYRO_RECOVER_CMD` (`sudo -n` + the repo's
+      `scripts/pyro_wedge_recover.sh`, resolved relative to the installed package —
+      a pinned location, not filesystem scanning, R70); `None` disables recovery.
 
     Only `iface`/`hw_server` derive from env knobs; the rest are spec constants a test
     MAY override on the config. **Spec-sanctioned private test seams:** because R67's
@@ -2950,6 +3003,26 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.5.1** (2026-07-15) — *R85a: JTAG PR wedge root-caused, in-band recovery
+  folded into `load_partial` (MINOR — added requirement), spec-writer.* HW-proven
+  same day: recovery restored a JTAG-loaded pattern child to responding and
+  produced the **first on-silicon R45a counter read** (`CYCLES=17 BYTES=15` for a
+  15-byte scan). No interface/AC break; frozen invariants untouched.
+  - **R85a (NEW).** The wedge mechanism (no decoupler + stuck QDMA C2H stream
+    state) and the mandatory 4-step in-band recovery (driver detach → user-box
+    reset BAR2 `0x014`.0 → QDMA soft reset BAR2 `0x00C`.0 → driver re-attach).
+    Neither reset alone suffices (proven). Recovery failure is R84-transient.
+  - **R85 (amended).** The "netdev undisturbed" half of the old claim corrected:
+    the PCIe link claim stands; the netdev is transiently detached during R85a
+    recovery and its MAC changes across a load.
+  - **R86.5 (amended).** `load_partial` runs `config.recover_cmd` (new R86.6
+    field, default `PYRO_RECOVER_CMD` = `sudo -n scripts/pyro_wedge_recover.sh`)
+    through the `load_runner` seam after a successful program step; nonzero rc →
+    `PyroLoadError`; `recover_cmd=None` disables; still no probe inside the load.
+  - **AC-2-5/AC-3-3 (clarified).** The R1 hardware-throughput clauses require
+    the P2 performance transport in addition to `device_usable`; over the
+    functional raw-Ethernet control transport they measure first, then SKIP
+    naming the missing P2 prerequisite and the measured control-plane rate.
 - **2.5.0** (2026-07-15) — *Phase-3 slate: R3b measurement protocol, R67 seam
   additions, R73a PR timing-gate scope, F2/F3 demoted to configuration (MINOR —
   added requirements), spec-writer.* No interface/AC break, no renumbering; frozen
