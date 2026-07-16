@@ -17,18 +17,126 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-2. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-3. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-4. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-5. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-6. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-7. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-8. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-9. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-10. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-11. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-12. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+2. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+3. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+4. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+5. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+6. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+7. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+8. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+9. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+10. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+11. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+12. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+13. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+---
+
+# EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2 :complete:
+
+## 1. Hypothesis
+
+(1) The in-band wedge recovery can be folded into `pyro.device.load_partial`
+so a JTAG partial load is one atomic, always-recovered operation; (2) with the
+card usable, the two AC-3-3 device-gated skips can run against real silicon
+and produce honest dispositions; (3) toward P2, pipelining MATCH frames will
+reveal whether the 47 MiB/s sequential throughput is transport-bound or
+child-bound — deciding whether QDMA char-devs are the right next investment.
+
+## 2. How
+
+- **Equipment:** U250 on nf-server06 (`0000:02:00.0`, shell `0x07140219`),
+  `abc[a-f]{2}` pattern child resident
+- **Software:** spec bumped to **v2.5.1** (§13 change control before code);
+  `pyro/device.py` recovery fold; new `tests/unit/test_device_load_recovery.py`;
+  AC-3-3 clause 2 implemented (was a device-usable tripwire); conftest
+  `device_iface` pristine-snapshot fixture; `scripts/pyro_pipeline_bench.py`
+- **Method:** amend spec → implement → unit + seam tests → sudoers NOPASSWD
+  grant scoped to `pyro_wedge_recover.sh` → two real atomic load+recover swaps
+  → capped AC-3-3 run on hardware → windowed-throughput sweep (W=1…64, 4 MiB
+  per point)
+
+### Key commands
+
+```bash
+PYRO_DEVICE_IFACE=ens2 python3 scripts/pyro_hw.py load <partial.bit>   # now atomic
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 -m pytest tests/acceptance/test_ac3_3_benchmark.py -rs
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_pipeline_bench.py
+```
+
+## 3. Observations
+
+- **Spec v2.5.1 adopted.** New **R85a** (wedge mechanism + mandatory 4-step
+  in-band recovery; neither reset alone suffices — both proven insufficient in
+  isolation); **R86.5** extended (recovery through the same `load_runner` seam,
+  `recover_cmd=None` opt-out, default `sudo -n scripts/pyro_wedge_recover.sh`);
+  R85's "netdev undisturbed" corrected (MAC changes across a load);
+  **AC-2-5/AC-3-3 clarified** (R1 throughput clauses need the P2 performance
+  transport; over the control transport: measure first, SKIP naming P2).
+- **Atomic loads verified on HW:** ID stub swapped in **16.2 s**, pattern child
+  back in **15.9 s** — single call each, child answering immediately after.
+  R64 evict/reload therefore also works on silicon. Suites: unit **600/1 skip**
+  (+7 recovery tests), acceptance **715/10 skips** — same shape as v2.5.0.
+- **Test-harness defect found:** the hermetic `pyro_isolation` fixture scrubs
+  `PYRO_DEVICE_IFACE` per test, so hardware clauses could NEVER see the
+  operator's iface even on a device host (vacuous skip forever). Fixed with a
+  pristine-at-import `device_iface` fixture (the `_PRISTINE_TOOLCHAIN` pattern);
+  fail-closed behavior on device-free hosts unchanged.
+- **Device-gated ACs on silicon:** R78.11 counter attribution **PASSED** (first
+  spec-suite hardware pass); R1/R2 win regime **measured then honest-SKIPped**:
+  47.5 MiB/s sequential over the control transport, median frame RTT **28 µs**
+  (the CLI's earlier ~40 ms readings were warmup/scheduling noise, not the
+  card), floor 1 GiB/s, missing piece named as P2.
+- **The P2-reframing measurement** (`pyro_pipeline_bench.py`): W=1 →
+  **52.6 MiB/s**; W=2 → **116.6 MiB/s**; W=4…64 → plateau **~119–120 MiB/s**,
+  **11.8 µs/frame ≈ 2950 cycles**, zero loss at every window. Saturation at
+  W=2 means plain `AF_PACKET` already saturates the child: the harness
+  serializes (`s_axis_tready` only in `ST_RX`), so scan (~1675 cyc at the
+  measured 0.88 B/cyc) + parse/reply/turnaround (~1275 cyc) bound throughput,
+  not the transport.
+
+## 4. Data analysis
+
+The wedge story closed the loop the right way: root cause → in-band fix →
+spec text → mechanism folded behind the library seam → proven twice on
+silicon. The load path that was the project's wall for a week is now a 16 s
+atomic operation, and the change never touched the wire format or the static
+shell.
+
+The pipelining sweep is the finding that redirects Phase P2. The natural plan
+was "faster transport" (QDMA char-devs, F5); the data says the transport
+stopped being the bottleneck at window 2, and the child is the wall — both of
+its constraints (serialized FSM, 1 B/cyc engine) live in the **partial**, not
+the static. Budget arithmetic says an 8 B/cyc engine with RX/scan overlap
+reaches ~1 µs/frame ≈ 1.4 GB/s — **above the R1 floor with the existing
+shell, 1518 B frames, and AF_PACKET**. Char-devs re-enter only for the
+5 GiB/s target (jumbo frames + kernel bypass). Full ladder in
+`specs/p2-dataplane.md` (DRAFT): P2a windowed host path (software, 2.3×
+today) → P2b harness v3 + wide datapath (partial-only, crosses the floor) →
+P2c jumbo + char-devs (static + driver, the original P2, now last).
+
+Method note: the 28 µs real RTT vs the CLI's 40 ms illustrates why the AC
+measures inside a tight loop — one-shot timings through a cold path measure
+the host's scheduler, not the device.
+
+## 5. Ideas for future experiments
+
+- P2a: window the host MATCH dispatch path (same credit loop as the bench,
+  honest loss accounting); re-run AC-3-3 clause 2 — expect ~120 MiB/s recorded
+  in the SKIP statistic.
+- P2b: parameterize the circuit generator for N-byte/cycle scan (start N=8);
+  xsim differential vs the model (R7), then a real partial through the
+  R73a-gated flow, loaded atomically; define R45a CYCLES semantics under
+  RX/scan overlap before measuring.
+- Watch RM timing at 8 B/cyc (last child closed at +0.023 ns at 1 B/cyc) and
+  LUT growth against the SLR2 pblock.
+- AC-2-6 (single-tenant evict/reload) is now runnable on hardware via the
+  atomic load path — wire it to the `device_iface` fixture like AC-3-3.
+- P2c prerequisites when reached: `MAX_PKT_LEN` 9600 rebuild, R78 length-field
+  rev (u16 caps payload at 1486), `PACKET_MMAP` vs `dma_ip_drivers` decision
+  (repo confirmed reachable), and the F3/R68 transport-binding spec change a
+  driver swap would force.
+
 ---
 
 # EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon :complete:

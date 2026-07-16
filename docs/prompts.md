@@ -1198,3 +1198,19 @@ WEDGE_RECOVER_DONE — now probe as your normal user:
 
 commit this
 
+## 2026-07-15 14:29:10
+
+Fold the recovery into load_partial and rerun the device-gated skips
+
+## 2026-07-15 14:58:27
+
+Done, the rule is in
+
+## 2026-07-16 04:43:19
+
+Contineu to P2.
+
+## 2026-07-16 04:53:42
+
+Commit both, then continue with P2b
+
