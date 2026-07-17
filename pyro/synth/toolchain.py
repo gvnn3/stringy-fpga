@@ -156,6 +156,12 @@ class ToolchainConfig:
     pr_bitstream: bool = False        # R88: request the R82 pr_bitstream flow
     static_dcp: Optional[str] = None  # R82b/R88 locked static DCP (linking substrate)
     reference_dcp: Optional[str] = None  # R82c/R82d/R88 reference routed DCP for pr_verify
+    # R78.9a (v2.6.0/P2c): wrapper frame-buffer size for the PR flow.  Coupled
+    # to the SUBSTRATE (the shell the static DCP was built from): 1536 for a
+    # MAX_PKT_LEN=1518 shell (default, pre-P2c-identical), 9600 for a jumbo
+    # shell's DCPs.  Mismatches are safe but wasteful/limiting (see
+    # rp_wrapper.generate_rp_child docstring).
+    rp_max_frame_bytes: int = 1536
     # R68/R83a (v2.2.5) evidence-manifest path: consulted ONLY by the R83a
     # pr_flow_present availability predicate, never by a synthesis job; absence
     # keeps the report false rather than failing anything.
@@ -712,10 +718,12 @@ class VivadoToolchain:
             with open(os.path.join(workdir, "design.v"), "w") as f:
                 f.write(job.rtl)                       # generated engine (pyro_circuit)
             with open(os.path.join(workdir, "pyro_rp.sv"), "w") as f:
-                # RP-child wrapper (R80); width must match the engine (P2b)
+                # RP-child wrapper (R80); width must match the engine (P2b),
+                # frame buffer must match the substrate shell (R78.9a/P2c)
                 f.write(generate_rp_child(
                     job.pattern_hash,
-                    datapath_bytes=getattr(job, "datapath_bytes", 1)))
+                    datapath_bytes=getattr(job, "datapath_bytes", 1),
+                    max_frame_bytes=int(cfg.rp_max_frame_bytes)))
             flow = (self._PR_FLOW_TCL
                     .replace("@RPCELL@", cfg.rp_cell)
                     .replace("@PART@", cfg.part)
