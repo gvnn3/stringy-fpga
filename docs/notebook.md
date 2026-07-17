@@ -17,19 +17,113 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-2. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-3. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-4. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-5. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-6. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-7. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-8. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-9. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-10. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-11. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-12. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-13. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+2. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+3. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+4. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+5. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+6. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+7. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+8. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+9. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+10. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+11. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+12. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+13. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+14. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+---
+
+# EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz :complete:
+
+## 1. Hypothesis
+
+The one-hot NFA engine can be widened to N bytes/cycle by cascading N
+closure+move stages per clock, entirely inside the RM (partial-only, R79);
+an 8-wide `abc[a-f]{2}` child will close timing at 250 MHz, reply
+byte-identically to the 1-byte child on the wire, and read back R45a
+CYCLES ≈ ceil(len/8) on real silicon — retiring the child-side half of the
+R1-floor equation before the jumbo (P2c) shell rebuild.
+
+## 2. How
+
+- **Equipment:** U250 on nf-server06, shell `0x07140219`; pinned Vivado 2025.2
+- **Software:** `pyro.hdl.generator` `_emit_rtl_wide` (N ∈ {1,2,4,8,16}),
+  `rp_wrapper` v3 wide feed (N ∈ {2,4,8}), `datapath_bytes` through
+  identity/SynthJob/PR flow; NEW permanent xsim differential
+  (`tests/hw/xsim_diff.py` + `tb_pyro_rp.v`); `pr_build_driver_dpb8.py`
+- **Method:** emit → xvlog → engine-level xsim → full-frame xsim differential
+  (byte-exact replies vs a Python composer; engine-semantics NFA reference
+  with per-beat coalescing) → R73a-gated PR build → atomic R85a load →
+  on-chip MATCH/PERF → windowed wall-clock bench → capped AC-3-3.
+
+### Key commands
+
+```bash
+python3 tests/hw/xsim_diff.py --datapath 8            # byte-exact differential
+.venv-pyro/bin/python3 .superpowers/pr-builds/pr_build_driver_dpb8.py
+PYRO_DEVICE_IFACE=ens2 python3 scripts/pyro_hw.py load <partial.bit>
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py perf --slot 1
+```
+
+## 3. Observations
+
+- **Design decisions.** (i) In-beat accepts COALESCED to the beat's highest
+  end — sound for R19 nomination (`start`=0 ⇒ window containment); one entry
+  per accepting beat. (ii) Harness v3 = N-byte feed ONLY; ping-pong RX/scan
+  overlap deliberately dropped (§1b of the design doc: ~8% at jumbo for the
+  riskiest rewrite). (iii) N=1 emission byte-identical (verified vs git HEAD,
+  3 patterns) — zero identity/cache rollover; N>1 mixes a `DPB` domain into
+  the R47a hash. (iv) `in_keep` contract: contiguous, partial only on
+  `in_last` (trailing-stage state dead — the harness resets per scan).
+- **xsim differential (permanent, first run):** 10/10 replies byte-exact at
+  N=8 — ID, six MATCH shapes (short beat, end-of-corpus, zero matches, 300 B
+  many-window, cap-1 OVF), wrong-slot STATUS; PERF `CYCLES=40` for 300 B
+  (7.5 B/cyc). Regressed clean at N=1/2/4 and across `foo|bar|baz`,
+  `\d+\w*`, `a{2,4}` at N=8.
+- **PR build:** SUCCESS in 2817 s — `pr_verified=True`, **`met_timing=True`,
+  `fmax = 251.89 MHz`** (RP-scoped WNS ≈ +0.030 ns; the 8-stage cascade
+  closes). 3489 LUTs / 1896 FFs (1-byte child: est 358 LUTs — the ~8× move
+  logic is real and still ~0.5% of the pblock).
+- **On silicon** (atomic load 13.7 s, new hash `becf73e8…`): identical
+  windows to the 1-byte child (`end=7`, `end=14` on `xxabcdeyyabcffz`);
+  **`CYCLES=4 BYTES=15`** (1-byte child: 17) — exactly xsim; max frame:
+  **`CYCLES=187 BYTES=1474` = 7.88 B/cyc = 1.97 GB/s on-chip** =
+  ceil(1474/8)+2.
+- **Wall-clock unchanged, as predicted:** stripped-loop plateau 194 MiB/s at
+  7.2 µs/frame (1-byte child: 187 MiB/s / 7.5 µs) — the child has vanished
+  from the wall clock; the ~7 µs/frame host floor is everything. Capped
+  AC-3-3: 3 passed + the honest R1 SKIP (51.6 MiB/s sequential per protocol,
+  P2 named). Unit suite 604 passed / 1 skip.
+
+## 4. Data analysis
+
+Both halves of the §1b floor equation are now measured on hardware: the host
+floor (~7 µs/frame) and a child that scans a max frame in 0.75 µs. At 1518 B
+frames the child is invisible — exactly what the floor decomposition
+predicted — so P2b's value is all stored in the jumbo rung: at
+`MAX_PKT_LEN = 9600`, 9560 B / 7.2 µs ≈ **1.24 GiB/s ≥ the R1 floor**, and
+the 1-byte child would have burned 38 µs/frame there. The cascade's timing
+result (+0.030 ns at 8 wide, ~same margin as the 1-byte RM) suggests the
+closure+move logic is shallow enough that width is not yet the critical
+path; the 5 GiB/s target (~24 B/cyc at jumbo, or 8 B/cyc at 322 MHz +
+wider) has headroom to explore. The differential harness earned its keep on
+day one: every reply byte-exact before any tool time was spent, and it is
+now a 30-second regression for every future engine/harness change.
+
+## 5. Ideas for future experiments
+
+- **P2c: the floor-crossing rung** — `MAX_PKT_LEN` 9600 static rebuild +
+  reflash + relock; R78 payload-bound rev; rebuild both children; expect
+  ≥ 1.2 GiB/s wall-clock and the AC-3-3 R1 clause arming itself.
+- Sweep N ∈ {4, 8, 16} PR builds for timing/LUT curves (N=16 needs the
+  word-straddle fix in the harness feed first).
+- Wire `datapath_bytes=8` into the residency/synthesis default for
+  HW-eligible patterns once P2c makes it pay on the wire.
+- R45a semantics note for coalesced entries (out_count = accepting beats on
+  wide engines) — spec text when P2b is promoted from DRAFT.
+- Kernel-bypass host loop (P2d) only after jumbo: 7 µs → ~2 µs/frame would
+  put 5 GiB/s in range with a 24 B/cyc engine.
+
 ---
 
 # EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2 :complete:

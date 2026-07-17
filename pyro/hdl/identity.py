@@ -77,12 +77,16 @@ def effective_flags(pattern, flags: int) -> int:
 
 
 def pattern_hash(pattern, flags: int, generator_version: int,
-                 harness_version: int) -> bytes:
+                 harness_version: int, datapath_bytes: int = 1) -> bytes:
     """The 16-byte (128-bit) pattern hash baked into ``CIRC_ID0..3`` (R47a).
 
     ``flags`` MUST be the effective (canonicalized) flags (see
     :func:`effective_flags`); callers on the generator path pass the automaton's
     resolved ``flags``.  Semantically identical patterns therefore hash equal.
+
+    ``datapath_bytes`` (R42, P2b): a widened-datapath circuit is a DIFFERENT
+    artifact for the same pattern, so N > 1 is mixed into the digest.  N == 1
+    deliberately hashes exactly as before (no pre-P2b identity/cache rollover).
     """
     pb, enc_tag = canonical_pattern_bytes(pattern)
     h = hashlib.sha256()
@@ -91,6 +95,9 @@ def pattern_hash(pattern, flags: int, generator_version: int,
     h.update(int(flags).to_bytes(4, "little"))
     h.update(int(generator_version).to_bytes(4, "little"))
     h.update(int(harness_version).to_bytes(4, "little"))
+    if int(datapath_bytes) != 1:
+        h.update(b"DPB\x00")                    # domain separation (P2b)
+        h.update(int(datapath_bytes).to_bytes(4, "little"))
     h.update(len(pb).to_bytes(8, "little"))     # length-prefix (unambiguous)
     h.update(pb)
     return h.digest()[:16]

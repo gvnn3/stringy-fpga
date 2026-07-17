@@ -413,6 +413,9 @@ def _job_from_circuit(circuit: hdl.GeneratedCircuit) -> SynthJob:
         # Serialized automaton the native C model executes (Task-7 artifact
         # extension); coordinates with src/pyro_rt.c only through this file.
         automaton_table=_artifact.serialize_automaton_body(circuit.automaton),
+        # P2b: the engine's datapath width rides the job so the PR flow emits
+        # the matching wrapper (1 for every pre-P2b circuit — unchanged).
+        datapath_bytes=int(getattr(circuit, "datapath_bytes", 1) or 1),
     )
 
 

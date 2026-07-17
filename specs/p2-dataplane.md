@@ -48,6 +48,36 @@ Key consequence: **the two changes that matter first are partial-only** — they
 ride the now-working R85a load path (JTAG + in-band recovery, ~16 s/swap) and
 need no reflash and no driver work.
 
+## 1b. Floor decomposition (2026-07-16 follow-up measurements)
+
+Two controls sharpen §0's numbers (`scratchpad` floor-hunt, stripped host
+loop — pre-encoded frames, minimal parse):
+
+| Config | µs/frame | implied ceiling @1518 B |
+|---|---|---|
+| Python bench loop, 1474 B corpus | 11.8 | 119 MiB/s |
+| Stripped loop, 1474 B corpus | **7.5** | 187 MiB/s |
+| Stripped loop, 1 B corpus (child idle) | **6.8** | 207 MiB/s |
+
+- ~4 µs of the §0 plateau was the **Python host loop** (encode/decode).
+- The remaining **~6.8 µs/frame is the host/kernel/driver/QDMA per-frame
+  floor**; the child's ~6 µs scan at 1474 B hides almost entirely behind it
+  (co-binding at ~7 µs).
+- Consequence: **at 1518 B frames nothing on the card can exceed ~207 MiB/s.**
+  The R1 floor (1 GiB/s) needs per-frame payload/floor ≥ 1074 B/µs, i.e.
+  **jumbo frames**: at `MAX_PKT_LEN = 9600` (9560 B corpus), the floor needs
+  ≤ 8.9 µs/frame — the measured 6.8 µs already clears it — but only if the
+  child scans 9560 B in < 6.8 µs, which needs **≥ 6 B/cyc** (8 B/cyc → 4.8 µs
+  ✓; today's 1 B/cyc → 38 µs ✗).
+- So the wide child and the jumbo shell **cross the floor only together**
+  (≈ 9560 B / 7 µs ≈ **1.3 GiB/s**), and neither alone moves the wall-clock
+  number at 1518 B. The 8 B/cyc child is still built and verified FIRST — its
+  8× shows up on-chip (R45a CYCLES ≈ ceil(len/8)) on the current shell with
+  no reflash risk, and jumbo without it is pointless (child becomes a 38 µs
+  wall). Host loop stays plain AF_PACKET: 6.8 µs is already under the jumbo
+  budget, so no kernel bypass is needed for the floor (only for the 5 GiB/s
+  target).
+
 ## 2. Revised P2 ladder
 
 - **P2a — pipelined host transport (software only, no RTL).** Put a W≥4
@@ -55,18 +85,18 @@ need no reflash and no driver work.
   Buys 2.3× today (52.6 → ~120 MiB/s), zero hardware risk. Also the transport
   shape P2b needs anyway.
 - **P2b — harness v3 + wide engine datapath (partial-only RTL).** Two RM
-  changes: (i) overlap RX with scan — stream corpus beats into the engine as
-  they arrive instead of buffer-then-scan; (ii) multi-byte-per-cycle matcher
-  datapath (8 B/cyc target). Frame cost then ≈ max(RX 24 beats, scan ~185 cyc)
-  + reply ≈ **~250 cycles ≈ 1 µs/frame ≈ 1.4 GB/s** — **above the R1 floor
-  (1 GiB/s) with the existing static shell, 1518 B frames, and `AF_PACKET`**.
-  AC-2-5/AC-3-3's R1 clause arms itself when this lands (v2.5.1 disposition).
-- **P2c — jumbo frames + kernel-bypass transport (static + host).** Only after
-  P2b: `MAX_PKT_LEN` 9600 shell rebuild (amortizes per-frame overhead ~6×),
-  `PACKET_MMAP` or QDMA char-devs once ~1 M frames/s makes per-frame syscalls
-  binding, and an R78 revision (or R76-style data-plane format) for >1486 B
-  payloads. This is where the original P2 char-dev work re-enters — as the
-  *last* rung, in service of the 5 GiB/s R1 target, not the 1 GiB/s floor.
+  changes: (i) overlap RX with scan; (ii) multi-byte-per-cycle matcher
+  datapath (8 B/cyc target). **Correction (§1b):** at 1518 B frames this does
+  NOT move wall-clock throughput — the ~6.8 µs/frame host floor already hides
+  the child. It is still the mandatory first rung: the 8× is proven on-chip
+  via R45a CYCLES ≈ ceil(len/8) on the current shell (no reflash risk), and
+  the jumbo rung is pointless without it.
+- **P2c — jumbo frames (static rebuild): the floor-crossing rung.**
+  `MAX_PKT_LEN` 9600 shell rebuild + reflash + relock DCP, plus the R78
+  payload-bound revision (u16 `length` accommodates it). With the P2b child,
+  9560 B / ~7 µs ≈ **1.3 GiB/s ≥ the R1 floor**, still on plain `AF_PACKET`
+  (§1b: 6.8 µs < the 8.9 µs jumbo budget). Kernel bypass (`PACKET_MMAP`) and
+  QDMA char-devs move to a P2d rung, needed only for the 5 GiB/s target.
 
 ## 3. Risks / open questions
 

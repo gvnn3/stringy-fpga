@@ -92,10 +92,105 @@ def rp_child_id_from_hash(pattern_hash_hex: str) -> int:
     return word if word != 0 else 0x00000001
 
 
+def _replace1(text: str, old: str, new: str) -> str:
+    """One exact-match replacement; loud failure if the anchor drifted."""
+    assert text.count(old) == 1, f"wrapper template anchor missing/dup: {old[:60]!r}"
+    return text.replace(old, new)
+
+
+def _widen_template(n: int) -> str:
+    """Rewrite the v2 wrapper template for an ``n``-byte/cycle engine (P2b v3).
+
+    Only the engine-facing feed changes: ``eng_in_data`` widens to ``8*n`` bits
+    with an ``eng_in_keep`` lane mask, and ST_FEED streams ``n`` bytes/cycle.
+    The R78 wire format, reply composition, and every other state are
+    untouched.  Constraint: corpus base offset 40 must be n-aligned and each
+    n-byte group must not straddle a 512-bit word — true for n in {2, 4, 8}
+    (40 % 8 == 0); n == 16 would straddle, hence the guard.
+    """
+    assert n in (2, 4, 8), f"harness v3 feed supports n in (2,4,8), got {n}"
+    lo = n.bit_length() - 1                       # log2(n)
+    t = _TEMPLATE
+    t = _replace1(
+        t,
+        "  reg         eng_in_valid;\n"
+        "  reg  [7:0]  eng_in_data;\n"
+        "  reg         eng_in_last;",
+        f"  reg         eng_in_valid;\n"
+        f"  reg  [{8*n-1}:0] eng_in_data;   // P2b v3: {n} bytes/cycle\n"
+        f"  reg  [{n-1}:0]  eng_in_keep;\n"
+        f"  reg         eng_in_last;")
+    t = _replace1(
+        t,
+        "    .in_valid       (eng_in_valid),\n"
+        "    .in_data        (eng_in_data),\n"
+        "    .in_last        (eng_in_last),",
+        "    .in_valid       (eng_in_valid),\n"
+        "    .in_data        (eng_in_data),\n"
+        "    .in_keep        (eng_in_keep),\n"
+        "    .in_last        (eng_in_last),")
+    t = _replace1(
+        t,
+        "      eng_in_valid  <= 1'b0;\n"
+        "      eng_in_data   <= 8'b0;\n"
+        "      eng_in_last   <= 1'b0;",
+        f"      eng_in_valid  <= 1'b0;\n"
+        f"      eng_in_data   <= {{{8*n}{{1'b0}}}};\n"
+        f"      eng_in_keep   <= {{{n}{{1'b0}}}};\n"
+        f"      eng_in_last   <= 1'b0;")
+    t = _replace1(
+        t,
+        "        // ---- stream corpus one byte/cycle into the engine (R48) --------\n"
+        "        ST_FEED: begin\n"
+        "          eng_in_valid <= 1'b1;\n"
+        "          // corpus base = frame offset 40; word select + 64:1 byte mux.  feed_addr\n"
+        "          // <= rx_len (W5 clamp), so this never reads a lane that was not on the wire.\n"
+        "          feed_addr    = 16'd40 + feed_idx;\n"
+        "          eng_in_data  <= rx_words[feed_addr[10:6]][ {feed_addr[5:0], 3'b000} +: 8 ];\n"
+        "          eng_in_last  <= (feed_idx == (corpus_len - 16'd1));\n"
+        "          if (feed_idx == (corpus_len - 16'd1))\n"
+        "            state <= ST_DRAIN;\n"
+        "          feed_idx <= feed_idx + 16'd1;\n"
+        "        end",
+        f"        // ---- stream corpus {n} bytes/cycle into the engine (P2b v3) ----\n"
+        f"        ST_FEED: begin\n"
+        f"          eng_in_valid <= 1'b1;\n"
+        f"          // corpus base = frame offset 40 ({n}-aligned); each {n}-byte group\n"
+        f"          // lives inside one 512-bit word, so this is one word read + a\n"
+        f"          // {n*8}-bit aligned part select.  feed_addr <= rx_len (W5 clamp).\n"
+        f"          feed_addr    = 16'd40 + feed_idx;\n"
+        f"          eng_in_data  <= rx_words[feed_addr[10:6]]"
+        f"[ {{feed_addr[5:{lo}], {lo+3}'b0}} +: {8*n} ];\n"
+        f"          if ((corpus_len - feed_idx) <= 16'd{n}) begin\n"
+        f"            eng_in_keep <= kmask(corpus_len - feed_idx);\n"
+        f"            eng_in_last <= 1'b1;\n"
+        f"            state <= ST_DRAIN;\n"
+        f"          end else begin\n"
+        f"            eng_in_keep <= {{{n}{{1'b1}}}};\n"
+        f"          end\n"
+        f"          feed_idx <= feed_idx + 16'd{n};\n"
+        f"        end")
+    t = _replace1(
+        t,
+        "  // ---- combinational AXIS master output (B1, S10) ------------------------",
+        f"  // kept-lane mask for the final (short) corpus beat (P2b v3).\n"
+        f"  function automatic [{n-1}:0] kmask(input [15:0] r);\n"
+        f"    integer km;\n"
+        f"    begin\n"
+        f"      kmask = {{{n}{{1'b0}}}};\n"
+        f"      for (km = 0; km < {n}; km = km + 1)\n"
+        f"        if (km[15:0] < r) kmask[km] = 1'b1;\n"
+        f"    end\n"
+        f"  endfunction\n\n"
+        f"  // ---- combinational AXIS master output (B1, S10) ------------------------")
+    return t
+
+
 def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
                       rp_child_id: Optional[int] = None, build16: int = 0,
                       spec16: int = DEFAULT_SPEC16,
                       wire_harness_version: int = DEFAULT_WIRE_HARNESS_VERSION,
+                      datapath_bytes: int = 1,
                       ) -> str:
     """Emit the ``pyro_rp`` pattern-child wrapper SystemVerilog for one engine.
 
@@ -103,6 +198,10 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     instantiates the generated engine ``pyro_circuit``.  The engine RTL
     (``SynthJob.rtl`` / ``GeneratedCircuit.rtl``) is a **separate** source file;
     the DFX flow reads both.  Deterministic: same inputs ⇒ byte-identical text.
+
+    ``datapath_bytes`` MUST match the engine's (P2b): 1 emits the original v2
+    wrapper byte-identically; 2/4/8 emit the v3 wide feed.  The R78 wire
+    format is identical across widths.
     """
     if rp_child_id is None:
         rp_child_id = rp_child_id_from_hash(pattern_hash_hex)
@@ -114,7 +213,8 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     spec16 &= 0xFFFF
     wire_harness_version &= 0xFFFFFFFF
 
-    return (_TEMPLATE
+    template = _TEMPLATE if datapath_bytes == 1 else _widen_template(datapath_bytes)
+    return (template
             .replace("@ENGINE@", ENGINE_MODULE)
             .replace("@MAXFRAME@", str(MAX_FRAME_BYTES))
             .replace("@MAXENT@", str(MAX_ENTRIES))

@@ -117,6 +117,10 @@ class SynthJob:
     # :func:`pyro.synth.artifact.serialize_automaton_body`.  Empty for a job
     # built without a live automaton (the artifact then carries only its header).
     automaton_table: bytes = b""
+    # P2b widened datapath (R42): bytes/cycle of the engine in `rtl`.  The PR
+    # flow emits the matching wrapper (generate_rp_child datapath_bytes); 1 =
+    # the original single-byte engine + v2 wrapper, byte-identical to pre-P2b.
+    datapath_bytes: int = 1
 
 
 @dataclass(frozen=True)
@@ -708,7 +712,10 @@ class VivadoToolchain:
             with open(os.path.join(workdir, "design.v"), "w") as f:
                 f.write(job.rtl)                       # generated engine (pyro_circuit)
             with open(os.path.join(workdir, "pyro_rp.sv"), "w") as f:
-                f.write(generate_rp_child(job.pattern_hash))  # RP-child wrapper (R80)
+                # RP-child wrapper (R80); width must match the engine (P2b)
+                f.write(generate_rp_child(
+                    job.pattern_hash,
+                    datapath_bytes=getattr(job, "datapath_bytes", 1)))
             flow = (self._PR_FLOW_TCL
                     .replace("@RPCELL@", cfg.rp_cell)
                     .replace("@PART@", cfg.part)
