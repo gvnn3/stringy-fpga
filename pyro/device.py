@@ -87,6 +87,12 @@ VERSION = 0x01
 PYRO_HEADER_LEN = 14
 #: Max PYRO payload length (R78.9): total frame ≤ 1518, header + payload ≤ 1500.
 MAX_PAYLOAD = 1486
+#: R78.9a (v2.6.0/P2c): payload bound on a MAX_PKT_LEN=9600 jumbo shell —
+#: same FCS accounting as R78.9 (9600 - 4 - 14 - 14).  Host use is config-in
+#: and FAIL-CLOSED: DeviceConfig.max_payload defaults to MAX_PAYLOAD and is
+#: raised to this only by explicit operator configuration after a jumbo shell
+#: is flashed (never probed or guessed, R70).
+MAX_PAYLOAD_JUMBO = 9568
 
 # Message kinds (R78.4).
 KIND_RESERVED = 0x00
@@ -159,7 +165,7 @@ class PyroLoadError(PyroDeviceError):
 
 
 def encode_frame(kind: int, slot: int, seq: int, payload: bytes,
-                 flags: int = 0) -> bytes:
+                 flags: int = 0, max_payload: int = MAX_PAYLOAD) -> bytes:
     """Build the PYRO control header + payload (R78 offset 14 onward) (R86.2).
 
     Returns ``bytes`` = 14-byte big-endian PYRO header followed by ``payload``.
@@ -190,9 +196,10 @@ def encode_frame(kind: int, slot: int, seq: int, payload: bytes,
     if kind not in VALID_KINDS:
         raise PyroFrameError(f"invalid message kind 0x{_as_byte(kind):02x} (R78.4)")
     payload = bytes(payload)
-    if len(payload) > MAX_PAYLOAD:
+    if len(payload) > max_payload:
         raise PyroFrameError(
-            f"payload length {len(payload)} exceeds MTU bound {MAX_PAYLOAD} (R78.9)")
+            f"payload length {len(payload)} exceeds MTU bound {max_payload} "
+            f"(R78.9/R78.9a)")
     if not (0 <= slot <= 0xFFFF):
         raise PyroFrameError(f"slot {slot!r} out of 16-bit range (R78.3)")
     if not (0 <= seq <= 0xFFFFFFFF):
@@ -233,7 +240,7 @@ class DecodedFrame:
     payload: bytes
 
 
-def decode_frame(data: bytes) -> DecodedFrame:
+def decode_frame(data: bytes, max_payload: int = MAX_PAYLOAD) -> DecodedFrame:
     """Parse the PYRO control header + payload (R78) into a :class:`DecodedFrame`.
 
     ``data`` is the same slice :func:`encode_frame` returns (frame offset 14
@@ -265,9 +272,9 @@ def decode_frame(data: bytes) -> DecodedFrame:
     if flags != 0:
         raise PyroFrameError(
             f"reserved flags must be 0 in version 1 (got 0x{flags:02x}) (R78.3)")
-    if length > MAX_PAYLOAD:
+    if length > max_payload:
         raise PyroFrameError(
-            f"length {length} exceeds MTU bound {MAX_PAYLOAD} (R78.9)")
+            f"length {length} exceeds MTU bound {max_payload} (R78.9/R78.9a)")
     avail = len(data) - PYRO_HEADER_LEN
     if avail < length:
         raise PyroFrameError(
@@ -366,6 +373,9 @@ class DeviceConfig:
     jtag_load_timeout_s: float = PYRO_JTAG_LOAD_TIMEOUT   # R84 (v2.2.2), transient
     # R85a (v2.5.1) post-program in-band recovery; None disables (R86.5/R86.6)
     recover_cmd: Optional[Tuple[str, ...]] = PYRO_RECOVER_CMD
+    # R78.9a (v2.6.0/P2c): frame payload bound.  FAIL-CLOSED default 1486;
+    # set MAX_PAYLOAD_JUMBO explicitly once the 9600 shell is flashed.
+    max_payload: int = MAX_PAYLOAD
     # -- spec-sanctioned private test seams (R86.6; None => real impl) -------
     cap_check: Optional[Callable[[], bool]] = None
     transport_factory: Optional[Callable[["DeviceConfig"], "_Transport"]] = None
@@ -680,7 +690,7 @@ class _EthTransport(_Transport):
         r, _, _ = select.select([self._sock], [], [], max(0.0, float(timeout)))
         if not r:
             return None
-        return self._sock.recv(2048)
+        return self._sock.recv(16384)   # >= one full jumbo frame (R78.9a)
 
     def close(self) -> None:
         # R86.7: idempotent — socket.close() on an already-closed socket is a

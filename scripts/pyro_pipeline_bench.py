@@ -20,7 +20,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pyro.device as pdev
 
 MATCH_PREFIX = struct.Struct(">QHH")
-CHUNK = pdev.MAX_PAYLOAD - MATCH_PREFIX.size          # 1474 B corpus per frame
+# R78.9a: PYRO_BENCH_JUMBO=1 uses the jumbo payload bound — ONLY valid once
+# the MAX_PKT_LEN=9600 shell is flashed (fail-closed default is 1518-shell).
+MAX_PAYLOAD = (pdev.MAX_PAYLOAD_JUMBO if os.environ.get("PYRO_BENCH_JUMBO")
+               else pdev.MAX_PAYLOAD)
+CHUNK = MAX_PAYLOAD - MATCH_PREFIX.size               # corpus bytes per frame
 TOTAL_BYTES = 4 << 20                                  # 4 MiB per window size
 SLOT = 1
 WINDOWS = (1, 2, 4, 8, 16, 32, 64)
@@ -42,7 +46,8 @@ def run_window(cfg, transport, window):
         while sent < nframes and len(inflight) < window:
             seq = 1 + sent
             transport.send(eth + pdev.encode_frame(
-                pdev.KIND_MATCH_REQUEST, SLOT, seq, payload))
+                pdev.KIND_MATCH_REQUEST, SLOT, seq, payload,
+                max_payload=MAX_PAYLOAD))
             inflight.add(seq)
             sent += 1
         raw = transport.recv(deadline_slack)

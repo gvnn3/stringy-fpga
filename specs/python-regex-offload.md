@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.5.1
+- **Version:** 2.6.0
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2; Phase-3 slate A1–A4 adopted 2026-07-15 — R3b measurement protocol, R67 seams extended, R73a PR timing-gate scope, F2/F3 demoted to configuration; JTAG PR wedge root-caused and in-band recovery (R85a) folded into `load_partial` 2026-07-15 — first on-silicon R45a counter read)
 - **Owner:** Spec Writer
 - **Date:** 2026-07-15
@@ -2247,6 +2247,20 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     There is **no PYRO-level fragmentation**: a corpus larger than one
     `MATCH_REQUEST` is chunked by the host and reassembled by result-`start_off`
     (R41), not by IP-style fragmentation.
+  - **R78.9a (jumbo frame bound — shell configuration, NEW v2.6.0/P2c).** The
+    R78.9 bound is a property of the **deployed static shell**
+    (`MAX_PKT_LEN`, an OpenNIC build parameter), not of the protocol: a shell
+    built with `MAX_PKT_LEN = 9600` carries total frames ≤ **9600** (same FCS
+    accounting as R78.9), i.e. PYRO `length` ≤ **9568**
+    (`PYRO_MAX_PAYLOAD_JUMBO`). The host bound is **config-in and
+    fail-closed**: `DeviceConfig.max_payload` defaults to the R78.9 constant
+    (1486) and is raised to the jumbo constant **only by explicit
+    configuration** after the operator has flashed a jumbo shell — the host
+    MUST NOT probe, guess, or scan for the shell's frame capability (R70
+    discipline; sending an over-MTU frame to a 1518 shell is silently
+    droppable, which fail-closed makes impossible). All other R78.9 rules
+    (60-byte minimum, zero-padding, `length` delimits, no fragmentation) are
+    unchanged. R78.10's vectors remain normative and are all ≤ 1518.
   - **R78.10 (normative test vectors).** The following frames are **normative**; the
     host codec MUST produce and parse them byte-for-byte (AC-2b-1). MACs are example
     locally-administered addresses (host `02:00:00:00:00:01`, device
@@ -2686,6 +2700,10 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     **`0x00` is `reserved` and is NOT a message
     kind** — `encode_frame` MUST reject it (confirming the coder's reading, v2.2.2);
     likewise any value `> 0x07` or otherwise undefined in R78.4 is rejected.
+    **v2.6.0 (R78.9a):** `encode_frame` gains an ADDITIVE keyword
+    `max_payload` defaulting to the R78.9 constant (1486); a caller on a
+    jumbo shell passes `PYRO_MAX_PAYLOAD_JUMBO` (9568) from its device
+    config. The default keeps every pre-P2c call site byte-identical.
   - **R86.3 (`decode_frame`).** `decode_frame(data: bytes) -> result` parses the PYRO
     control header + payload (the same slice `encode_frame` returns) and returns a
     structured result whose fields are named exactly for the R78 header:
@@ -2695,7 +2713,8 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     `decode_frame`). It MUST raise **`PyroFrameError`** if `magic != 0x50`, if
     `version != 0x01`, if `flags != 0`, if `length` exceeds the R78.9 bound (1486),
     or if `length` is inconsistent with the available bytes (fewer payload bytes than
-    `length`). Trailing bytes beyond `length` (Ethernet zero-padding) MUST be
+    `length`). **v2.6.0 (R78.9a):** the bound check takes the same ADDITIVE
+    `max_payload` keyword (default 1486; jumbo callers pass 9568). Trailing bytes beyond `length` (Ethernet zero-padding) MUST be
     ignored, not treated as payload (R78.9). `encode_frame`/`decode_frame` MUST
     round-trip the R78.10 normative vectors byte-for-byte on their PYRO-header-onward
     portion (AC-2b-1).
@@ -3003,6 +3022,20 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.6.0** (2026-07-17) — *P2c: jumbo frame bound (R78.9a), config-in and
+  fail-closed (MINOR — added requirement), spec-writer.* The R78.9 1518-byte
+  bound is a property of the deployed shell's `MAX_PKT_LEN`, not the
+  protocol: a 9600 shell carries PYRO `length` <= 9568
+  (`PYRO_MAX_PAYLOAD_JUMBO`). Host side is `DeviceConfig.max_payload`,
+  defaulting to 1486 — raised only by explicit operator configuration after
+  a jumbo shell is flashed (never probed/guessed, R70).
+  `encode_frame`/`decode_frame` gain an additive `max_payload` keyword
+  (R86.2/R86.3); defaults keep all pre-P2c behavior byte-identical. Wire
+  format, R78.10 vectors, and every other R78 rule unchanged.
+  Motivation (specs/p2-dataplane.md §1b, HW-measured): the ~7 us/frame host
+  floor makes the R1 1 GiB/s floor unreachable at 1518 B frames no matter
+  the child; at 9600 B with the P2b 8 B/cyc child the same floor yields
+  ~1.2-1.3 GiB/s >= R1.
 - **2.5.1** (2026-07-15) — *R85a: JTAG PR wedge root-caused, in-band recovery
   folded into `load_partial` (MINOR — added requirement), spec-writer.* HW-proven
   same day: recovery restored a JTAG-loaded pattern child to responding and

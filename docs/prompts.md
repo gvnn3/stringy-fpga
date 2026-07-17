@@ -1226,3 +1226,23 @@ Load it and run the benchmarkAnd
 
 Commit.
 
+## 2026-07-17 04:56:38
+
+I need an ssh config that allows a push as gvnn3 and not gvnn3-ai on this host.
+
+## 2026-07-17 04:59:29
+
+I already have a key, I jsut need an ssh-config or local setup in this repo to always use it.  This is a rermote host and the key is added on my client and forwarded via ssh to here.
+
+## 2026-07-17 05:01:40
+
+sssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCxqvEonw8mScZWq94nrK53vjeA+H234POCSG7lJd3i9n0jAuDBSWgbOa0zwdlAFyqhBQVV7nTT05hgFWwZfHVCQw7jLtJ0h5qzht/LWSC3kedNikOYPRFsU0RQ8Pg0xgUFxsrDhysDnxB72EvBaMwrU0M+rsl9vWw0ip+rs2l0ZnCiIn8wpXtIUVo6zNeiHLlEAue1qKjZaSJ4xmyCVZUZmF2+n2IjCcxccI4giEKF6f2LnFegEaZ+W8zFnVwKFb6mf2NDsqIgRgRvbToZQ8jmH9rxbciajgkCg5t77gNJeCVgbYX40ZfHdl7dB3N8uLzBMpmBcSSgP/tPZvrdJbsD /Users/gnn/.ssh/github_rsa
+
+## 2026-07-17 05:03:16
+
+Never push, leave that to me, standing order.
+
+## 2026-07-17 05:30:22
+
+Commit the P2c work so far.
+

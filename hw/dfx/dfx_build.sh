@@ -33,10 +33,12 @@ PART="xcu250-figd2104-2L-e"
 
 FAST=0
 JOBS="$(nproc)"
+MAX_PKT_LEN=1518   # R78.9; 9600 = jumbo shell (R78.9a, P2c)
 while [ $# -gt 0 ]; do
   case "$1" in
     --fast) FAST=1 ;;
     --jobs) JOBS="$2"; shift ;;
+    --max-pkt-len) MAX_PKT_LEN="$2"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -118,6 +120,7 @@ rsync -a --exclude '.git' --exclude 'build/' "${SHELL_SRC}/" "$DST/"
 ( cd "$DST/script" && vivado -mode batch -notrace -source build.tcl -tclargs \
     -board au250 -jobs "$JOBS" -synth_ip 1 -use_phys_func 1 \
     -num_phys_func 1 -num_cmac_port 1 -impl 0 -rebuild 1 \
+    -max_pkt_len "$MAX_PKT_LEN" \
     -user_plugin "${PLUGIN}" ) > "${OUT}/_proj.log" 2>&1
 
 XPR="$DST/build/au250/open_nic_shell/open_nic_shell.xpr"

@@ -65,15 +65,22 @@ DEFAULT_SLOT = 1                            # single-tenant resident slot (R87)
 
 # Buffer sizing: a full PYRO frame is ≤ 1518 B (R78.9); round up to 24×64 beats.
 MAX_FRAME_BYTES = 1536
+# R78.9a (v2.6.0/P2c): buffer sizing on a MAX_PKT_LEN=9600 jumbo shell —
+# 150×64 B beats.  Emitted only when generate_rp_child is asked for it; the
+# 1536 emission is byte-identical to pre-P2c.
+JUMBO_FRAME_BYTES = 9600
 MAX_ENTRIES = 61                            # R78.7 max pyro_match entries / reply
 
-# The generated RTL's address decompositions (word-select [10:6], word index
-# [4:0], byte-in-word [5:0]) are exact only for NWORDS <= 32 / offsets < 2048.
-# Guard at generation time so a future MAX_FRAME_BYTES bump fails loud here
-# instead of silently aliasing addresses in silicon.
+# The template's address decompositions (word-select [10:6], word index
+# [4:0], byte-in-word [5:0]) are exact only for NWORDS <= 32 / offsets < 2048;
+# the jumbo emission widens them to [13:6]/[7:0] (NWORDS <= 256, offsets <
+# 16384) via _jumbo_slices.  Guard the DEFAULT here so an unconsidered bump
+# fails loud instead of silently aliasing addresses in silicon.
 assert MAX_FRAME_BYTES % 64 == 0 and MAX_FRAME_BYTES <= 2048, (
     "rp_wrapper address slices assume NWORDS <= 32; widen the generated "
     "slices before raising MAX_FRAME_BYTES")
+assert JUMBO_FRAME_BYTES % 64 == 0 and JUMBO_FRAME_BYTES <= 16384, (
+    "jumbo slices assume NWORDS <= 256 / offsets < 16384")
 
 
 def rp_child_id_from_hash(pattern_hash_hex: str) -> int:
@@ -96,6 +103,33 @@ def _replace1(text: str, old: str, new: str) -> str:
     """One exact-match replacement; loud failure if the anchor drifted."""
     assert text.count(old) == 1, f"wrapper template anchor missing/dup: {old[:60]!r}"
     return text.replace(old, new)
+
+
+def _replace_n(text: str, old: str, new: str, n: int) -> str:
+    """Exactly-``n`` replacement; loud failure if the anchor count drifted."""
+    assert text.count(old) == n, (
+        f"wrapper template anchor count {text.count(old)} != {n}: {old[:60]!r}")
+    return text.replace(old, new)
+
+
+def _jumbo_slices(t: str) -> str:
+    """Widen the template's word-index address slices for JUMBO_FRAME_BYTES
+    (R78.9a): NWORDS goes 24 -> 150, so every 5-bit word index becomes 8 bits
+    and every [10:6] word-select becomes [13:6].  Anchored, count-asserted —
+    the same discipline as _widen_template.  Applies to both the v2 and v3
+    (wide-feed) template variants; the wide ST_FEED's word-select is widened
+    by the generic [10:6] rewrite below."""
+    t = _replace1(t, "rx_words[rx_beat[4:0]]", "rx_words[rx_beat[7:0]]")
+    t = _replace1(t, "tx_words[tx_beat[4:0]]", "tx_words[tx_beat[7:0]]")
+    t = _replace1(t, "reg [4:0]   txw_sel;", "reg [7:0]   txw_sel;")
+    t = _replace_n(t, "txw_sel = 5'd0;", "txw_sel = 8'd0;", 3)
+    t = _replace_n(t, "txw_sel = compose_idx[10:6];",
+                   "txw_sel = compose_idx[13:6];", 2)
+    # word-selects of the corpus feed: one in the ST_FEED code (v2 byte feed
+    # or v3 wide feed) + one in the rx_words declaration comment
+    t = _replace_n(t, "rx_words[feed_addr[10:6]]", "rx_words[feed_addr[13:6]]", 2)
+    assert "feed_addr[10:6]" not in t
+    return t
 
 
 def _widen_template(n: int) -> str:
@@ -191,6 +225,7 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
                       spec16: int = DEFAULT_SPEC16,
                       wire_harness_version: int = DEFAULT_WIRE_HARNESS_VERSION,
                       datapath_bytes: int = 1,
+                      max_frame_bytes: int = MAX_FRAME_BYTES,
                       ) -> str:
     """Emit the ``pyro_rp`` pattern-child wrapper SystemVerilog for one engine.
 
@@ -202,7 +237,17 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     ``datapath_bytes`` MUST match the engine's (P2b): 1 emits the original v2
     wrapper byte-identically; 2/4/8 emit the v3 wide feed.  The R78 wire
     format is identical across widths.
+
+    ``max_frame_bytes`` (R78.9a, P2c): MAX_FRAME_BYTES (1536) for the 1518
+    shell — byte-identical emission — or JUMBO_FRAME_BYTES (9600) for a
+    MAX_PKT_LEN=9600 shell (widened address slices via _jumbo_slices).  A
+    1536 child on a jumbo shell is safe (the W5 clamp truncates long
+    corpora); a 9600 child on a 1518 shell simply never sees long frames.
     """
+    if max_frame_bytes not in (MAX_FRAME_BYTES, JUMBO_FRAME_BYTES):
+        raise ValueError(
+            f"max_frame_bytes must be {MAX_FRAME_BYTES} or {JUMBO_FRAME_BYTES}, "
+            f"got {max_frame_bytes!r} (R78.9a)")
     if rp_child_id is None:
         rp_child_id = rp_child_id_from_hash(pattern_hash_hex)
     rp_child_id &= 0xFFFFFFFF
@@ -214,9 +259,11 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     wire_harness_version &= 0xFFFFFFFF
 
     template = _TEMPLATE if datapath_bytes == 1 else _widen_template(datapath_bytes)
+    if max_frame_bytes != MAX_FRAME_BYTES:
+        template = _jumbo_slices(template)
     return (template
             .replace("@ENGINE@", ENGINE_MODULE)
-            .replace("@MAXFRAME@", str(MAX_FRAME_BYTES))
+            .replace("@MAXFRAME@", str(max_frame_bytes))
             .replace("@MAXENT@", str(MAX_ENTRIES))
             .replace("@SPEC16@", f"16'h{spec16:04X}")
             .replace("@BUILD16@", f"16'h{build16:04X}")

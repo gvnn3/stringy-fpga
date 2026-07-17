@@ -130,9 +130,10 @@ def beats_to_frames(lines):
     return frames
 
 
-def mk_match_req(seq, corpus, out_cap, slot=SLOT):
+def mk_match_req(seq, corpus, out_cap, slot=SLOT, max_payload=1486):
     payload = struct.pack(">QHH", 0, out_cap, 0) + corpus
-    return ETH_REQ + pdev.encode_frame(pdev.KIND_MATCH_REQUEST, slot, seq, payload)
+    return ETH_REQ + pdev.encode_frame(pdev.KIND_MATCH_REQUEST, slot, seq,
+                                       payload, max_payload=max_payload)
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +141,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--datapath", type=int, default=8)
     ap.add_argument("--pattern", default="abc[a-f]{2}")
+    ap.add_argument("--max-frame", type=int, default=1536,
+                    help="wrapper MAX_FRAME_BYTES: 1536 or 9600 (R78.9a)")
     ap.add_argument("--keep-workdir", action="store_true")
     args = ap.parse_args()
     n = args.datapath
+    max_payload = args.max_frame - 14 - 14 - 4   # R78.9/R78.9a accounting
+    max_corpus = max_payload - 12                # MATCH body prefix
 
     vivado_dir = os.environ.get("PYRO_VIVADO")
     if not vivado_dir:
@@ -155,7 +160,8 @@ def main():
 
     circ = _gen.generate(args.pattern, 0, datapath_bytes=n)
     child_id = _wrap.rp_child_id_from_hash(circ.pattern_hash16.hex())
-    sv = _wrap.generate_rp_child(circ.pattern_hash16.hex(), datapath_bytes=n)
+    sv = _wrap.generate_rp_child(circ.pattern_hash16.hex(), datapath_bytes=n,
+                                 max_frame_bytes=args.max_frame)
     au = circ.automaton
 
     # ---- request schedule + expected replies -----------------------------
@@ -167,6 +173,15 @@ def main():
         (b"padpad" * 20) + b"abcfe",               # match at the very end
         b"a",                                      # tiny corpus
     ]
+    if args.max_frame > 1536:
+        # R78.9a jumbo: a max-size corpus with matches at the head, middle,
+        # and final byte — exercises the widened word-select slices end to end.
+        body = bytearray(b"\x78" * max_corpus)
+        body[0:5] = b"abcde"
+        mid = (max_corpus // 2) & ~7
+        body[mid:mid + 5] = b"abcff"
+        body[max_corpus - 5:] = b"abcfa"
+        corpora.append(bytes(body))
     reqs, expected = [], []
     seq = 100
     r = ETH_REQ + pdev.encode_frame(pdev.KIND_ID_REQUEST, 0, seq, b"")
@@ -175,7 +190,7 @@ def main():
                               child_id))
     for c in corpora:
         seq += 1
-        r = mk_match_req(seq, c, out_cap=8)
+        r = mk_match_req(seq, c, out_cap=8, max_payload=max_payload)
         reqs.append(r)
         expected.append(expect_match(r, coalesce(engine_end_set(au, c), n), 8))
     # cap overflow: cap=1 on the many-window corpus
@@ -264,7 +279,8 @@ def main():
                     break
     print(f"\n{'PASS' if fails == 0 else 'FAIL'}: "
           f"{len(expected) - fails}/{len(expected)} replies match "
-          f"(datapath={n}, pattern={args.pattern!r})")
+          f"(datapath={n}, max_frame={args.max_frame}, "
+          f"pattern={args.pattern!r})")
     return 0 if fails == 0 else 1
 
 
