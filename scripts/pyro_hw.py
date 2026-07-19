@@ -49,7 +49,7 @@ def cmd_load(args):
 def _roundtrip(kind, slot, payload, what):
     """One request/reply over the raw-Ethernet transport (R86.7)."""
     cfg = _cfg()
-    transport = pdev._EthTransport(cfg)  # bring-up tool: private transport OK
+    transport = pdev._make_transport(cfg)  # bring-up tool: private transport OK
     try:
         eth = (bytes(cfg.dst_mac) + bytes(cfg.src_mac)
                + struct.pack(">H", pdev.ETHERTYPE))

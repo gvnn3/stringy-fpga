@@ -311,6 +311,20 @@ def _sampled_iface() -> Optional[str]:
         return None
 
 
+def _sampled_chardev() -> Optional[str]:
+    """The sampled PYRO_QDMA_CHARDEV (R68, P2d v2.7.0-draft), else ``None`` —
+    **no spec default, fail-closed** (same F3/R68 no-default rule as the
+    iface): the QDMA ST char-dev exists only while the operator has swapped
+    the PF binding to ``qdma-pf`` (scripts/pyro_dataplane_swap.sh), so nothing
+    is guessed and nothing is scanned (R70).  Reads :mod:`pyro._route`'s
+    cached R35a snapshot, NOT ``os.environ`` (R86/R5)."""
+    try:
+        from . import _route
+        return _route.qdma_chardev()
+    except Exception:
+        return None
+
+
 def _sampled_hw_server() -> str:
     """The sampled PYRO_HW_SERVER (R68), else the spec default.  Reads
     :mod:`pyro._route`'s cached R35a snapshot, NOT ``os.environ`` (R86/R5)."""
@@ -362,6 +376,10 @@ class DeviceConfig:
     # -- probe (R83/R84); iface from PYRO_DEVICE_IFACE (R68) -----------------
     # onic netdev (F3); None = unconfigured => fail-closed (R68 v2.5.0)
     iface: Optional[str] = field(default_factory=_sampled_iface)
+    # P2d QDMA ST char-dev (v2.7.0-draft); None = unconfigured => the netdev
+    # transport.  When set, it takes precedence over iface: the PF is bound to
+    # qdma-pf, so the netdev does not exist while the char-dev does.
+    chardev: Optional[str] = field(default_factory=_sampled_chardev)
     expected_spec16: int = PYRO_SHELL_SPEC16             # expected SPEC16 (R81)
     probe_timeout_s: float = PYRO_PROBE_TIMEOUT          # per attempt (R84)
     probe_attempts: int = PYRO_PROBE_ATTEMPTS            # attempt count (R84)
@@ -394,6 +412,9 @@ _REASON_PROBE = (
     "probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, "
     "or static_shell_id SPEC16 mismatch)")
 _REASON_TRANSPORT = "transport: CAP_NET_RAW absent"
+# P2d (v2.7.0-draft): char-dev-mode counterpart of _REASON_TRANSPORT — the
+# gate is file accessibility of the configured PYRO_QDMA_CHARDEV node.
+_REASON_CHARDEV = "transport: QDMA char-dev not accessible"
 
 
 def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
@@ -423,10 +444,20 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
     only on a genuinely malformed reply frame (R86.4), which the caller treats as
     not-usable.
     """
-    cap = config.cap_check() if config.cap_check is not None else _has_cap_net_raw()
-    # R68 (v2.5.0) fail-closed gate: the real AF_PACKET transport needs a
-    # configured netdev; an injected transport (R86.6 seam) does not.
-    iface_missing = config.iface is None and config.transport_factory is None
+    # P2d (v2.7.0-draft): with a configured char-dev the PF is bound to
+    # qdma-pf — the transport gate is char-dev accessibility (an fd open needs
+    # only file permission), and CAP_NET_RAW/iface do not apply.
+    chardev_mode = (config.chardev is not None
+                    and config.transport_factory is None)
+    if chardev_mode:
+        cap = os.access(config.chardev, os.R_OK | os.W_OK)
+        iface_missing = False
+    else:
+        cap = (config.cap_check() if config.cap_check is not None
+               else _has_cap_net_raw())
+        # R68 (v2.5.0) fail-closed gate: the real AF_PACKET transport needs a
+        # configured netdev; an injected transport (R86.6 seam) does not.
+        iface_missing = config.iface is None and config.transport_factory is None
 
     static_shell_id: Optional[int] = None
     if cap and not iface_missing:
@@ -444,9 +475,11 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
                 and (static_shell_id >> 16) == (config.expected_spec16 & 0xFFFF))
 
     if cap and probe_ok:
+        transport_note = ("QDMA char-dev present" if chardev_mode
+                          else "CAP_NET_RAW present")
         return (True,
                 f"device_usable=true — static_shell_id=0x{static_shell_id:08x}, "
-                f"transport: CAP_NET_RAW present")
+                f"transport: {transport_note}")
 
     # R83 canonical enumeration of exactly the unmet conditions, in fixed order
     # (1. iface not configured, 2. no valid ID_REPLY, 3. CAP_NET_RAW absent).
@@ -458,7 +491,7 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
     elif not probe_ok:
         unmet.append(_REASON_PROBE)
     if not cap:
-        unmet.append(_REASON_TRANSPORT)
+        unmet.append(_REASON_CHARDEV if chardev_mode else _REASON_TRANSPORT)
     return (False, "device_usable=false — " + ", ".join(unmet))
 
 
@@ -490,9 +523,7 @@ def _live_probe(config: DeviceConfig) -> Optional[int]:
     ``probe_attempts`` attempts, each with a fresh ``seq`` and a
     ``probe_timeout_s`` receive window (R84).  Malformed reply => PyroFrameError.
     """
-    transport = (config.transport_factory(config)
-                 if config.transport_factory is not None
-                 else _EthTransport(config))
+    transport = _make_transport(config)
     try:
         eth_hdr = (bytes(config.dst_mac) + bytes(config.src_mac)
                    + struct.pack(">H", ETHERTYPE))
@@ -569,12 +600,11 @@ def read_perf_counters(config: DeviceConfig,
     interface to bind, so this returns ``None`` (counters unavailable) — never
     a raise, a guess, or a scan (R70).
     """
-    if config.transport_factory is None and config.iface is None:
-        return None  # R68 fail-closed: no netdev configured (v2.5.0)
+    if (config.transport_factory is None and config.iface is None
+            and config.chardev is None):
+        return None  # R68 fail-closed: no transport configured (v2.5.0/P2d)
     try:
-        transport = (config.transport_factory(config)
-                     if config.transport_factory is not None
-                     else _EthTransport(config))
+        transport = _make_transport(config)
     except OSError:
         return None
     try:
@@ -699,6 +729,111 @@ class _EthTransport(_Transport):
             self._sock.close()
         except OSError:
             pass
+
+
+class _CharDevTransport(_Transport):
+    """P2d QDMA ST char-dev transport (v2.7.0-draft), conforming to the R86.7
+    ``Transport`` protocol.
+
+    Carries the SAME full Ethernet frames as :class:`_EthTransport`: the card
+    parses the 14-byte L2 header + R78 frame out of the AXIS payload and cannot
+    tell the drivers apart.  ``send`` writes one frame per ``write`` (one H2C ST
+    packet, ``tlast`` at the end).  ``recv`` reads the C2H byte stream and
+    re-frames it with the R78.3 ``length`` field: unlike ``AF_PACKET``, a
+    char-dev ``read`` has no datagram boundary, so one read may span replies or
+    split one.  A resync scan (skip to a plausible header, else shift one byte)
+    contains a desynced stream to dropped frames rather than a wedged parser.
+    """
+
+    _ETH_HLEN = 14
+
+    def __init__(self, config: DeviceConfig):
+        if config.chardev is None:
+            # R68 no-default rule: no configured char-dev to open (fail-closed,
+            # same contract as _EthTransport's unconfigured-iface OSError).
+            raise OSError("PYRO_QDMA_CHARDEV not configured (R68, fail-closed)")
+        # O_NONBLOCK + select so recv honors the R86.7 timeout contract even if
+        # the driver's read path would otherwise block for a full request.
+        self._fd = os.open(config.chardev, os.O_RDWR | os.O_NONBLOCK)
+        self._buf = bytearray()
+
+    def send(self, frame: bytes) -> None:
+        # R78.9 sender pad to the 60-byte L2 minimum, mirroring _EthTransport:
+        # the card-side parser sees identical bytes on either transport.
+        frame = bytes(frame)
+        if len(frame) < 60:
+            frame = frame + b"\x00" * (60 - len(frame))
+        os.write(self._fd, frame)
+
+    def _extract_frame(self) -> Optional[bytes]:
+        """Pop one complete Ethernet-framed R78 frame off the buffer, or None."""
+        buf = self._buf
+        while True:
+            # Skip inter-frame zero padding (dst MAC never begins 0x00: config
+            # src/dst MACs are locally-administered 0x02… or broadcast 0xff…).
+            start = 0
+            while start < len(buf) and buf[start] == 0:
+                start += 1
+            if start:
+                del buf[:start]
+            hdr_end = self._ETH_HLEN + PYRO_HEADER_LEN
+            if len(buf) < hdr_end:
+                return None
+            # Plausibility: R78 ethertype at L2 offset 12, MAGIC/VERSION at the
+            # PYRO header start.  On mismatch shift one byte and rescan (resync).
+            if (buf[12] != (ETHERTYPE >> 8) or buf[13] != (ETHERTYPE & 0xFF)
+                    or buf[self._ETH_HLEN] != MAGIC
+                    or buf[self._ETH_HLEN + 1] != VERSION):
+                del buf[:1]
+                continue
+            length = (buf[self._ETH_HLEN + 10] << 8) | buf[self._ETH_HLEN + 11]
+            end = hdr_end + length
+            if len(buf) < end:
+                return None
+            frame = bytes(buf[:end])
+            del buf[:end]
+            return frame
+
+    def recv(self, timeout: float) -> Optional[bytes]:
+        import select
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while True:
+            frame = self._extract_frame()
+            if frame is not None:
+                return frame
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                return None
+            r, _, _ = select.select([self._fd], [], [], remaining)
+            if not r:
+                return None
+            try:
+                chunk = os.read(self._fd, 65536)
+            except BlockingIOError:
+                continue
+            if chunk:
+                self._buf += chunk
+
+    def close(self) -> None:
+        # R86.7 idempotent close.
+        fd, self._fd = self._fd, -1
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _make_transport(config: DeviceConfig) -> _Transport:
+    """R86.7 transport selection: the injected ``transport_factory`` seam wins
+    (R86.6), else the P2d char-dev when configured (v2.7.0-draft precedence:
+    the PF is bound to qdma-pf, so the netdev does not exist), else the
+    ``AF_PACKET`` netdev transport."""
+    if config.transport_factory is not None:
+        return config.transport_factory(config)
+    if config.chardev is not None:
+        return _CharDevTransport(config)
+    return _EthTransport(config)
 
 
 # ---------------------------------------------------------------------------

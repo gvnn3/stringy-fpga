@@ -87,7 +87,7 @@ def main():
         return 1
     results = []
     for w in WINDOWS:
-        transport = pdev._EthTransport(cfg)
+        transport = pdev._make_transport(cfg)
         try:
             r = run_window(cfg, transport, w)
         finally:

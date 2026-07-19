@@ -290,7 +290,9 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
 
     # Stream >= S_min through the resident circuit over the real transport,
     # chunked at the R78.9 frame bound, and time it end-to-end.
-    transport = pdev._EthTransport(cfg)  # hardware clause: real transport
+    transport = pdev._make_transport(cfg)  # hardware clause: real transport
+    # (P2d v2.7.0-draft: with PYRO_QDMA_CHARDEV configured this IS the P2
+    # performance transport; otherwise the raw-Ethernet control transport.)
     try:
         # Resident slot discovery (R64 single-tenant: slot 1, then 0); a
         # STATUS reply is the R78.8 "not resident" disposition.

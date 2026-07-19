@@ -174,6 +174,13 @@ _VIVADO_DIR = None
 _HW_SERVER_DEFAULT = "TCP:localhost:3121"
 _DEVICE_IFACE = None
 _HW_SERVER = _HW_SERVER_DEFAULT
+# R68 P2d data-plane knob (v2.7.0-draft) — PYRO_QDMA_CHARDEV names the QDMA ST
+# char-dev (e.g. /dev/qdma02000-ST-0) carrying the same eth-framed R78 AXIS
+# payloads as the netdev transport.  **No default, fail-closed** (same F3/R68
+# no-default rule as the iface): the char-dev only exists while the operator
+# has swapped the PF to qdma-pf (scripts/pyro_dataplane_swap.sh), so an unset
+# knob yields None and the transport stays on the netdev path.
+_QDMA_CHARDEV = None
 
 # R68 PR-substrate knobs (v2.2.4) — sampled at the SAME R35a points, never per
 # call.  PYRO_PR_STATIC_DCP -> ToolchainConfig.static_dcp (R82b locked static),
@@ -212,7 +219,7 @@ def sample_env() -> None:
     """
     global _ENV, _TEST_HOOKS, _N_SYNTH, _TOOLCHAIN, _VIVADO_DIR
     global _DEVICE_IFACE, _HW_SERVER, _PR_STATIC_DCP, _PR_REFERENCE_DCP
-    global _PR_EVIDENCE_MANIFEST
+    global _PR_EVIDENCE_MANIFEST, _QDMA_CHARDEV
     with _ENV_LOCK:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
@@ -230,6 +237,9 @@ def sample_env() -> None:
         # F3/R68 v2.5.0); an unset PYRO_HW_SERVER keeps the stock spec default.
         _di = os.environ.get("PYRO_DEVICE_IFACE")
         _DEVICE_IFACE = _di if _di else None
+        # R68 P2d char-dev knob (v2.7.0-draft): no default, fail-closed.
+        _qc = os.environ.get("PYRO_QDMA_CHARDEV")
+        _QDMA_CHARDEV = _qc if _qc else None
         _hs = os.environ.get("PYRO_HW_SERVER")
         _HW_SERVER = _hs if _hs else _HW_SERVER_DEFAULT
         # R68 PR-substrate knobs (v2.2.4): no default (fail-loud is enforced by the
@@ -287,6 +297,16 @@ def device_iface():
     :mod:`pyro.device`'s ``DeviceConfig`` for its ``iface`` default — never on the
     per-call hot path, never via os.environ inside the device functions (R86)."""
     return _DEVICE_IFACE
+
+
+def qdma_chardev():
+    """Cached PYRO_QDMA_CHARDEV (R68, P2d v2.7.0-draft), the QDMA ST char-dev
+    path for the performance transport — ``None`` when unset (**no spec
+    default; fail-closed**: the char-dev exists only while the operator has
+    swapped the PF to qdma-pf, so nothing is guessed and nothing is scanned).
+    Sampled only at R35a points; read by :mod:`pyro.device`'s ``DeviceConfig``
+    for its ``chardev`` default."""
+    return _QDMA_CHARDEV
 
 
 def hw_server_url():
