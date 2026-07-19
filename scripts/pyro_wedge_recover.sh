@@ -63,6 +63,13 @@ echo "=== 4. reload onic, bring $IFACE up ==="
 insmod "$KO"
 sleep 1
 ip link set "$IFACE" up
+# R78.9a jumbo bound: 14 eth + 14 pyro hdr + 9568 payload = 9596 on the wire,
+# so the netdev needs mtu >= 9582. 9586 == shell MAX_PKT_LEN (9600) - ETH_HLEN,
+# the driver's max_mtu. Falls back gracefully under a pre-jumbo onic.ko.
+MTU="${PYRO_DEVICE_MTU:-9586}"
+if ! ip link set "$IFACE" mtu "$MTU" 2>/dev/null; then
+  echo "    WARN: mtu $MTU refused (pre-jumbo onic.ko?) — staying at $(cat /sys/class/net/$IFACE/mtu)"
+fi
 sleep 1
 ip -br link show "$IFACE"
 

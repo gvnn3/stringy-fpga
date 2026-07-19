@@ -1254,3 +1254,46 @@ Continue
 
 Commit this and continue when the build finishes.
 
+## 2026-07-19 02:23:32
+
+Flashing now
+
+## 2026-07-19 14:27:21
+
+System has been power cycled.
+
+## 2026-07-19 14:30:47
+
+udo scripts/pyro_wedge_recover.sh
+=== 1. rmmod onic ===
+    (not loaded)
+=== 2+3. user-box reset, then QDMA soft reset (BAR2 of 0000:02:00.0) ===
+    build_timestamp=0x07170514
+    user[0]  (pyro box+RP): RESET_DONE (status=0xffffffff)
+    shell[0] (QDMA soft): RESET_DONE (status=0xffffffff)
+=== 4. reload onic, bring ens2 up ===
+insmod: ERROR: could not insert module /home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko: Invalid module format
+
+## 2026-07-19 14:35:20
+
+sudo scripts/pyro_wedge_recover.sh
+=== 1. rmmod onic ===
+    (not loaded)
+=== 2+3. user-box reset, then QDMA soft reset (BAR2 of 0000:02:00.0) ===
+    build_timestamp=0x07170514
+    user[0]  (pyro box+RP): RESET_DONE (status=0xffffffff)
+    shell[0] (QDMA soft): RESET_DONE (status=0xffffffff)
+=== 4. reload onic, bring ens2 up ===
+ens2             UP             00:0a:35:4e:bb:4b <BROADCAST,MULTICAST,UP,LOWER_UP>
+
+WEDGE_RECOVER_DONE — now probe as your normal user:
+    PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
+
+## 2026-07-19 14:39:19
+
+Run the benchmark
+
+## 2026-07-19 14:46:36
+
+Commit and continue to Phase 3
+

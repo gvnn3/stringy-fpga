@@ -17,20 +17,96 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-2. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-3. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-4. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-5. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-6. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-7. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-8. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-9. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-10. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-11. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-12. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-13. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-14. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+2. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+3. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+4. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+5. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+6. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+7. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+8. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+9. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+10. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+11. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+12. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+13. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+14. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+15. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+---
+
+# EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched :complete:
+
+## 1. Hypothesis
+
+The jumbo shell (MAX_PKT_LEN=9600, p2c/R78.9a) flashed to QSPI on 19 Jul 02:23
+survives a power cycle and boots on its own, and the larger frame bound lifts
+pipelined MATCH throughput well past the 121 MiB/s plateau by amortizing the
+~11 µs fixed per-frame cost over 6.4× more corpus bytes per frame.
+
+## 2. How
+
+Power-cycled nf-server06, then: verify PCIe enumeration → `pyro_wedge_recover.sh`
+→ probe → `load` the `becf73e8` partial → `pyro_pipeline_bench.py` at both
+payload bounds (`PYRO_BENCH_JUMBO=1` for 9568 B).
+
+### Key commands
+
+```bash
+sudo scripts/pyro_wedge_recover.sh          # now also sets mtu 9586
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
+    .superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_partial.bit
+PYRO_BENCH_JUMBO=1 PYRO_DEVICE_IFACE=ens2 \
+    .venv-pyro/bin/python3 scripts/pyro_pipeline_bench.py
+```
+
+## 3. Observations
+
+- Card enumerated at 0000:02:00.0 after power-on with `build_timestamp=0x07170514`
+  — the 17 Jul 05:14 jumbo build. **QSPI multiboot of the jumbo shell works.**
+  Shell ID `0x0202c318` pre-load; BUILD16 reads `0x0000` once a partial is
+  resident (SPEC16, the validated half, unchanged).
+- First `insmod` failed `Invalid module format`: the reboot silently picked up
+  a kernel update (6.8.0-134 → 6.8.0-136-generic). Rebuild of onic.ko fixed it.
+- Jumbo bench initially died with `EMSGSIZE`: **two stock onic driver defects**.
+  (1) `netdev->max_mtu` never set, so the kernel caps MTU at 1500;
+  (2) `onic_change_mtu()` returns 0 without writing `dev->mtu` — and when
+  `ndo_change_mtu` is defined the core delegates entirely to it, so
+  `ip link set mtu` silently no-ops. Patched both (max_mtu = 9600 − ETH_HLEN
+  = 9586; `WRITE_ONCE(dev->mtu, mtu)`), rebuilt, reloaded.
+  RX buffers are single 4 KiB pages, so jumbo is TX-only safe — fine, since
+  only H2C carries corpus; replies are small.
+- Pipelined MATCH, 4 MiB corpus per window size, zero loss at every W:
+
+  | payload bound | W=1 | plateau | best | µs/frame |
+  |---------------|-----|---------|------|----------|
+  | 1486 B (1518 shell bound) | 66.2 MiB/s | ~121 MiB/s (W≥2) | 121.6 (W=64) | 11.6 |
+  | 9568 B (jumbo, R78.9a)    | 282.4 MiB/s | ~560 MiB/s (W≥2) | **567.1 (W=32)** | 16.1 |
+
+## 4. Data analysis
+
+Jumbo buys **4.66×** (567.1/121.6) against a 6.44× payload increase. The gap is
+the fixed per-frame cost: marginal byte rate between the two operating points is
+(9568−1486) B / (16.1−11.6) µs ≈ **1.80 GB/s — the P2b engine's ~2 B/cyc-of-8
+wall-clock rate showing through** — while the frame-size-independent overhead
+comes out at ≈10.8 µs/frame from either row (11.6 − 1486/1796 ≈ 16.1 −
+9568/1796 ≈ 10.8). At 9568 B the child spends only ~5.3 µs of each 16.1 µs
+scanning; transport/framing still owns two-thirds of the budget. Zero-overhead
+ceiling at this frame size is ≈1.7 GiB/s, so the frame path — not the engine —
+remains the binding constraint, confirming the P2 reframing: a char-dev DMA
+data plane is where the next multiple lives.
+
+## 5. Ideas for future experiments
+
+- Upstream-worthy onic patch: `max_mtu`/`change_mtu` fix is generic, not
+  PYRO-specific; consider PRing to open-nic-driver.
+- Kernel-update hazard: pin or rebuild onic.ko on boot (DKMS?) so a power cycle
+  can't strand the card behind a vermagic mismatch.
+- Probe why user/shell reset status registers read `0xffffffff` (bit 0 is all
+  the script checks; the other 31 bits reading 1 is unexplained).
+- P2 char-dev data plane: 10.8 µs/frame fixed cost is the target; even halving
+  it at jumbo size would clear 1 GiB/s.
+
 ---
 
 # EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz :complete:
