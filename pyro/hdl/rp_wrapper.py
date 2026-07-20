@@ -948,12 +948,18 @@ _MULTI_TOP = r"""
 // ***************************************************************************
 // pyro_rp — v4 frame-parallel top (P2e): @CORES@ x pyro_rp_core.
 //
+//   * Both AXIS boundaries pass through TWO-STAGE SKID BUFFERS so tready is
+//     a REGISTERED signal: the first spin of this top peeked the R78 kind
+//     combinationally from s_axis_tdata to compute s_axis_tready — a
+//     tdata->tready arc that routed static->RP->static across two SLR
+//     crossings in one cycle (RP-scoped WNS -0.821 ns).  All demux/mux
+//     logic now operates on registered beats.
 //   * RX demux: one AXIS packet goes to exactly one core.  The R78 kind is
-//     peeked from frame byte 16 on the packet's first beat (within beat 0):
+//     peeked from frame byte 16 of the REGISTERED first beat:
 //     MATCH_REQUEST round-robins over cores whose slave side is ready
-//     (skip-busy), everything else (ID/PERF/unknown) routes to the core that
-//     most recently completed a MATCH ('last_done', reset 0) so the R78.11
-//     PERF read-out keeps its "most recent scan" semantics.
+//     (skip-busy), everything else (ID/PERF/unknown) routes to the core
+//     that most recently completed a MATCH ('last_done', reset 0) so the
+//     R78.11 PERF read-out keeps its "most recent scan" semantics.
 //   * TX mux: packet-atomic round-robin over cores with pending replies;
 //     'last_done' updates when a MATCH_REPLY's first beat is granted.
 //   * While one core scans, the demux keeps accepting frames into other
@@ -990,6 +996,47 @@ module pyro_rp #(
   localparam [7:0]  KIND_MATCH_REQ   = 8'h03;
   localparam [7:0]  KIND_MATCH_REPLY = 8'h04;
 
+  // ---- slave-side two-stage skid: registered tready, registered beats ----
+  reg          si_v0, si_v1;
+  reg  [511:0] si_d0, si_d1;
+  reg   [63:0] si_k0, si_k1;
+  reg          si_l0, si_l1;
+  reg   [47:0] si_u0, si_u1;
+
+  wire d_tready;                              // demux consumes stage 0
+  wire in_fire  = s_axis_tvalid && !si_v1;
+  wire d_fire   = si_v0 && d_tready;
+
+  assign s_axis_tready = !si_v1;              // registered occupancy only
+
+  always @(posedge clk) begin
+    if (!rstn) begin
+      si_v0 <= 1'b0;
+      si_v1 <= 1'b0;
+    end else begin
+      if (in_fire) begin
+        if (si_v0 && !d_fire) begin           // stage 0 busy: park in skid
+          si_v1 <= 1'b1;
+          si_d1 <= s_axis_tdata;  si_k1 <= s_axis_tkeep;
+          si_l1 <= s_axis_tlast;  si_u1 <= s_axis_tuser;
+        end else begin                        // straight into stage 0
+          si_v0 <= 1'b1;
+          si_d0 <= s_axis_tdata;  si_k0 <= s_axis_tkeep;
+          si_l0 <= s_axis_tlast;  si_u0 <= s_axis_tuser;
+        end
+      end
+      if (d_fire) begin
+        if (si_v1) begin                      // refill stage 0 from skid
+          si_v1 <= 1'b0;
+          si_d0 <= si_d1;  si_k0 <= si_k1;
+          si_l0 <= si_l1;  si_u0 <= si_u1;
+        end else if (!in_fire) begin
+          si_v0 <= 1'b0;
+        end
+      end
+    end
+  end
+
   // ---- per-core AXIS wiring (flat vectors: variable +: slices) -----------
   wire [CORES-1:0]        c_s_tready;
   wire [CORES-1:0]        c_m_tvalid;
@@ -1000,13 +1047,13 @@ module pyro_rp #(
   wire [CORES-1:0]        c_s_tvalid;
   wire [CORES-1:0]        c_m_tready;
 
-  // ---- RX demux -----------------------------------------------------------
+  // ---- RX demux (operates on registered stage-0 beat) --------------------
   reg          rx_inpkt;    // mid-packet: target locked in rx_tgt_q
   reg  [1:0]   rx_tgt_q;
   reg  [1:0]   rr;          // next MATCH round-robin start
   reg  [1:0]   last_done;   // core of the most recent MATCH_REPLY
 
-  wire [7:0]   rx_kind  = s_axis_tdata[135:128];   // frame byte 16 (beat 0)
+  wire [7:0]   rx_kind  = si_d0[135:128];    // frame byte 16 (beat 0)
   wire         is_match = (rx_kind == KIND_MATCH_REQ);
 
   // first ready core at/after rr (skip-busy round-robin)
@@ -1031,13 +1078,12 @@ module pyro_rp #(
   wire [1:0] tgt_new  = is_match ? pick_c : last_done;
   wire       new_ok   = is_match ? pick_ok : c_s_tready[last_done];
   wire [1:0] rx_tgt   = rx_inpkt ? rx_tgt_q : tgt_new;
-  wire       rx_gate  = rx_inpkt ? c_s_tready[rx_tgt_q] : new_ok;
+  assign d_tready     = rx_inpkt ? c_s_tready[rx_tgt_q] : new_ok;
 
-  assign s_axis_tready = rx_gate;
   genvar gd;
   generate
     for (gd = 0; gd < CORES; gd = gd + 1) begin : g_demux
-      assign c_s_tvalid[gd] = s_axis_tvalid && rx_gate && (rx_tgt == gd[1:0]);
+      assign c_s_tvalid[gd] = si_v0 && d_tready && (rx_tgt == gd[1:0]);
     end
   endgenerate
 
@@ -1046,17 +1092,17 @@ module pyro_rp #(
       rx_inpkt <= 1'b0;
       rx_tgt_q <= 2'd0;
       rr       <= 2'd0;
-    end else if (s_axis_tvalid && s_axis_tready) begin
+    end else if (d_fire) begin
       if (!rx_inpkt) begin
         rx_tgt_q <= rx_tgt;
         if (is_match)
           rr <= (rx_tgt == LASTC) ? 2'd0 : rx_tgt + 2'd1;
       end
-      rx_inpkt <= !s_axis_tlast;
+      rx_inpkt <= !si_l0;
     end
   end
 
-  // ---- TX mux (packet-atomic round-robin) ---------------------------------
+  // ---- TX mux (packet-atomic round-robin) into the master-side skid ------
   reg          tx_lock;
   reg  [1:0]   tx_sel_q;
   reg  [1:0]   rr_tx;
@@ -1082,15 +1128,17 @@ module pyro_rp #(
   wire [1:0] tx_sel    = tx_lock ? tx_sel_q : tx_pick;
   wire       tx_active = tx_lock | tx_pick_ok;
 
-  assign m_axis_tvalid = tx_active && c_m_tvalid[tx_sel];
-  assign m_axis_tdata  = c_m_tdata[tx_sel*512 +: 512];
-  assign m_axis_tkeep  = c_m_tkeep[tx_sel*64 +: 64];
-  assign m_axis_tlast  = c_m_tlast[tx_sel];
-  assign m_axis_tuser  = c_m_tuser[tx_sel*48 +: 48];
+  wire         mx_tvalid = tx_active && c_m_tvalid[tx_sel];
+  wire [511:0] mx_tdata  = c_m_tdata[tx_sel*512 +: 512];
+  wire  [63:0] mx_tkeep  = c_m_tkeep[tx_sel*64 +: 64];
+  wire         mx_tlast  = c_m_tlast[tx_sel];
+  wire  [47:0] mx_tuser  = c_m_tuser[tx_sel*48 +: 48];
+  wire         mx_tready;                     // from the master-side skid
+
   genvar gm;
   generate
     for (gm = 0; gm < CORES; gm = gm + 1) begin : g_mux
-      assign c_m_tready[gm] = m_axis_tready && tx_active && (tx_sel == gm[1:0]);
+      assign c_m_tready[gm] = mx_tready && tx_active && (tx_sel == gm[1:0]);
     end
   endgenerate
 
@@ -1100,14 +1148,59 @@ module pyro_rp #(
       tx_sel_q  <= 2'd0;
       rr_tx     <= 2'd0;
       last_done <= 2'd0;
-    end else if (m_axis_tvalid && m_axis_tready) begin
+    end else if (mx_tvalid && mx_tready) begin
       if (!tx_lock) begin
         tx_sel_q <= tx_sel;
         rr_tx    <= (tx_sel == LASTC) ? 2'd0 : tx_sel + 2'd1;
-        if (m_axis_tdata[135:128] == KIND_MATCH_REPLY)
+        if (mx_tdata[135:128] == KIND_MATCH_REPLY)
           last_done <= tx_sel;
       end
-      tx_lock <= !m_axis_tlast;
+      tx_lock <= !mx_tlast;
+    end
+  end
+
+  // ---- master-side two-stage skid: registered tready toward the cores ----
+  reg          so_v0, so_v1;
+  reg  [511:0] so_d0, so_d1;
+  reg   [63:0] so_k0, so_k1;
+  reg          so_l0, so_l1;
+  reg   [47:0] so_u0, so_u1;
+
+  wire mo_fire = so_v0 && m_axis_tready;
+  wire mi_fire = mx_tvalid && !so_v1;
+
+  assign mx_tready     = !so_v1;              // registered occupancy only
+  assign m_axis_tvalid = so_v0;
+  assign m_axis_tdata  = so_d0;
+  assign m_axis_tkeep  = so_k0;
+  assign m_axis_tlast  = so_l0;
+  assign m_axis_tuser  = so_u0;
+
+  always @(posedge clk) begin
+    if (!rstn) begin
+      so_v0 <= 1'b0;
+      so_v1 <= 1'b0;
+    end else begin
+      if (mi_fire) begin
+        if (so_v0 && !mo_fire) begin
+          so_v1 <= 1'b1;
+          so_d1 <= mx_tdata;  so_k1 <= mx_tkeep;
+          so_l1 <= mx_tlast;  so_u1 <= mx_tuser;
+        end else begin
+          so_v0 <= 1'b1;
+          so_d0 <= mx_tdata;  so_k0 <= mx_tkeep;
+          so_l0 <= mx_tlast;  so_u0 <= mx_tuser;
+        end
+      end
+      if (mo_fire) begin
+        if (so_v1) begin
+          so_v1 <= 1'b0;
+          so_d0 <= so_d1;  so_k0 <= so_k1;
+          so_l0 <= so_l1;  so_u0 <= so_u1;
+        end else if (!mi_fire) begin
+          so_v0 <= 1'b0;
+        end
+      end
     end
   end
 
@@ -1125,10 +1218,10 @@ module pyro_rp #(
         .clk           (clk),
         .rstn          (rstn),
         .s_axis_tvalid (c_s_tvalid[gc]),
-        .s_axis_tdata  (s_axis_tdata),
-        .s_axis_tkeep  (s_axis_tkeep),
-        .s_axis_tlast  (s_axis_tlast),
-        .s_axis_tuser  (s_axis_tuser),
+        .s_axis_tdata  (si_d0),
+        .s_axis_tkeep  (si_k0),
+        .s_axis_tlast  (si_l0),
+        .s_axis_tuser  (si_u0),
         .s_axis_tready (c_s_tready[gc]),
         .m_axis_tvalid (c_m_tvalid[gc]),
         .m_axis_tdata  (c_m_tdata[gc*512 +: 512]),
