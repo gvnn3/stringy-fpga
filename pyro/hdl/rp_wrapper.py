@@ -226,6 +226,7 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
                       wire_harness_version: int = DEFAULT_WIRE_HARNESS_VERSION,
                       datapath_bytes: int = 1,
                       max_frame_bytes: int = MAX_FRAME_BYTES,
+                      cores: int = 1,
                       ) -> str:
     """Emit the ``pyro_rp`` pattern-child wrapper SystemVerilog for one engine.
 
@@ -261,15 +262,31 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     template = _TEMPLATE if datapath_bytes == 1 else _widen_template(datapath_bytes)
     if max_frame_bytes != MAX_FRAME_BYTES:
         template = _jumbo_slices(template)
-    return (template
-            .replace("@ENGINE@", ENGINE_MODULE)
-            .replace("@MAXFRAME@", str(max_frame_bytes))
-            .replace("@MAXENT@", str(MAX_ENTRIES))
-            .replace("@SPEC16@", f"16'h{spec16:04X}")
-            .replace("@BUILD16@", f"16'h{build16:04X}")
-            .replace("@HARNESSVER@", f"32'h{wire_harness_version:08X}")
-            .replace("@SLOT@", f"16'd{slot}")
-            .replace("@RPCHILDID@", f"32'h{rp_child_id:08X}"))
+    child = (template
+             .replace("@ENGINE@", ENGINE_MODULE)
+             .replace("@MAXFRAME@", str(max_frame_bytes))
+             .replace("@MAXENT@", str(MAX_ENTRIES))
+             .replace("@SPEC16@", f"16'h{spec16:04X}")
+             .replace("@BUILD16@", f"16'h{build16:04X}")
+             .replace("@HARNESSVER@", f"32'h{wire_harness_version:08X}")
+             .replace("@SLOT@", f"16'd{slot}")
+             .replace("@RPCHILDID@", f"32'h{rp_child_id:08X}"))
+    if cores == 1:
+        return child                       # byte-identical pre-v4 emission
+    # v4 (P2e): frame-parallel multi-core — CORES unmodified children behind
+    # a kind-aware packet demux and a packet-atomic reply mux.  The NFA state
+    # recurrence caps a single engine's width (the N=8 cascade closed with
+    # +0.002 ns at jumbo), so aggregate B/cyc scales by core count instead:
+    # the demux round-robins MATCH frames across ready cores (RX of frame
+    # k+1 proceeds while frame k scans — the overlap the serialized v3 FSM
+    # never had) and routes ID/PERF to the core that most recently completed
+    # a MATCH, preserving the R78.11 "most recent scan" counter semantics.
+    if cores not in (2, 3, 4):
+        raise ValueError(f"cores must be 1..4, got {cores!r} (P2e)")
+    core_text = _replace1(child, "module pyro_rp #(", "module pyro_rp_core #(")
+    core_text = _replace1(core_text, "endmodule : pyro_rp",
+                          "endmodule : pyro_rp_core")
+    return core_text + _MULTI_TOP.replace("@CORES@", str(cores))
 
 
 # NB: the SV body contains many ``{...}`` concatenations, so substitution uses
@@ -915,6 +932,213 @@ module pyro_rp #(
         tx_words[txw_sel] <= txw_data;
     end
   end
+
+endmodule : pyro_rp
+"""
+
+
+# ---------------------------------------------------------------------------
+# v4 (P2e) frame-parallel top: CORES x pyro_rp_core behind a packet demux/mux.
+# Pure structural composition — the proven core template is UNMODIFIED (its
+# module is renamed pyro_rp_core); all new logic lives here.  Substitution
+# via @CORES@ only (same .replace discipline; SV {} concatenations abound).
+# ---------------------------------------------------------------------------
+_MULTI_TOP = r"""
+
+// ***************************************************************************
+// pyro_rp — v4 frame-parallel top (P2e): @CORES@ x pyro_rp_core.
+//
+//   * RX demux: one AXIS packet goes to exactly one core.  The R78 kind is
+//     peeked from frame byte 16 on the packet's first beat (within beat 0):
+//     MATCH_REQUEST round-robins over cores whose slave side is ready
+//     (skip-busy), everything else (ID/PERF/unknown) routes to the core that
+//     most recently completed a MATCH ('last_done', reset 0) so the R78.11
+//     PERF read-out keeps its "most recent scan" semantics.
+//   * TX mux: packet-atomic round-robin over cores with pending replies;
+//     'last_done' updates when a MATCH_REPLY's first beat is granted.
+//   * While one core scans, the demux keeps accepting frames into other
+//     cores — the RX/scan overlap the serialized single-core FSM never had.
+// ***************************************************************************
+module pyro_rp #(
+  parameter [15:0] SPEC16          = 16'h0202,
+  parameter [15:0] BUILD16         = `PYRO_BUILD16,
+  parameter [31:0] HARNESS_VERSION = 32'h00010000,
+  parameter [15:0] SLOT            = 16'd1,
+  parameter [31:0] RP_CHILD_ID     = `PYRO_RP_CHILD_ID
+) (
+  input                clk,
+  input                rstn,
+
+  input                s_axis_tvalid,
+  input        [511:0] s_axis_tdata,
+  input         [63:0] s_axis_tkeep,
+  input                s_axis_tlast,
+  input         [47:0] s_axis_tuser,
+  output               s_axis_tready,
+
+  output               m_axis_tvalid,
+  output       [511:0] m_axis_tdata,
+  output        [63:0] m_axis_tkeep,
+  output               m_axis_tlast,
+  output        [47:0] m_axis_tuser,
+  input                m_axis_tready
+);
+
+  localparam integer CORES = @CORES@;
+  localparam [2:0]  C3    = CORES;        // width-safe copies for compares
+  localparam [1:0]  LASTC = CORES - 1;
+  localparam [7:0]  KIND_MATCH_REQ   = 8'h03;
+  localparam [7:0]  KIND_MATCH_REPLY = 8'h04;
+
+  // ---- per-core AXIS wiring (flat vectors: variable +: slices) -----------
+  wire [CORES-1:0]        c_s_tready;
+  wire [CORES-1:0]        c_m_tvalid;
+  wire [CORES*512-1:0]    c_m_tdata;
+  wire [CORES*64-1:0]     c_m_tkeep;
+  wire [CORES-1:0]        c_m_tlast;
+  wire [CORES*48-1:0]     c_m_tuser;
+  wire [CORES-1:0]        c_s_tvalid;
+  wire [CORES-1:0]        c_m_tready;
+
+  // ---- RX demux -----------------------------------------------------------
+  reg          rx_inpkt;    // mid-packet: target locked in rx_tgt_q
+  reg  [1:0]   rx_tgt_q;
+  reg  [1:0]   rr;          // next MATCH round-robin start
+  reg  [1:0]   last_done;   // core of the most recent MATCH_REPLY
+
+  wire [7:0]   rx_kind  = s_axis_tdata[135:128];   // frame byte 16 (beat 0)
+  wire         is_match = (rx_kind == KIND_MATCH_REQ);
+
+  // first ready core at/after rr (skip-busy round-robin)
+  reg  [1:0]   pick_c;
+  reg          pick_ok;
+  integer pk;
+  always @* begin
+    pick_c  = 2'd0;
+    pick_ok = 1'b0;
+    for (pk = CORES - 1; pk >= 0; pk = pk - 1) begin : rr_pick
+      reg [2:0] cand;
+      cand = {1'b0, rr} + pk[2:0];
+      if (cand >= C3)
+        cand = cand - C3;
+      if (c_s_tready[cand[1:0]]) begin
+        pick_c  = cand[1:0];
+        pick_ok = 1'b1;
+      end
+    end
+  end
+
+  wire [1:0] tgt_new  = is_match ? pick_c : last_done;
+  wire       new_ok   = is_match ? pick_ok : c_s_tready[last_done];
+  wire [1:0] rx_tgt   = rx_inpkt ? rx_tgt_q : tgt_new;
+  wire       rx_gate  = rx_inpkt ? c_s_tready[rx_tgt_q] : new_ok;
+
+  assign s_axis_tready = rx_gate;
+  genvar gd;
+  generate
+    for (gd = 0; gd < CORES; gd = gd + 1) begin : g_demux
+      assign c_s_tvalid[gd] = s_axis_tvalid && rx_gate && (rx_tgt == gd[1:0]);
+    end
+  endgenerate
+
+  always @(posedge clk) begin
+    if (!rstn) begin
+      rx_inpkt <= 1'b0;
+      rx_tgt_q <= 2'd0;
+      rr       <= 2'd0;
+    end else if (s_axis_tvalid && s_axis_tready) begin
+      if (!rx_inpkt) begin
+        rx_tgt_q <= rx_tgt;
+        if (is_match)
+          rr <= (rx_tgt == LASTC) ? 2'd0 : rx_tgt + 2'd1;
+      end
+      rx_inpkt <= !s_axis_tlast;
+    end
+  end
+
+  // ---- TX mux (packet-atomic round-robin) ---------------------------------
+  reg          tx_lock;
+  reg  [1:0]   tx_sel_q;
+  reg  [1:0]   rr_tx;
+
+  reg  [1:0]   tx_pick;
+  reg          tx_pick_ok;
+  integer tp;
+  always @* begin
+    tx_pick    = 2'd0;
+    tx_pick_ok = 1'b0;
+    for (tp = CORES - 1; tp >= 0; tp = tp - 1) begin : tx_rr_pick
+      reg [2:0] cand;
+      cand = {1'b0, rr_tx} + tp[2:0];
+      if (cand >= C3)
+        cand = cand - C3;
+      if (c_m_tvalid[cand[1:0]]) begin
+        tx_pick    = cand[1:0];
+        tx_pick_ok = 1'b1;
+      end
+    end
+  end
+
+  wire [1:0] tx_sel    = tx_lock ? tx_sel_q : tx_pick;
+  wire       tx_active = tx_lock | tx_pick_ok;
+
+  assign m_axis_tvalid = tx_active && c_m_tvalid[tx_sel];
+  assign m_axis_tdata  = c_m_tdata[tx_sel*512 +: 512];
+  assign m_axis_tkeep  = c_m_tkeep[tx_sel*64 +: 64];
+  assign m_axis_tlast  = c_m_tlast[tx_sel];
+  assign m_axis_tuser  = c_m_tuser[tx_sel*48 +: 48];
+  genvar gm;
+  generate
+    for (gm = 0; gm < CORES; gm = gm + 1) begin : g_mux
+      assign c_m_tready[gm] = m_axis_tready && tx_active && (tx_sel == gm[1:0]);
+    end
+  endgenerate
+
+  always @(posedge clk) begin
+    if (!rstn) begin
+      tx_lock   <= 1'b0;
+      tx_sel_q  <= 2'd0;
+      rr_tx     <= 2'd0;
+      last_done <= 2'd0;
+    end else if (m_axis_tvalid && m_axis_tready) begin
+      if (!tx_lock) begin
+        tx_sel_q <= tx_sel;
+        rr_tx    <= (tx_sel == LASTC) ? 2'd0 : tx_sel + 2'd1;
+        if (m_axis_tdata[135:128] == KIND_MATCH_REPLY)
+          last_done <= tx_sel;
+      end
+      tx_lock <= !m_axis_tlast;
+    end
+  end
+
+  // ---- cores --------------------------------------------------------------
+  genvar gc;
+  generate
+    for (gc = 0; gc < CORES; gc = gc + 1) begin : g_core
+      pyro_rp_core #(
+        .SPEC16          (SPEC16),
+        .BUILD16         (BUILD16),
+        .HARNESS_VERSION (HARNESS_VERSION),
+        .SLOT            (SLOT),
+        .RP_CHILD_ID     (RP_CHILD_ID)
+      ) u_core (
+        .clk           (clk),
+        .rstn          (rstn),
+        .s_axis_tvalid (c_s_tvalid[gc]),
+        .s_axis_tdata  (s_axis_tdata),
+        .s_axis_tkeep  (s_axis_tkeep),
+        .s_axis_tlast  (s_axis_tlast),
+        .s_axis_tuser  (s_axis_tuser),
+        .s_axis_tready (c_s_tready[gc]),
+        .m_axis_tvalid (c_m_tvalid[gc]),
+        .m_axis_tdata  (c_m_tdata[gc*512 +: 512]),
+        .m_axis_tkeep  (c_m_tkeep[gc*64 +: 64]),
+        .m_axis_tlast  (c_m_tlast[gc]),
+        .m_axis_tuser  (c_m_tuser[gc*48 +: 48]),
+        .m_axis_tready (c_m_tready[gc])
+      );
+    end
+  endgenerate
 
 endmodule : pyro_rp
 """

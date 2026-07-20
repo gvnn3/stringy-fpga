@@ -143,6 +143,8 @@ def main():
     ap.add_argument("--pattern", default="abc[a-f]{2}")
     ap.add_argument("--max-frame", type=int, default=1536,
                     help="wrapper MAX_FRAME_BYTES: 1536 or 9600 (R78.9a)")
+    ap.add_argument("--engines", type=int, default=1,
+                    help="v4 frame-parallel core count (P2e); 1 = classic")
     ap.add_argument("--keep-workdir", action="store_true")
     args = ap.parse_args()
     n = args.datapath
@@ -161,7 +163,8 @@ def main():
     circ = _gen.generate(args.pattern, 0, datapath_bytes=n)
     child_id = _wrap.rp_child_id_from_hash(circ.pattern_hash16.hex())
     sv = _wrap.generate_rp_child(circ.pattern_hash16.hex(), datapath_bytes=n,
-                                 max_frame_bytes=args.max_frame)
+                                 max_frame_bytes=args.max_frame,
+                                 cores=args.engines)
     au = circ.automaton
 
     # ---- request schedule + expected replies -----------------------------
@@ -203,11 +206,15 @@ def main():
     r = mk_match_req(seq, b"abcde", out_cap=8, slot=0)
     reqs.append(r)
     expected.append(expect_status(r))
-    # PERF after the last real scan (fields checked loosely below)
-    seq += 1
-    perf_req = ETH_REQ + pdev.encode_frame(pdev.KIND_PERF_REQUEST, SLOT, seq, b"")
-    reqs.append(perf_req)
-    expected.append(None)                          # special-cased
+    # PERF after the last real scan (fields checked loosely below).
+    # engines>1: skipped — the tb streams frames back-to-back, so the PERF
+    # frame races the last_done update in the v4 top; on silicon PERF is
+    # always sequential-after-drain (pyro_hw), where the routing is exact.
+    if args.engines == 1:
+        seq += 1
+        perf_req = ETH_REQ + pdev.encode_frame(pdev.KIND_PERF_REQUEST, SLOT, seq, b"")
+        reqs.append(perf_req)
+        expected.append(None)                      # special-cased
 
     # ---- write workdir + run xsim ----------------------------------------
     wd = tempfile.mkdtemp(prefix="pyro_xsim_diff_")
@@ -250,10 +257,30 @@ def main():
             shutil.rmtree(wd, ignore_errors=True)
 
     # ---- compare -----------------------------------------------------------
+    # Replies are matched BY SEQ, not position: the v4 frame-parallel top
+    # legitimately reorders completions (a short corpus on core B finishes
+    # before a long one on core A).  Single-core order is deterministic and
+    # unaffected by keying.
     fails = 0
     if len(got) != len(expected):
         print(f"FAIL: reply count {len(got)} != expected {len(expected)}")
         return 1
+    def _seq_of(fr):
+        return struct.unpack(">I", fr[20:24])[0]
+    got_by_seq = {}
+    for g in got:
+        got_by_seq.setdefault(_seq_of(g), g)
+    if len(got_by_seq) != len(got):
+        print("FAIL: duplicate reply seq")
+        return 1
+    reordered = []
+    for e, r in zip(expected, reqs):
+        want_seq = _seq_of(r)
+        if want_seq not in got_by_seq:
+            print(f"FAIL: no reply for seq {want_seq}")
+            return 1
+        reordered.append(got_by_seq[want_seq])
+    got = reordered
     for i, (g, e) in enumerate(zip(got, expected)):
         if e is None:                              # PERF: loose field checks
             dec = pdev.decode_frame(g[14:])

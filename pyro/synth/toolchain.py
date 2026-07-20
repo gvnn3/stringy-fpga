@@ -162,6 +162,11 @@ class ToolchainConfig:
     # shell's DCPs.  Mismatches are safe but wasteful/limiting (see
     # rp_wrapper.generate_rp_child docstring).
     rp_max_frame_bytes: int = 1536
+    # P2e (v2.7.0): v4 frame-parallel core count for the wrapper.  1 =
+    # classic single-core emission (byte-identical); 2..4 = the demux/mux
+    # top with N unmodified cores (aggregate B/cyc scales by core count —
+    # the recurrence caps a single engine's width).
+    rp_cores: int = 1
     # R68/R83a (v2.2.5) evidence-manifest path: consulted ONLY by the R83a
     # pr_flow_present availability predicate, never by a synthesis job; absence
     # keeps the report false rather than failing anything.
@@ -723,7 +728,8 @@ class VivadoToolchain:
                 f.write(generate_rp_child(
                     job.pattern_hash,
                     datapath_bytes=getattr(job, "datapath_bytes", 1),
-                    max_frame_bytes=int(cfg.rp_max_frame_bytes)))
+                    max_frame_bytes=int(cfg.rp_max_frame_bytes),
+                    cores=int(getattr(cfg, "rp_cores", 1))))
             flow = (self._PR_FLOW_TCL
                     .replace("@RPCELL@", cfg.rp_cell)
                     .replace("@PART@", cfg.part)
