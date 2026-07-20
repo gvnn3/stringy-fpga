@@ -44,10 +44,19 @@ status) status ;;
 data)
   echo "=== onic -> qdma-pf ==="
   rmmod onic 2>/dev/null && echo "    onic removed" || echo "    (onic not loaded)"
-  if ! lsmod | grep -q '^qdma_pf'; then
-    insmod "$QDMA_KO"
-    echo "    qdma-pf inserted"
+  # Idempotent re-entry: tear down any prior qdma-pf state so a rebuilt .ko
+  # and fresh queue config always take effect.
+  if lsmod | grep '^qdma_pf' >/dev/null; then
+    "$DMACTL" "$QDEV" q stop idx "$QIDX" dir bi >/dev/null 2>&1 || true
+    "$DMACTL" "$QDEV" q del  idx "$QIDX" dir bi >/dev/null 2>&1 || true
+    rmmod qdma_pf
+    echo "    stale qdma-pf removed"
   fi
+  # mode <bus>:<pf>:<drv_mode>; drv_mode 2 = DIRECT_INTR (MSI-X per queue).
+  # The default AUTO mode POLLS for writeback status — a ~4.6 ms/frame
+  # latency floor that caps the char-dev at ~2 MiB/s.
+  insmod "$QDMA_KO" mode="${PYRO_QDMA_MODE:-02:0:2}"
+  echo "    qdma-pf inserted (mode=${PYRO_QDMA_MODE:-02:0:2})"
   sleep 1
   QMAX_SYS="/sys/bus/pci/devices/$BDF/qdma/qmax"
   [ -f "$QMAX_SYS" ] || { echo "ERROR: $QMAX_SYS missing — driver did not bind"; exit 2; }
@@ -80,12 +89,18 @@ with open(path, "r+b") as f:
 PYEOF
   ls -la /dev/${QDEV}-ST-${QIDX} 2>/dev/null || {
     echo "ERROR: char-dev /dev/${QDEV}-ST-${QIDX} did not appear"; exit 3; }
+  # Grant the invoking user the node (mirrors the CAP_NET_RAW scoping choice:
+  # one user, not world). SUDO_USER is who ran `sudo <this script>`.
+  if [ -n "${SUDO_USER:-}" ]; then
+    chown "$SUDO_USER" /dev/${QDEV}-ST-${QIDX}
+    echo "    owner -> $SUDO_USER"
+  fi
   echo "DATAPLANE_UP — /dev/${QDEV}-ST-${QIDX}"
   ;;
 
 control)
   echo "=== qdma-pf -> onic ==="
-  if lsmod | grep -q '^qdma_pf'; then
+  if lsmod | grep '^qdma_pf' >/dev/null; then
     "$DMACTL" "$QDEV" q stop idx "$QIDX" dir bi >/dev/null 2>&1 || true
     "$DMACTL" "$QDEV" q del  idx "$QIDX" dir bi >/dev/null 2>&1 || true
     rmmod qdma_pf

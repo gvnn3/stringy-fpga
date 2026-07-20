@@ -46,7 +46,8 @@ setup(
     ext_modules=[
         Extension(
             "pyro._fast",
-            sources=["src/pyro_ext.c", "src/pyro_route.c"],
+            sources=["src/pyro_ext.c", "src/pyro_route.c",
+                     "src/pyro_dataplane.c"],
             include_dirs=["include", "build/include"],
             extra_compile_args=["-O2", "-std=c11"],
             optional=True,   # no compiler => pure-Python install, still correct

@@ -85,6 +85,40 @@ def main():
     print(reason)
     if not usable:
         return 1
+    # P2d native loop (v2.7.0-draft): on the char-dev transport the
+    # interpreted credit loop costs more per frame than the whole hardware
+    # budget, so the compiled loop measures (same R3b.3 compiled-build
+    # discipline as the R3c router).  Requires exclusive queue access: the
+    # cached Python transport is hard-closed first.
+    if cfg.chardev is not None:
+        try:
+            from pyro import _fast
+            native = _fast.dataplane_pipeline
+        except (ImportError, AttributeError):
+            native = None
+        if native is not None:
+            tr = pdev._CHARDEV_CACHE.pop(cfg.chardev, None)
+            if tr is not None:
+                tr._hard_close()
+            time.sleep(0.2)   # let the zombie in-driver read drain
+            best = None
+            for w in WINDOWS:
+                recvd, n, wall, t_active, n_status, n_dup, n_other = native(
+                    cfg.chardev, SLOT, CHUNK, TOTAL_BYTES, w)
+                mib = recvd * CHUNK / wall / (1 << 20) if wall else 0.0
+                usf = wall / recvd * 1e6 if recvd else 0.0
+                lost = n - recvd
+                print(f"W={w:>3}  {mib:8.1f} MiB/s  {usf:7.1f} us/frame  "
+                      f"ok={recvd}/{n}" + (f"  LOST={lost}" if lost else ""))
+                if not lost and (best is None or mib > best[1]):
+                    best = (w, mib, usf)
+            if best:
+                print(f"\nbest (native, zero-loss): W={best[0]} at "
+                      f"{best[1]:.1f} MiB/s = {best[1]/1024:.3f} GiB/s "
+                      f"({best[2]:.2f} us/frame, "
+                      f"{CHUNK / (best[2] * 250.0):.3f} B/cyc-equivalent "
+                      f"at 250 MHz)")
+            return 0
     results = []
     for w in WINDOWS:
         transport = pdev._make_transport(cfg)

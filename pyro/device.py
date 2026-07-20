@@ -752,10 +752,35 @@ class _CharDevTransport(_Transport):
             # R68 no-default rule: no configured char-dev to open (fail-closed,
             # same contract as _EthTransport's unconfigured-iface OSError).
             raise OSError("PYRO_QDMA_CHARDEV not configured (R68, fail-closed)")
-        # O_NONBLOCK + select so recv honors the R86.7 timeout contract even if
-        # the driver's read path would otherwise block for a full request.
-        self._fd = os.open(config.chardev, os.O_RDWR | os.O_NONBLOCK)
+        import threading
+        self._fd = os.open(config.chardev, os.O_RDWR)
         self._buf = bytearray()
+        self._cond = threading.Condition()
+        self._stopped = False
+        # The qdma cdev has no poll hook (select() is meaningless) and its
+        # reads block in-driver until a packet boundary; a dedicated reader
+        # keeps a read PENDING at all times — without one, a reply arriving
+        # between reads has no posted C2H buffers and is dropped.
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def _read_loop(self) -> None:
+        # 12K request (3 pages): covers any single jumbo reply while keeping
+        # the per-read get_user_pages/IOMMU-map cost low — the driver
+        # completes a read at a packet boundary, so most reads return one
+        # small reply and a 64K request would map 16 pages for ~44 bytes.
+        while not self._stopped:
+            try:
+                chunk = os.read(self._fd, 12288)
+            except OSError:
+                if self._stopped:
+                    return
+                time.sleep(0.005)   # driver-timeout tick; retry while open
+                continue
+            if chunk:
+                with self._cond:
+                    self._buf += chunk
+                    self._cond.notify_all()
 
     def send(self, frame: bytes) -> None:
         # R78.9 sender pad to the 60-byte L2 minimum, mirroring _EthTransport:
@@ -795,44 +820,95 @@ class _CharDevTransport(_Transport):
             return frame
 
     def recv(self, timeout: float) -> Optional[bytes]:
-        import select
         deadline = time.monotonic() + max(0.0, float(timeout))
-        while True:
-            frame = self._extract_frame()
-            if frame is not None:
-                return frame
-            remaining = deadline - time.monotonic()
-            if remaining <= 0.0:
-                return None
-            r, _, _ = select.select([self._fd], [], [], remaining)
-            if not r:
-                return None
-            try:
-                chunk = os.read(self._fd, 65536)
-            except BlockingIOError:
-                continue
-            if chunk:
-                self._buf += chunk
+        with self._cond:
+            while True:
+                frame = self._extract_frame()
+                if frame is not None:
+                    return frame
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    return None
+                self._cond.wait(remaining)
 
     def close(self) -> None:
-        # R86.7 idempotent close.
+        # R86.7 idempotent close — SOFT for a char-dev transport.  A cdev
+        # read() syscall cannot be interrupted by close(fd): a hard close
+        # leaves a zombie in-driver read that STEALS the first reply of the
+        # next transport on the same queue (observed as exactly one lost
+        # frame per fresh transport).  The queue is process-multiplexed, so
+        # the instance is cached per path (_make_transport) and lives until
+        # process exit — the fatal-signal teardown then cancels the
+        # interruptible in-driver wait cleanly.  Soft close discards any
+        # buffered frames so a reuser never sees a predecessor's replies.
+        with self._cond:
+            self._buf.clear()
+
+    def _hard_close(self) -> None:
+        """Really release the fd AND terminate the in-driver read.
+
+        Closing the fd alone cannot cancel a blocked cdev read — the zombie
+        request lives on (≤ its 10 s driver timeout) and STEALS the next
+        frames on the queue.  The driver wait is interruptible and dequeues
+        the request under the descq lock on interruption, so a signal to the
+        reader thread cancels it cleanly; the PEP-475 retry then hits the
+        closed fd (EBADF) and the reader exits.
+        """
+        import signal
+        import threading
+        self._stopped = True
         fd, self._fd = self._fd, -1
         if fd >= 0:
             try:
                 os.close(fd)
             except OSError:
                 pass
+        reader = getattr(self, "_reader", None)
+        if (reader is not None and reader.is_alive()
+                and reader is not threading.current_thread()):
+            try:
+                if threading.current_thread() is threading.main_thread():
+                    # no-op handler so the signal is not fatal; only replace
+                    # the default disposition, never a user-installed handler
+                    if signal.getsignal(signal.SIGUSR1) == signal.SIG_DFL:
+                        signal.signal(signal.SIGUSR1, lambda *_: None)
+                signal.pthread_kill(reader.ident, signal.SIGUSR1)
+                reader.join(timeout=1.0)
+            except Exception:
+                pass
+        with self._cond:
+            self._cond.notify_all()
+
+
+_CHARDEV_CACHE: dict = {}
+_CHARDEV_CACHE_LOCK = None  # lazily built to keep threading off import
 
 
 def _make_transport(config: DeviceConfig) -> _Transport:
     """R86.7 transport selection: the injected ``transport_factory`` seam wins
     (R86.6), else the P2d char-dev when configured (v2.7.0-draft precedence:
     the PF is bound to qdma-pf, so the netdev does not exist), else the
-    ``AF_PACKET`` netdev transport."""
+    ``AF_PACKET`` netdev transport.
+
+    Char-dev transports are CACHED per path: the queue supports exactly one
+    reader, and closing a cdev fd cannot cancel its in-flight read (see
+    _CharDevTransport.close), so one instance serves the whole process.
+    """
     if config.transport_factory is not None:
         return config.transport_factory(config)
     if config.chardev is not None:
-        return _CharDevTransport(config)
+        global _CHARDEV_CACHE_LOCK
+        if _CHARDEV_CACHE_LOCK is None:
+            import threading
+            _CHARDEV_CACHE_LOCK = threading.Lock()
+        with _CHARDEV_CACHE_LOCK:
+            tr = _CHARDEV_CACHE.get(config.chardev)
+            if tr is None or tr._stopped:
+                tr = _CharDevTransport(config)
+                _CHARDEV_CACHE[config.chardev] = tr
+            else:
+                tr.close()   # soft: drop any predecessor's buffered frames
+            return tr
     return _EthTransport(config)
 
 

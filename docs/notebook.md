@@ -17,21 +17,125 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-2. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-3. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-4. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-5. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-6. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-7. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-8. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-9. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-10. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-11. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-12. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-13. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-14. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-15. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+2. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+3. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+4. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+5. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+6. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+7. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+8. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+9. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+10. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+11. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+12. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+13. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+14. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+15. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+16. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+---
+
+# EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon :complete:
+
+## 1. Hypothesis
+
+The AC-3-3 R1/R2 hardware clause — Phase 3's last unmet clause — requires the
+P2 performance transport (QDMA char-devs, F5) plus ≥ 1 GiB/s wall-clock. The
+frame path owns ~10.8 µs/frame on AF_PACKET; a char-dev data plane plus a
+native credit loop should reach the child's ~6.5 µs/frame ceiling
+(≈ 1.4 GiB/s) and flip the clause from honest SKIP to PASS.
+
+## 2. How
+
+Generic qdma-pf (dma_ip_drivers 2024.1) binds the single PF in place of onic
+(`scripts/pyro_dataplane_swap.sh`, NOPASSWD-granted); R78 control frames ride
+the ST queues — AXIS payloads either way. Host side: `_CharDevTransport`
+(re-framing reader thread, cached per path) + `_fast.dataplane_pipeline`
+(compiled windowed credit loop, R3b.3 discipline). Six silicon-found driver
+incompatibilities fixed in a local `dma_ip_drivers` branch.
+
+### Key commands
+
+```bash
+sudo scripts/pyro_dataplane_swap.sh data     # onic -> qdma-pf + QCONF poke
+PYRO_QDMA_CHARDEV=/dev/qdma02000-ST-0 PYRO_BENCH_JUMBO=1 \
+    .venv-pyro/bin/python3 scripts/pyro_pipeline_bench.py
+PYRO_DEVICE_IFACE=ens2 PYRO_QDMA_CHARDEV=/dev/qdma02000-ST-0 \
+    .venv-pyro/bin/python3 -m pytest tests/acceptance/test_ac3_3_benchmark.py
+```
+
+## 3. Observations
+
+- **Silicon-found driver incompatibilities** (each bisected on hardware,
+  committed as `dma_ip_drivers` branch `pyro-open-nic-compat` 4e12421):
+  1. shell QCONF (BAR2 0x1000) resets to num_q=0 — all H2C tready-blocked
+     until poked (swap script does it; onic programs it, generic driver
+     cannot know it exists);
+  2. H2C descriptor DW0[31:0] is open-nic **metadata = total packet length**
+     (tlast placement), not cdh_flags/pld_len — the stock fields decode as a
+     garbage packet length;
+  3. one ST packet = one physically-contiguous descriptor — page-crossing
+     user SGLs split frames; fixed with a ≤16K contiguous bounce buffer,
+     fire-and-forget (fp_done frees; sync writes cost 18 µs and serialize);
+  4. `sgl_map` mapped PAGE_SIZE@0 per sg (in-tree `!! TODO`) — a >4K
+     contiguous sg had one page IOMMU-mapped; DMAR read faults halted the
+     engine (the intermittent early successes were deferred-unmap luck);
+  5. C2H CMPT: open-nic pkt_len at [47:32], desc_used never set — stock
+     parser EIO'd every reply;
+  6. reads must complete at packet boundaries (completion path AND
+     submit-time copy — the latter otherwise strands buffered replies).
+- **Zombie reads steal frames**: closing a cdev fd cannot cancel its
+  in-driver read; the orphan steals the next transport's first replies
+  (exactly LOST=1 per bench window). Fixed: per-path transport cache (a
+  queue supports one reader) + `_hard_close` interrupts the reader via
+  SIGUSR1 (the driver wait is interruptible and dequeues under lock).
+- **The 4.6 ms/frame mystery was arithmetic**: one stolen frame per window
+  burned the 2 s recv timeout; real per-frame cost was 43 µs all along.
+- **Python was the last wall**: 22 µs/frame interpreted (GIL contention
+  sender vs reader). The compiled loop (`src/pyro_dataplane.c`, GIL
+  released):
+
+  | Path | µs/frame | Throughput | loss |
+  |------|----------|------------|------|
+  | AF_PACKET jumbo (19 Jul) | 16.1 | 567 MiB/s | 0 |
+  | char-dev, Python loop | 22–24 | ~400 MiB/s | 0 |
+  | char-dev, native loop W≥64 | **5.44** | **1.636 GiB/s** | **0** |
+
+  Soak: 3 × 256 MiB (84,270 frames), 1.57–1.62 GiB/s, zero loss, zero
+  kernel errors, direct-interrupt mode.
+- **AC-3-3: 4/4 PASSED** with PYRO_QDMA_CHARDEV configured — including
+  `test_r1_r2_hardware_win_regime_requires_device` (windowed B2 shape,
+  zero-loss discipline, chardev predicate met, 1.6 GiB/s ≥ the 1 GiB/s
+  floor). First run lost 2/3511 frames to the discovery transport's zombie
+  read and honestly SKIPped; the SIGUSR1 fix made it clean.
+
+## 4. Data analysis
+
+5.44 µs/frame against the child's ~6.5 µs/frame model estimate: the loop is
+now **child-bound** (wall-clock 1.76 GB/s ≈ 88% of the 1.996 GB/s on-chip
+rate R78.11 reports). The remaining gap is frame turnaround, as designed.
+The R1 floor is met on the P2 performance transport with 64% headroom; the
+5 GiB/s target needs the wide-engine ladder (N=16+) and/or multi-queue —
+out of the data plane's hands now. **Phase 3 status: AC-3-1, AC-3-2, AC-3-4
+device-free PASS; AC-3-3 4/4 on silicon** — contingent on owner adoption of
+the B1/B2 amendment slate (docs/spec-amendments-p2d.md); code and tests
+carry v2.7.0-draft markers, the spec file itself is untouched.
+
+## 5. Ideas for future experiments
+
+- Owner review: adopt B1/B2 → spec v2.7.0; then re-emit the AC-3-3 metrics
+  as the normative record.
+- Upstream candidates: the `sgl_map` offset+len fix is a genuine stock bug
+  (their own TODO); the rest is open-nic-specific — consider a Xilinx PR
+  for the former.
+- 5 GiB/s ladder: N=16 engine PR build + multi-queue TX (replies already
+  steer to qid 0 via the zero indirection table).
+- The `status=0xffffffff` reset-register reads and the transient
+  `eqdma CSR timeout` at queue start remain unexplained (benign so far).
+- pyro_hw.py / load_partial recovery in data mode: R85a recover_cmd
+  reloads onic — needs a data-mode-aware recovery (swap control -> load ->
+  swap data).
+
 ---
 
 # EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched :complete:

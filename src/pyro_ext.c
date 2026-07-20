@@ -793,6 +793,9 @@ fast_decide_raw(PyObject *mod, PyObject *const *args, Py_ssize_t nargs)
     return PyLong_FromLong(pyro_route_decide_inline(&in));
 }
 
+/* src/pyro_dataplane.c — P2d native windowed MATCH loop (v2.7.0-draft) */
+extern PyObject *pyro_dataplane_pipeline(PyObject *self, PyObject *args);
+
 static PyMethodDef fast_methods[] = {
     {"configure",   fast_configure,   METH_VARARGS,
      "configure(serve_single, serve_finditer, run_single, run_finditer, "
@@ -808,6 +811,10 @@ static PyMethodDef fast_methods[] = {
      "cold-path shim for _route._record_error_fallback (R52)"},
     {"decide_raw",  (PyCFunction)(void (*)(void))fast_decide_raw, METH_FASTCALL,
      "test-only: run the native R51 decision core on raw inputs"},
+    {"dataplane_pipeline", pyro_dataplane_pipeline, METH_VARARGS,
+     "dataplane_pipeline(chardev, slot, chunk, total, window) -> "
+     "(recvd, nframes, wall_s) -- native P2d windowed MATCH credit loop "
+     "(v2.7.0-draft B2 measurement shape); requires exclusive queue access"},
     {NULL}
 };
 

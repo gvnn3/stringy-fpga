@@ -314,23 +314,76 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
                 "slot 1 or 0 (R78.8 STATUS/no-reply) — R1 throughput binds "
                 "only for resident circuits (R1/R51); recorded SKIP")
 
-        total, sent_frames, rtts = 0, 0, []
-        chunk = b"\x78" * _MATCH_CHUNK           # match-free filler
-        t0 = time.perf_counter()
-        while total < S_MIN:
-            t1 = time.perf_counter()
-            dec = _match_roundtrip(cfg, transport, slot, chunk,
-                                   8000 + sent_frames)
-            rtts.append(time.perf_counter() - t1)
-            if dec is None or dec.kind != pdev.KIND_MATCH_REPLY:
+        # Informative sequential RTT (B2: MAY be reported, MUST NOT decide
+        # the floor) — one round trip at the active payload bound.
+        rtts = []
+        t1 = time.perf_counter()
+        dec = _match_roundtrip(cfg, transport, slot, b"\x78" * 64, 7900)
+        rtts.append(time.perf_counter() - t1)
+
+        native = None
+        if cfg.chardev is not None:
+            try:
+                from pyro import _fast as _fast_mod
+                native = getattr(_fast_mod, "dataplane_pipeline", None)
+            except ImportError:
+                native = None
+
+        if native is not None:
+            # B2 (v2.7.0-draft) measurement shape: windowed aggregate
+            # wall-clock throughput over the P2 performance transport with
+            # EVERY frame accounted (any loss => run invalid).  The compiled
+            # loop measures (R3b.3 compiled-build discipline): the
+            # interpreted credit loop's per-frame cost exceeds the entire
+            # hardware budget.  Exclusive queue access: hard-close the
+            # cached Python transport first.
+            window = 64
+            chunk_len = pdev.MAX_PAYLOAD_JUMBO - _MATCH_PREFIX.size
+            tr = pdev._CHARDEV_CACHE.pop(cfg.chardev, None)
+            if tr is not None:
+                tr._hard_close()
+            time.sleep(0.2)      # drain the zombie in-driver read
+            recvd, nframes, wall_s, t_active, n_status, n_dup, n_other = \
+                native(cfg.chardev, slot, chunk_len,
+                       max(S_MIN, 32 << 20), window)
+            total, sent_frames = recvd * chunk_len, int(nframes)
+            lost = int(nframes) - int(recvd)
+            if lost:
+                _emit_metric(record_property, "r1_r2_hardware_win_regime", {
+                    "requirement":
+                        "R1/R2 win regime on hardware (resident circuits)",
+                    "status": "invalid",
+                    "lost_frames": lost,
+                    "frames": sent_frames,
+                    "window": window,
+                })
                 pytest.skip(
-                    f"R1 measurement aborted mid-stream at byte {total}: "
-                    f"{'no reply' if dec is None else 'STATUS reply'} for "
-                    f"frame {sent_frames} (transient device state, R84) — "
+                    f"R1 measurement invalid: {lost}/{nframes} frames "
+                    f"unaccounted at W={window} (B2 zero-loss discipline) — "
                     f"recorded SKIP, never a PASS")
-            total += len(chunk)
-            sent_frames += 1
-        wall_s = time.perf_counter() - t0
+        else:
+            # Sequential fallback (pre-P2d transports): stream >= S_min,
+            # chunked at the R78.9 bound — RTT-bound, so on this shape the
+            # floor is effectively unreachable and the honest SKIP below
+            # names the missing P2 prerequisite.
+            window = 1
+            total, sent_frames = 0, 0
+            chunk = b"\x78" * _MATCH_CHUNK       # match-free filler
+            t0 = time.perf_counter()
+            while total < S_MIN:
+                t1 = time.perf_counter()
+                dec = _match_roundtrip(cfg, transport, slot, chunk,
+                                       8000 + sent_frames)
+                rtts.append(time.perf_counter() - t1)
+                if dec is None or dec.kind != pdev.KIND_MATCH_REPLY:
+                    pytest.skip(
+                        f"R1 measurement aborted mid-stream at byte {total}: "
+                        f"{'no reply' if dec is None else 'STATUS reply'} "
+                        f"for frame {sent_frames} (transient device state, "
+                        f"R84) — recorded SKIP, never a PASS")
+                total += len(chunk)
+                sent_frames += 1
+            wall_s = time.perf_counter() - t0
     finally:
         transport.close()
 
@@ -341,11 +394,17 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
         "status": "measured",
         "device_probe_reason": reason,
         "resident_slot": slot,
-        "transport": "raw-Ethernet control frames (functional, P2 pending)",
+        "transport": ("QDMA ST char-dev (P2 performance transport, "
+                      "v2.7.0-draft B1)" if cfg.chardev is not None
+                      else "raw-Ethernet control frames (functional, "
+                      "P2 pending)"),
         "p2_qdma_chardevs": p2_chardevs,
+        "measurement_shape": (f"windowed W={window}, zero-loss (B2)"
+                              if window > 1 else "sequential (pre-B2)"),
         "corpus_bytes": total,
         "frames": sent_frames,
-        "chunk_bytes": _MATCH_CHUNK,
+        "chunk_bytes": (pdev.MAX_PAYLOAD_JUMBO - _MATCH_PREFIX.size
+                        if cfg.chardev is not None else _MATCH_CHUNK),
         "wall_s": wall_s,
         "median_frame_rtt_ms": statistics.median(rtts) * 1e3,
         "throughput_bytes_per_s": bps,

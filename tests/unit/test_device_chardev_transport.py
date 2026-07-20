@@ -37,7 +37,7 @@ def fifo(tmp_path):
 def transport(fifo):
     t = pdev._CharDevTransport(pdev.DeviceConfig(iface=None, chardev=fifo))
     yield t
-    t.close()
+    t._hard_close()
 
 
 def _feed(fifo, data):
@@ -87,21 +87,66 @@ def test_recv_timeout_returns_none(transport):
     assert transport.recv(0.05) is None
 
 
-def test_send_pads_to_l2_minimum(fifo, transport):
-    short = _frame(b"")                      # 28 B on the wire
-    transport.send(short)
-    fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+def test_send_pads_to_l2_minimum(fifo, monkeypatch):
+    written = []
+    real_write = os.write
+    t = pdev._CharDevTransport(pdev.DeviceConfig(iface=None, chardev=fifo))
     try:
-        raw = os.read(fd, 4096)
+        monkeypatch.setattr(os, "write",
+                            lambda fd, b: written.append(bytes(b)) or len(b))
+        short = _frame(b"")                  # 28 B on the wire
+        t.send(short)
+        assert written == [short + b"\x00" * (60 - len(short))]
     finally:
-        os.close(fd)
-    assert raw == short + b"\x00" * (60 - len(short))
+        monkeypatch.setattr(os, "write", real_write)
+        t.close()
+
+
+def test_send_recv_loopback(fifo, transport):
+    # The O_RDWR FIFO loops sends back through the reader thread: the padded
+    # frame must come back re-framed WITHOUT its zero pad (R78.3 length rules).
+    f = _frame(b"loopback", seq=9)
+    transport.send(f)
+    assert transport.recv(1.0) == f
 
 
 def test_close_is_idempotent(fifo):
     t = pdev._CharDevTransport(pdev.DeviceConfig(iface=None, chardev=fifo))
     t.close()
     t.close()                                # second close must not raise
+    t._hard_close()
+    t._hard_close()                          # hard close idempotent too
+
+
+def test_soft_close_discards_buffered_frames(fifo, transport):
+    # close() is SOFT (the cdev read cannot be cancelled): the fd stays open
+    # but a reuser must never see a predecessor's replies.
+    f = _frame(b"stale", seq=11)
+    _feed(fifo, f)
+    assert transport.recv(0.5) == f          # buffered path works
+    _feed(fifo, _frame(b"stale2", seq=12))
+    import time
+    time.sleep(0.1)                          # let the reader buffer it
+    transport.close()
+    assert transport.recv(0.05) is None      # predecessor frames discarded
+    f3 = _frame(b"fresh", seq=13)
+    _feed(fifo, f3)
+    assert transport.recv(0.5) == f3         # transport still usable
+
+
+def test_make_transport_caches_per_chardev_path(fifo):
+    cfg = pdev.DeviceConfig(iface=None, chardev=fifo)
+    t1 = pdev._make_transport(cfg)
+    t2 = pdev._make_transport(pdev.DeviceConfig(iface=None, chardev=fifo))
+    try:
+        assert t1 is t2                      # one reader per queue
+    finally:
+        t1._hard_close()
+    t3 = pdev._make_transport(cfg)           # stopped instance is replaced
+    try:
+        assert t3 is not t1
+    finally:
+        t3._hard_close()
 
 
 def test_unconfigured_chardev_fails_closed():
@@ -118,7 +163,7 @@ def test_make_transport_precedence(fifo):
     try:
         assert isinstance(t, pdev._CharDevTransport)      # chardev > iface
     finally:
-        t.close()
+        t._hard_close()
 
 
 def test_probe_reason_names_chardev_gate(tmp_path):
