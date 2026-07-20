@@ -101,10 +101,18 @@ def main():
             if tr is not None:
                 tr._hard_close()
             time.sleep(0.2)   # let the zombie in-driver read drain
+            # Multi-queue TX (5 GiB/s ladder): sibling ST nodes of the
+            # configured queue, if the operator started them (accessible
+            # check keeps this fail-closed to whatever the swap created).
+            import glob as _glob
+            prefix = cfg.chardev.rsplit("-", 1)[0]
+            paths = tuple(p for p in sorted(_glob.glob(prefix + "-*"))
+                          if os.access(p, os.R_OK | os.W_OK)) or (cfg.chardev,)
+            print(f"native loop over {len(paths)} TX queue(s)")
             best = None
             for w in WINDOWS:
                 recvd, n, wall, t_active, n_status, n_dup, n_other = native(
-                    cfg.chardev, SLOT, CHUNK, TOTAL_BYTES, w)
+                    paths, SLOT, CHUNK, TOTAL_BYTES, w)
                 mib = recvd * CHUNK / wall / (1 << 20) if wall else 0.0
                 usf = wall / recvd * 1e6 if recvd else 0.0
                 lost = n - recvd

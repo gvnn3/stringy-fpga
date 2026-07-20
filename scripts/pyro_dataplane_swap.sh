@@ -47,8 +47,8 @@ data)
   # Idempotent re-entry: tear down any prior qdma-pf state so a rebuilt .ko
   # and fresh queue config always take effect.
   if lsmod | grep '^qdma_pf' >/dev/null; then
-    "$DMACTL" "$QDEV" q stop idx "$QIDX" dir bi >/dev/null 2>&1 || true
-    "$DMACTL" "$QDEV" q del  idx "$QIDX" dir bi >/dev/null 2>&1 || true
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true; done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true; done
     rmmod qdma_pf
     echo "    stale qdma-pf removed"
   fi
@@ -61,14 +61,20 @@ data)
   QMAX_SYS="/sys/bus/pci/devices/$BDF/qdma/qmax"
   [ -f "$QMAX_SYS" ] || { echo "ERROR: $QMAX_SYS missing — driver did not bind"; exit 2; }
   echo 32 > "$QMAX_SYS"
-  # ST queue pair on index $QIDX. C2H needs a completion ring; defaults plus
-  # explicit trigger mode so replies surface without batching latency.
-  "$DMACTL" "$QDEV" q add idx "$QIDX" mode st dir bi >/dev/null
-  "$DMACTL" "$QDEV" q start idx "$QIDX" dir h2c >/dev/null
-  # cmptsz 0 = 8 B completion entries; trigmode every = surface each reply
-  # immediately (latency over batching — replies are ~64 B).
-  "$DMACTL" "$QDEV" q start idx "$QIDX" dir c2h cmptsz 0 trigmode every >/dev/null
-  echo "    ST queue $QIDX started (bi)"
+  # ST queue pairs on indexes QIDX..QIDX+QCOUNT-1 (default 4: parallel TX
+  # queues for the 5 GiB/s target — the per-write syscall cost serializes a
+  # single queue at ~3 GB/s; separate queues have separate descq locks).
+  # The all-zero RSS indirection table steers EVERY C2H reply to qid 0, so
+  # queue 0 is the only reader; the extras are TX-only in practice.  C2H is
+  # still started on each (harmless; cmptsz 0 = 8 B entries, trigmode every
+  # = surface each reply immediately, latency over batching).
+  QCOUNT="${PYRO_QDMA_QCOUNT:-4}"
+  for q in $(seq "$QIDX" $((QIDX + QCOUNT - 1))); do
+    "$DMACTL" "$QDEV" q add idx "$q" mode st dir bi >/dev/null
+    "$DMACTL" "$QDEV" q start idx "$q" dir h2c >/dev/null
+    "$DMACTL" "$QDEV" q start idx "$q" dir c2h cmptsz 0 trigmode every >/dev/null
+  done
+  echo "    ST queues $QIDX..$((QIDX + QCOUNT - 1)) started (bi)"
   # SHELL-side function qid map (NOT a QDMA-IP register): the open-nic
   # qdma_subsystem gates H2C tready on qid ∈ [q_base, q_base+num_q)
   # (qdma_subsystem_function.sv:185-194) and QCONF resets to num_q=0 — all
@@ -89,20 +95,22 @@ with open(path, "r+b") as f:
 PYEOF
   ls -la /dev/${QDEV}-ST-${QIDX} 2>/dev/null || {
     echo "ERROR: char-dev /dev/${QDEV}-ST-${QIDX} did not appear"; exit 3; }
-  # Grant the invoking user the node (mirrors the CAP_NET_RAW scoping choice:
+  # Grant the invoking user the nodes (mirrors the CAP_NET_RAW scoping choice:
   # one user, not world). SUDO_USER is who ran `sudo <this script>`.
   if [ -n "${SUDO_USER:-}" ]; then
-    chown "$SUDO_USER" /dev/${QDEV}-ST-${QIDX}
-    echo "    owner -> $SUDO_USER"
+    for q in $(seq "$QIDX" $((QIDX + QCOUNT - 1))); do
+      chown "$SUDO_USER" /dev/${QDEV}-ST-${q}
+    done
+    echo "    owner -> $SUDO_USER (${QCOUNT} nodes)"
   fi
-  echo "DATAPLANE_UP — /dev/${QDEV}-ST-${QIDX}"
+  echo "DATAPLANE_UP — /dev/${QDEV}-ST-${QIDX}..$((QIDX + QCOUNT - 1))"
   ;;
 
 control)
   echo "=== qdma-pf -> onic ==="
   if lsmod | grep '^qdma_pf' >/dev/null; then
-    "$DMACTL" "$QDEV" q stop idx "$QIDX" dir bi >/dev/null 2>&1 || true
-    "$DMACTL" "$QDEV" q del  idx "$QIDX" dir bi >/dev/null 2>&1 || true
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true; done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true; done
     rmmod qdma_pf
     echo "    qdma-pf removed"
   else
