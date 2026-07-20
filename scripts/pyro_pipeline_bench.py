@@ -85,7 +85,7 @@ def main():
     print(reason)
     if not usable:
         return 1
-    # P2d native loop (v2.7.0-draft): on the char-dev transport the
+    # P2d native loop (v2.7.0): on the char-dev transport the
     # interpreted credit loop costs more per frame than the whole hardware
     # budget, so the compiled loop measures (same R3b.3 compiled-build
     # discipline as the R3c router).  Requires exclusive queue access: the

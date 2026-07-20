@@ -291,7 +291,7 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
     # Stream >= S_min through the resident circuit over the real transport,
     # chunked at the R78.9 frame bound, and time it end-to-end.
     transport = pdev._make_transport(cfg)  # hardware clause: real transport
-    # (P2d v2.7.0-draft: with PYRO_QDMA_CHARDEV configured this IS the P2
+    # (P2d v2.7.0: with PYRO_QDMA_CHARDEV configured this IS the P2
     # performance transport; otherwise the raw-Ethernet control transport.)
     try:
         # Resident slot discovery (R64 single-tenant: slot 1, then 0); a
@@ -330,7 +330,7 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
                 native = None
 
         if native is not None:
-            # B2 (v2.7.0-draft) measurement shape: windowed aggregate
+            # B2 (v2.7.0) measurement shape: windowed aggregate
             # wall-clock throughput over the P2 performance transport with
             # EVERY frame accounted (any loss => run invalid).  The compiled
             # loop measures (R3b.3 compiled-build discipline): the
@@ -395,7 +395,7 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
         "device_probe_reason": reason,
         "resident_slot": slot,
         "transport": ("QDMA ST char-dev (P2 performance transport, "
-                      "v2.7.0-draft B1)" if cfg.chardev is not None
+                      "v2.7.0 B1)" if cfg.chardev is not None
                       else "raw-Ethernet control frames (functional, "
                       "P2 pending)"),
         "p2_qdma_chardevs": p2_chardevs,

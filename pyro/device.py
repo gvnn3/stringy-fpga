@@ -312,7 +312,7 @@ def _sampled_iface() -> Optional[str]:
 
 
 def _sampled_chardev() -> Optional[str]:
-    """The sampled PYRO_QDMA_CHARDEV (R68, P2d v2.7.0-draft), else ``None`` —
+    """The sampled PYRO_QDMA_CHARDEV (R68, P2d v2.7.0), else ``None`` —
     **no spec default, fail-closed** (same F3/R68 no-default rule as the
     iface): the QDMA ST char-dev exists only while the operator has swapped
     the PF binding to ``qdma-pf`` (scripts/pyro_dataplane_swap.sh), so nothing
@@ -376,7 +376,7 @@ class DeviceConfig:
     # -- probe (R83/R84); iface from PYRO_DEVICE_IFACE (R68) -----------------
     # onic netdev (F3); None = unconfigured => fail-closed (R68 v2.5.0)
     iface: Optional[str] = field(default_factory=_sampled_iface)
-    # P2d QDMA ST char-dev (v2.7.0-draft); None = unconfigured => the netdev
+    # P2d QDMA ST char-dev (v2.7.0); None = unconfigured => the netdev
     # transport.  When set, it takes precedence over iface: the PF is bound to
     # qdma-pf, so the netdev does not exist while the char-dev does.
     chardev: Optional[str] = field(default_factory=_sampled_chardev)
@@ -412,7 +412,7 @@ _REASON_PROBE = (
     "probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, "
     "or static_shell_id SPEC16 mismatch)")
 _REASON_TRANSPORT = "transport: CAP_NET_RAW absent"
-# P2d (v2.7.0-draft): char-dev-mode counterpart of _REASON_TRANSPORT — the
+# P2d (v2.7.0): char-dev-mode counterpart of _REASON_TRANSPORT — the
 # gate is file accessibility of the configured PYRO_QDMA_CHARDEV node.
 _REASON_CHARDEV = "transport: QDMA char-dev not accessible"
 
@@ -444,7 +444,7 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
     only on a genuinely malformed reply frame (R86.4), which the caller treats as
     not-usable.
     """
-    # P2d (v2.7.0-draft): with a configured char-dev the PF is bound to
+    # P2d (v2.7.0): with a configured char-dev the PF is bound to
     # qdma-pf — the transport gate is char-dev accessibility (an fd open needs
     # only file permission), and CAP_NET_RAW/iface do not apply.
     chardev_mode = (config.chardev is not None
@@ -732,7 +732,7 @@ class _EthTransport(_Transport):
 
 
 class _CharDevTransport(_Transport):
-    """P2d QDMA ST char-dev transport (v2.7.0-draft), conforming to the R86.7
+    """P2d QDMA ST char-dev transport (v2.7.0), conforming to the R86.7
     ``Transport`` protocol.
 
     Carries the SAME full Ethernet frames as :class:`_EthTransport`: the card
@@ -886,7 +886,7 @@ _CHARDEV_CACHE_LOCK = None  # lazily built to keep threading off import
 
 def _make_transport(config: DeviceConfig) -> _Transport:
     """R86.7 transport selection: the injected ``transport_factory`` seam wins
-    (R86.6), else the P2d char-dev when configured (v2.7.0-draft precedence:
+    (R86.6), else the P2d char-dev when configured (v2.7.0 precedence:
     the PF is bound to qdma-pf, so the netdev does not exist), else the
     ``AF_PACKET`` netdev transport.
 

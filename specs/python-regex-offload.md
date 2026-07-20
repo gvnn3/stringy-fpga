@@ -1,10 +1,10 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.6.0
-- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2; Phase-3 slate A1–A4 adopted 2026-07-15 — R3b measurement protocol, R67 seams extended, R73a PR timing-gate scope, F2/F3 demoted to configuration; JTAG PR wedge root-caused and in-band recovery (R85a) folded into `load_partial` 2026-07-15 — first on-silicon R45a counter read)
+- **Version:** 2.7.0
+- **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame protocol + PR-shell contract + `pyro.device` specified; PR shell flashed and boot-verified on the U250 2026-07-10; in-band R45a counter read-out (R78.11) added; Vivado toolchain re-pinned to 2025.2; Phase-3 slate A1–A4 adopted 2026-07-15 — R3b measurement protocol, R67 seams extended, R73a PR timing-gate scope, F2/F3 demoted to configuration; JTAG PR wedge root-caused and in-band recovery (R85a) folded into `load_partial` 2026-07-15 — first on-silicon R45a counter read; P2d slate B1–B2 adopted 2026-07-20 — QDMA char-dev performance transport bound (R68 `PYRO_QDMA_CHARDEV`, R78.12 transport equivalence, R83 char-dev clause, F5 updated) and the R1 hardware clause made decidable as windowed aggregate throughput; R1 floor met on silicon 2026-07-20 at 1.62 GiB/s, AC-3-3 4/4)
 - **Owner:** Spec Writer
-- **Date:** 2026-07-15
+- **Date:** 2026-07-20
 
 ---
 
@@ -95,17 +95,25 @@ them; implementers MUST NOT assume different hardware.
   `0000:02:00.0`.*
 - **F4.** The OpenNIC shell provides a **user plugin / dynamic region** clocked
   at 250 MHz intended for custom RTL. This is the region PYRO targets.
-- **F5.** As of this writing, **no** Vivado/Vitis/XRT tools are on `PATH`
-  (`vivado`, `v++`, `xbutil` not found) and **no** `/dev/xdma*` or `/dev/qdma*`
-  character devices exist. Toolchain and data-transport enablement are
-  prerequisites (see §11), not assumptions.
+- **F5 (updated v2.7.0/B1).** QDMA character devices are **operator-enableable**
+  on this host: the recipe is the `pyro-open-nic-compat` branch of
+  `dma_ip_drivers` (2024.1; six open-nic shell incompatibilities fixed on
+  silicon 2026-07-20) built for the running kernel, bound in place of `onic`
+  by `scripts/pyro_dataplane_swap.sh data` (which also programs the shell's
+  per-function `QCONF` qid window — a shell register the generic driver
+  cannot know about). Their presence remains a **fact about the host at probe
+  time**, re-checked via the R83 char-dev transport clause, never assumed:
+  the shell exposes **one PF**, so the `onic` netdev and the char-devs are
+  mutually exclusive bindings (the swap is the operator action). Vivado
+  toolchain presence is still governed by R70/R71.
 
-> **Note on transport reality (F5):** because only the `onic` netdev path
-> currently exists, the spec defines **two** transport bindings (§7): a
-> **QDMA character-device binding** (the performance target, requires driver/
-> char-dev enablement) and a **raw-Ethernet-frame binding** to the NIC function
-> (works with the current `onic` netdev, lower performance). The runtime MUST
-> select a binding at initialization and MUST NOT hard-code one.
+> **Note on transport reality (F5, v2.7.0):** the spec defines **two**
+> transport bindings (§7): the **QDMA character-device binding** (the P2
+> performance transport, R78.12) and the **raw-Ethernet-frame binding** to
+> the NIC function (the functional control transport). The runtime MUST
+> select a binding at initialization per R68 (`PYRO_QDMA_CHARDEV` configured
+> ⇒ char-dev, else `PYRO_DEVICE_IFACE` ⇒ raw Ethernet, else fail-closed) and
+> MUST NOT hard-code one.
 
 ---
 
@@ -1787,6 +1795,15 @@ without reading code. They are PYRO-specific and MUST NOT appear on the standard
     raise, MUST NOT guess, and MUST NOT scan the system for candidate interfaces
     (R70 no-scanning discipline). This is the same fail-loud rule already carried by
     `PYRO_PR_STATIC_DCP` / `PYRO_PR_REFERENCE_DCP`.
+  - `PYRO_QDMA_CHARDEV` (**NEW obligation, v2.7.0/B1**) — the QDMA ST char-dev
+    node (e.g. `/dev/qdma02000-ST-0`) for the P2 performance transport
+    (R78.12). **No default; fail-closed** (same rule as `PYRO_DEVICE_IFACE`):
+    the node exists only while the operator has bound the PF to the `qdma-pf`
+    driver (F5), so an unset knob selects the raw-Ethernet control transport
+    and nothing is guessed or scanned (R70). When configured it takes
+    **precedence** over `PYRO_DEVICE_IFACE`: the PF is single and
+    driver-bound exclusively, so the netdev does not exist while the
+    char-dev does (R83 char-dev clause).
   - `PYRO_HW_SERVER` (**NEW obligation, v2.2.2**) — the Vivado `hw_server` URL the
     JTAG loader (R85/R86.5) connects to. **Default `TCP:localhost:3121`** (the
     stock `hw_server` port). Registered as a knob because the server location is
@@ -2009,7 +2026,22 @@ Requires the toolchain and transport prerequisites (§11 P1/P2).
   anyway** over the control transport (R3b.3 measure-first discipline) and
   record a **SKIP whose reason states the measured control-plane throughput
   and names the missing P2 prerequisite** — never a PASS (the floor is unmet)
-  and never a FAIL (what is missing is the P2 data plane, not the circuit). The **absolute** routing/decision bounds (R3a/R5,
+  and never a FAIL (what is missing is the P2 data plane, not the circuit).
+  **Measurement shape (v2.7.0/B2, normative):** the R1/R2 hardware
+  demonstration measures **aggregate wall-clock scan throughput with a
+  W-frame in-flight window** (the R59/P2a credit-loop discipline): total
+  corpus bytes / wall seconds, streamed through the resident circuit over the
+  P2 performance transport, with **every frame accounted** (any loss ⇒ the
+  run is **invalid** — recorded as a SKIP naming the loss, never averaged
+  over, never a PASS). W is reported in the emitted metric. W=1 (sequential)
+  per-frame RTT MAY be reported as informative latency and MUST NOT be used
+  to claim or deny the R1 floor — R1 bounds *throughput*, and a sequential
+  shape binds transport+child latency instead (at the jumbo bound a
+  sequential round trip would need ≤ 8.9 µs to clear 1 GiB/s, a latency
+  requirement R1 never states). The floor and target constants are
+  unchanged. Where the interpreted credit loop's per-frame cost exceeds the
+  hardware budget, the measurement MAY be taken by a compiled loop (the
+  R3b.3 compiled-build discipline, same rationale as R3c). The **absolute** routing/decision bounds (R3a/R5,
   ≤ 2 µs median) are asserted against the model in all cases. The **relative**
   loss-regime bound (R3b, 1.15×) binds **only when its native-hot-path precondition
   holds (R3c)**; while the R51 routing decision is served at Python level it does
@@ -2102,7 +2134,11 @@ automatic tier-based dispatch and prewarming.
 - **AC-3-3.** The benchmark suite emits machine-readable metrics for R1–R5 and,
   on hardware, demonstrates the win regime (R1/R2, resident circuits) and the
   loss-regime routing (R3), and records synthesis/PR-load costs separately from
-  scan throughput. Without hardware, R1/R2 are SKIP, R3–R5 PASS. This is the phase
+  scan throughput. Without hardware, R1/R2 are SKIP, R3–R5 PASS. The R1/R2
+  hardware clause binds on the P2 performance transport with the **v2.7.0/B2
+  windowed zero-loss measurement shape** (normative text at AC-2-5); it first
+  met the floor on silicon 2026-07-20 (1.62 GiB/s sustained, W=64,
+  5.44 µs/frame, zero loss over 84k frames). This is the phase
   at which the native routing/dispatch hot path is a deliverable, so the R3b
   **relative** 1.15× bound becomes a **hard PASS requirement** here (its R3c
   precondition now holds) rather than a SKIP as in earlier phases, measured per
@@ -2372,6 +2408,20 @@ requires `CAP_NET_RAW` (P2/P3, R83). The shell's `max_pkt_len` is **1518 bytes**
     `harness_version` (R47b). Per R79 this is a **partial-bitstream-only** change:
     the static shell and the R80 boundary are untouched, and no reflash is required.
 
+  - **R78.12 (transport equivalence — normative, v2.7.0/B1).** Both §7 transport
+    bindings carry the **identical byte stream**: 14-byte L2 header + R78 frame,
+    zero-padded to the 60-byte L2 minimum by the sender. The card parses AXIS
+    payload bytes and cannot distinguish the host driver; every R78 message kind
+    (probe, MATCH, PERF, STATUS) rides either binding unchanged. On the char-dev
+    binding: one `write()` is one H2C ST packet (`tlast` at its end), and C2H
+    replies are **re-framed host-side** by the R78.3 `length` field — a char-dev
+    read has no datagram boundary, so the receiver skips inter-frame zero padding
+    and resyncs on the ethertype+`MAGIC`/`VERSION` prefix after any
+    desynchronization (a desynced stream degrades to dropped frames, never a
+    wedged parser). Consequence: R79's partial-only protocol-evolution guarantee
+    is transport-independent, and a protocol change never forces a transport
+    change (or vice versa).
+
 - **R79 (frame parsing lives inside `pyro_rp`).** The PYRO control-frame parser and
   responder are implemented **inside the reconfigurable partition `pyro_rp`**
   (§10.2, R80), **not** in the static OpenNIC shell. Consequence (normative): a
@@ -2496,15 +2546,23 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
     earlier placeholder `<first missing R82d artifact>` wording).
   - **`device_usable` flips true** iff **both**: (i) a **live probe** sends
     `ID_REQUEST` and receives a valid `ID_REPLY` whose `static_shell_id` satisfies
-    the R81 `SPEC16` check within `PYRO_PROBE_TIMEOUT` (R84); **and** (ii) transport
-    privilege **`CAP_NET_RAW`** is present (AF_PACKET send/recv on the `onic` netdev,
-    P2/P3). If either is absent, `device_usable` is **false**.
+    the R81 `SPEC16` check within `PYRO_PROBE_TIMEOUT` (R84); **and** (ii) the
+    transport gate holds for the **selected binding** (v2.7.0/B1): on the
+    raw-Ethernet binding, privilege **`CAP_NET_RAW`** is present (AF_PACKET
+    send/recv on the `onic` netdev, P2/P3); on the char-dev binding
+    (`PYRO_QDMA_CHARDEV` configured, which takes precedence — R68), the
+    configured node is **accessible** (an fd open needs file permission, not
+    `CAP_NET_RAW`, and the netdev conditions do not apply: the PF is bound to
+    `qdma-pf`, so the netdev does not exist). If either (i) or (ii) is absent,
+    `device_usable` is **false**.
   - **Canonical SKIP string (normative).** When `device_usable == false`, the probe
     MUST emit `device_usable=false — ` followed by a comma-separated enumeration, in
     this fixed order, of **exactly the unmet conditions** among:
     1. `transport: PYRO_DEVICE_IFACE not configured`
     2. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)`
-    3. `transport: CAP_NET_RAW absent`
+    3. `transport: CAP_NET_RAW absent` — **or, in char-dev mode (v2.7.0/B1),**
+       `transport: QDMA char-dev not accessible` (condition 1 is never claimed
+       in char-dev mode: a configured char-dev IS a configured transport)
     A clause requiring `device_usable ∧ pr_flow_present` appends
     `; pr_flow_present=false — <first unmet R83a condition>` when that predicate is
     also false. This **supersedes** the fixed v2.1.3 literal
@@ -2909,12 +2967,18 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates `xcu250_0`
   model and mock toolchain (R7/R63b); Phase 2 clauses are gated by the R71 live/SKIP
   matrix (a SKIP names the absent prerequisite; a PASS comes only from real
   execution).
-- **P2 (transport enablement).** The performance-target QDMA char-dev binding
-  requires the QDMA PF/queue setup and `/dev/qdma*` (or equivalent) char devices,
-  which do not currently exist (F5). Until then, the **raw-Ethernet-frame
-  binding** to the `onic` netdev (F3/R68) is the functional transport; its control-frame
-  format is **specified in §10.1 (R78)** (v2.2.0, R76 lifted, R50) and it requires
-  `CAP_NET_RAW` for the `AF_PACKET` path (the gate on `device_usable`, R83).
+- **P2 (transport enablement — DELIVERED v2.7.0/B1, 2026-07-20).** The
+  performance-target QDMA char-dev binding requires the QDMA PF/queue setup and
+  `/dev/qdma*` char devices, **operator-enableable per F5** (the
+  `pyro-open-nic-compat` driver branch + `scripts/pyro_dataplane_swap.sh`).
+  The binding is selected by `PYRO_QDMA_CHARDEV` (R68), carries the identical
+  R78 byte stream (R78.12), and its transport gate is node accessibility (R83
+  char-dev clause). The **raw-Ethernet-frame binding** to the `onic` netdev
+  (F3/R68) remains the functional control transport when the PF is in control
+  mode; its control-frame format is **specified in §10.1 (R78)** (v2.2.0, R76
+  lifted, R50) and it requires `CAP_NET_RAW` for the `AF_PACKET` path (the
+  gate on `device_usable`, R83). The R1 floor was met on the char-dev binding
+  2026-07-20 (1.62 GiB/s, AC-2-5/AC-3-3 B2 shape).
 - **P3 (privilege).** MMIO/DMA and raw-frame transport typically require root or
   specific capabilities. The runtime MUST detect insufficient privilege and fall
   back to the model/CPU with a clear diagnostic rather than crashing (R52).

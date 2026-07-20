@@ -1329,3 +1329,7 @@ Done, continue
 
 Commit all work.
 
+## 2026-07-20 06:18:29
+
+Adopt B1 and B2, apply them to the spec.
+

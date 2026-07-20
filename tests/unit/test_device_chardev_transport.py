@@ -1,4 +1,4 @@
-"""P2d (v2.7.0-draft): the QDMA ST char-dev transport in pyro.device.
+"""P2d (v2.7.0): the QDMA ST char-dev transport in pyro.device.
 
 LIVE (no hardware): a named FIFO stands in for /dev/qdmaNNNNN-ST-N (same
 byte-stream, no-datagram-boundary semantics), driving _CharDevTransport's

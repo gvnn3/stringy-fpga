@@ -793,7 +793,7 @@ fast_decide_raw(PyObject *mod, PyObject *const *args, Py_ssize_t nargs)
     return PyLong_FromLong(pyro_route_decide_inline(&in));
 }
 
-/* src/pyro_dataplane.c — P2d native windowed MATCH loop (v2.7.0-draft) */
+/* src/pyro_dataplane.c — P2d native windowed MATCH loop (v2.7.0) */
 extern PyObject *pyro_dataplane_pipeline(PyObject *self, PyObject *args);
 
 static PyMethodDef fast_methods[] = {
@@ -814,7 +814,7 @@ static PyMethodDef fast_methods[] = {
     {"dataplane_pipeline", pyro_dataplane_pipeline, METH_VARARGS,
      "dataplane_pipeline(chardev, slot, chunk, total, window) -> "
      "(recvd, nframes, wall_s) -- native P2d windowed MATCH credit loop "
-     "(v2.7.0-draft B2 measurement shape); requires exclusive queue access"},
+     "(v2.7.0 B2 measurement shape); requires exclusive queue access"},
     {NULL}
 };
 

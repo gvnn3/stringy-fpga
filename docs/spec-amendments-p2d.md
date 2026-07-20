@@ -1,7 +1,9 @@
 # Spec amendments for owner review — P2d slate (char-dev data plane)
 
-- **Target spec:** `specs/python-regex-offload.md` (currently **v2.6.0**, 2026-07-17)
-- **Status:** **DRAFT — awaiting owner review**
+- **Target spec:** `specs/python-regex-offload.md` (was **v2.6.0**, 2026-07-17)
+- **Status:** **ADOPTED into v2.7.0** — both amendments B1–B2 APPROVED by the
+  owner (2026-07-20) and applied to the spec. The AC-3-3 R1/R2 hardware PASS
+  (1.62 GiB/s, W=64, zero loss, 2026-07-20) is the normative record.
 - **Date:** 2026-07-19
 - **Author:** drafted on evidence from the `phase1-pyro` working tree, the
   19 Jul jumbo-on-silicon measurements (docs/notebook.md #19-jul-2026-144310),

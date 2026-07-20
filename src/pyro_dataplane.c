@@ -1,5 +1,5 @@
 /* pyro_dataplane.c — native pipelined MATCH credit loop for the P2d
- * QDMA char-dev transport (v2.7.0-draft, amendment B2 measurement shape).
+ * QDMA char-dev transport (v2.7.0, amendment B2 measurement shape).
  *
  * The interpreted credit loop costs ~15-20 us/frame of Python/GIL work —
  * above the whole per-frame hardware budget.  This is the same argument that

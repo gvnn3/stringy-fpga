@@ -174,7 +174,7 @@ _VIVADO_DIR = None
 _HW_SERVER_DEFAULT = "TCP:localhost:3121"
 _DEVICE_IFACE = None
 _HW_SERVER = _HW_SERVER_DEFAULT
-# R68 P2d data-plane knob (v2.7.0-draft) — PYRO_QDMA_CHARDEV names the QDMA ST
+# R68 P2d data-plane knob (v2.7.0) — PYRO_QDMA_CHARDEV names the QDMA ST
 # char-dev (e.g. /dev/qdma02000-ST-0) carrying the same eth-framed R78 AXIS
 # payloads as the netdev transport.  **No default, fail-closed** (same F3/R68
 # no-default rule as the iface): the char-dev only exists while the operator
@@ -237,7 +237,7 @@ def sample_env() -> None:
         # F3/R68 v2.5.0); an unset PYRO_HW_SERVER keeps the stock spec default.
         _di = os.environ.get("PYRO_DEVICE_IFACE")
         _DEVICE_IFACE = _di if _di else None
-        # R68 P2d char-dev knob (v2.7.0-draft): no default, fail-closed.
+        # R68 P2d char-dev knob (v2.7.0): no default, fail-closed.
         _qc = os.environ.get("PYRO_QDMA_CHARDEV")
         _QDMA_CHARDEV = _qc if _qc else None
         _hs = os.environ.get("PYRO_HW_SERVER")
@@ -300,7 +300,7 @@ def device_iface():
 
 
 def qdma_chardev():
-    """Cached PYRO_QDMA_CHARDEV (R68, P2d v2.7.0-draft), the QDMA ST char-dev
+    """Cached PYRO_QDMA_CHARDEV (R68, P2d v2.7.0), the QDMA ST char-dev
     path for the performance transport — ``None`` when unset (**no spec
     default; fail-closed**: the char-dev exists only while the operator has
     swapped the PF to qdma-pf, so nothing is guessed and nothing is scanned).

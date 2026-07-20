@@ -361,7 +361,7 @@ def test_probe_unconfigured_iface_fails_closed_canonical():  # AC-2b-2 (R68/R83,
     (no valid ID_REPLY) is NOT enumerated; the CAP_NET_RAW condition follows
     when the capability is also absent (fixed R83 order: 1 then 3)."""
     # Privilege present (cap_check seam): the unconfigured iface is the ONLY
-    # unmet condition.  chardev is pinned None (P2d v2.7.0-draft): a sampled
+    # unmet condition.  chardev is pinned None (P2d v2.7.0): a sampled
     # PYRO_QDMA_CHARDEV is a VALIDLY CONFIGURED transport, and this test
     # isolates the unconfigured-iface clause.
     usable, reason = pdev.probe_device(
@@ -378,7 +378,7 @@ def test_probe_unconfigured_iface_fails_closed_canonical():  # AC-2b-2 (R68/R83,
 def test_perf_readout_unconfigured_iface_is_unavailable():  # R78.11/R68 (v2.5.0)
     """read_perf_counters with no iface and no transport seam fails closed to
     None (counters unavailable) — never a raise, a guess, or a scan (R70).
-    chardev pinned None (P2d v2.7.0-draft): with PYRO_QDMA_CHARDEV configured
+    chardev pinned None (P2d v2.7.0): with PYRO_QDMA_CHARDEV configured
     the transport exists and the counters are genuinely readable — this test
     is about the fully-unconfigured case."""
     assert pdev.read_perf_counters(
