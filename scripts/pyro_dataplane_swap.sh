@@ -116,6 +116,45 @@ control)
   else
     echo "    (qdma-pf not loaded)"
   fi
+  # Reset user box + QDMA subsystem before handing the PF to onic. A wedged
+  # RP holds a queue MSI-X vector pending across the swap and fires it the
+  # instant onic's request_irq completes — before ndo_open has allocated
+  # rx_queue[] (the 2026-07-25 panic). Same pulse ordering as
+  # pyro_wedge_recover.sh; PCIe link stays up (soft_reset_n only).
+  # PYRO_SWAP_NO_RESET=1 skips it (e.g. to preserve pyro box state on a
+  # known-healthy card).
+  if [ -z "${PYRO_SWAP_NO_RESET:-}" ]; then
+    BDF="$BDF" python3 - <<'PYEOF'
+import mmap, os, struct, sys, time
+
+REGS = {"build_ts": 0x000, "shell_rst": 0x00C, "shell_status": 0x010,
+        "user_rst": 0x014, "user_status": 0x018}
+
+def rd(m, off): return struct.unpack("<I", m[off:off+4])[0]
+def wr(m, off, v): m[off:off+4] = struct.pack("<I", v)
+
+def pulse(m, rst, status, name):
+    wr(m, rst, 0x1)
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        if rd(m, status) & 0x1:
+            print(f"    {name}: RESET_DONE (status={rd(m, status):#010x})")
+            return
+        time.sleep(0.001)
+    sys.exit(f"    {name}: TIMEOUT — rst_done never asserted")
+
+path = f"/sys/bus/pci/devices/{os.environ['BDF']}/resource2"
+with open(path, "r+b") as f:
+    m = mmap.mmap(f.fileno(), 4096)
+    ts = rd(m, REGS["build_ts"])
+    if ts in (0x0, 0xFFFFFFFF):
+        sys.exit(f"    ABORT: build timestamp {ts:#010x} — BAR dead, not poking")
+    print(f"    build_timestamp={ts:#010x}")
+    pulse(m, REGS["user_rst"], REGS["user_status"], "user[0]  (pyro box+RP)")
+    pulse(m, REGS["shell_rst"], REGS["shell_status"], "shell[0] (QDMA soft)")
+PYEOF
+    echo "    pre-insmod reset done"
+  fi
   insmod "$ONIC_KO"
   sleep 1
   ip link set "$IFACE" up
