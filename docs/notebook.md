@@ -1818,3 +1818,15 @@ hypothesis: state decay inside the EQDMA5.0 soft IP (or its clocking) that
 only full reconfiguration (QSPI cold boot / full JTAG program) clears.
 Next cold boot should re-baseline: expect near-clean multi-queue behavior
 initially, degrading with accumulated multi-queue traffic.
+
+## 2026-07-25 late — instrumented shell built, flashed; x4 partial rebuilt
+
+Full DFX build of the instrumented jumbo shell (H2C pkt/err counters,
+84d1228): PR_VERIFY_ALL_OK, static timing met, ~2h40m. QSPI flashed over
+JTAG with the card live (documented operator risk decision; host survived,
+golden image untouched) — activates on next COLD power cycle. x4 partial
+rebuilt against the new static: pr_verified, met_timing, fmax 256.9 MHz —
+do NOT JTAG-load it before the cold boot. Old-shell DCPs preserved in
+hw/dfx/build/dcp.jumbo-20260717.bak. Demo walkthrough: docs/demo.md.
+Post-boot: read h2cstats before/after a 4q bench — err delta is the direct
+measurement of IP-corrupted packets for the AMD case.
