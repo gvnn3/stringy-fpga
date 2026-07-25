@@ -1349,3 +1349,15 @@ Commit and run the benchmark
 
 Continue when the build finishes
 
+## 2026-07-25 02:59:10
+
+The system rebooted.  Figure out where you were in the building of the system.
+
+## 2026-07-25 03:06:20
+
+Continue when the build finishes
+
+## 2026-07-25 03:07:34
+
+Commit and run the benchmark
+
