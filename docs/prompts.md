@@ -1361,3 +1361,15 @@ Continue when the build finishes
 
 Commit and run the benchmark
 
+## 2026-07-25 03:08:12
+
+Continue when the build finishes
+
+## 2026-07-25 13:16:05
+
+The system panic'd again.  Find the root cause befrore continuing to build the rest of the project.  Was the panic due to the FPGA or another source?
+
+## 2026-07-25 15:40:07
+
+Carry out the fixes and proceed with the project.
+
