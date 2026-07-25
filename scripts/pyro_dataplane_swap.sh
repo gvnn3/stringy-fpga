@@ -173,6 +173,34 @@ PYEOF
   echo "CONTROL_UP — $IFACE"
   ;;
 
+h2cstats)
+  # Instrumented-shell H2C counters (84d1228): BAR2 0x5000 = packets from
+  # QDMA, 0x5110 = packets flagged tuser_err.  Readback is unsynchronized
+  # across clock domains, so read until two consecutive samples agree.
+  # Pre-instrumentation shells return 0xDEADBEEF for both.
+  BDF="$BDF" python3 - <<'PYEOF'
+import mmap, os, struct
+
+def stable(m, off):
+    prev = None
+    for _ in range(8):
+        v = struct.unpack("<I", m[off:off+4])[0]
+        if v == prev:
+            return v
+        prev = v
+    return prev
+
+path = f"/sys/bus/pci/devices/{os.environ['BDF']}/resource2"
+with open(path, "r+b") as f:
+    m = mmap.mmap(f.fileno(), 0x6000)
+    pkt, err = stable(m, 0x5000), stable(m, 0x5110)
+    if pkt in (0xDEADBEEF, 0xFFFFFFFF):
+        print("H2C_STATS unavailable (pre-instrumentation shell)")
+    else:
+        print(f"H2C_STATS pkts={pkt} err={err}")
+PYEOF
+  ;;
+
 iommu)
   # Runtime IOMMU domain switch for 02:00.0 (EQDMA loss experiment,
   # notebook 2026-07-25): DMA-FQ (default, lazy invalidation) | DMA
