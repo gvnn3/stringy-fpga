@@ -1791,3 +1791,30 @@ Candidate next steps (decision needed):
 3. Add an err-drop counter to `qdma_subsystem_h2c` in the next static-shell
    spin (needs QSPI reflash) for direct visibility.
 4. Try EQDMA IP version bump / AMD support case with the evidence matrix.
+
+## 2026-07-25 evening — steps 1+2 of the follow-up ladder
+
+**1. Retransmit watchdog (cc253c0).** Two-tier: positional hole detection
+(2W + MAX_TXQ behind the send watermark, ~0.7 ms at W=64) + 10 ms full-stall
+blanket resend, rotated across TX queues. Isolated losses heal at ~1 ms and
+windows complete with every frame accounted. NOT sufficient alone: loss
+arrives partly as ~1 s per-queue episodes, and a >10 s C2H freeze on queue 0
+(the sole reply queue) still aborts the reader at the driver timeout.
+
+**2. IOMMU experiments (runtime domain switch, swap-script `iommu` mode).**
+Group 52 default is DMA-FQ (lazy invalidation). Strict (`DMA`): still lossy —
+the lazy-unmap race theory is dead. Identity (pt-equivalent, brief controlled
+run): still lossy (RETX 1-2 per 438-frame window) — translation removed,
+loss persists. **The IOMMU is exonerated as root cause**; the DMAR faults on
+record are consequences (device DMA against torn-down mappings after
+timeouts), not causes. Domain restored to DMA-FQ.
+
+**New observation: cumulative degradation across soft resets.** Loss/episode
+rates have worsened monotonically through the day regardless of user+shell
+soft resets, driver reloads, queue re-creation, IOMMU domain, or driver mode.
+The morning-after-cold-boot state (1 loss per ~3000 frames) has not been
+recoverable since. Soft reset does not reconfigure the static shell —
+hypothesis: state decay inside the EQDMA5.0 soft IP (or its clocking) that
+only full reconfiguration (QSPI cold boot / full JTAG program) clears.
+Next cold boot should re-baseline: expect near-clean multi-queue behavior
+initially, degrading with accumulated multi-queue traffic.

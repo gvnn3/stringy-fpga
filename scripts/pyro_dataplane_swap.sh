@@ -173,5 +173,23 @@ PYEOF
   echo "CONTROL_UP — $IFACE"
   ;;
 
-*) echo "usage: $0 {data|control|status}" >&2; exit 1 ;;
+iommu)
+  # Runtime IOMMU domain switch for 02:00.0 (EQDMA loss experiment,
+  # notebook 2026-07-25): DMA-FQ (default, lazy invalidation) | DMA
+  # (strict invalidation, keeps translation) | identity (pt-equivalent,
+  # NO write protection — stray device writes hit RAM; controlled
+  # experiments only).  Both drivers must be (and are) unbound first.
+  want="${PYRO_IOMMU_TYPE:?iommu mode needs PYRO_IOMMU_TYPE=DMA|DMA-FQ|identity}"
+  grp="$(basename "$(readlink /sys/bus/pci/devices/$BDF/iommu_group)")"
+  rmmod onic 2>/dev/null || true
+  if lsmod | grep '^qdma_pf' >/dev/null; then
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true; done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true; done
+    rmmod qdma_pf
+  fi
+  echo "$want" > "/sys/kernel/iommu_groups/$grp/type"
+  echo "IOMMU_TYPE group $grp -> $(cat /sys/kernel/iommu_groups/$grp/type)"
+  ;;
+
+*) echo "usage: $0 {data|control|status|iommu}" >&2; exit 1 ;;
 esac
