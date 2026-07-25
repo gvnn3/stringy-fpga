@@ -343,9 +343,16 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
             if tr is not None:
                 tr._hard_close()
             time.sleep(0.2)      # drain the zombie in-driver read
-            recvd, nframes, wall_s, t_active, n_status, n_dup, n_other = \
-                native(cfg.chardev, slot, chunk_len,
-                       max(S_MIN, 32 << 20), window)
+            # P2e: the native loop carries a retransmit watchdog (seq-
+            # idempotent MATCH; EQDMA multi-queue silent drop, notebook
+            # 2026-07-25).  Every frame stays accounted — a retransmitted
+            # frame is answered under its own seq — so B2's zero-loss
+            # discipline holds with n_retx > 0; the count is recorded
+            # below.  Whether certified runs may carry retransmits is a
+            # pending P2e spec-amendment question for the owner.
+            (recvd, nframes, wall_s, t_active, n_status, n_dup, n_other,
+             n_retx) = native(cfg.chardev, slot, chunk_len,
+                              max(S_MIN, 32 << 20), window)
             total, sent_frames = recvd * chunk_len, int(nframes)
             lost = int(nframes) - int(recvd)
             if lost:
@@ -356,6 +363,7 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
                     "lost_frames": lost,
                     "frames": sent_frames,
                     "window": window,
+                    "retx_frames": int(n_retx),
                 })
                 pytest.skip(
                     f"R1 measurement invalid: {lost}/{nframes} frames "
@@ -368,6 +376,7 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
             # names the missing P2 prerequisite.
             window = 1
             total, sent_frames = 0, 0
+            n_retx = 0
             chunk = b"\x78" * _MATCH_CHUNK       # match-free filler
             t0 = time.perf_counter()
             while total < S_MIN:
@@ -399,8 +408,10 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
                       else "raw-Ethernet control frames (functional, "
                       "P2 pending)"),
         "p2_qdma_chardevs": p2_chardevs,
-        "measurement_shape": (f"windowed W={window}, zero-loss (B2)"
+        "measurement_shape": (f"windowed W={window}, zero-loss (B2, "
+                              f"P2e retx watchdog)"
                               if window > 1 else "sequential (pre-B2)"),
+        "retx_frames": int(n_retx),
         "corpus_bytes": total,
         "frames": sent_frames,
         "chunk_bytes": (pdev.MAX_PAYLOAD_JUMBO - _MATCH_PREFIX.size

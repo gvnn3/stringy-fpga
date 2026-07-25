@@ -813,8 +813,10 @@ static PyMethodDef fast_methods[] = {
      "test-only: run the native R51 decision core on raw inputs"},
     {"dataplane_pipeline", pyro_dataplane_pipeline, METH_VARARGS,
      "dataplane_pipeline(chardev, slot, chunk, total, window) -> "
-     "(recvd, nframes, wall_s) -- native P2d windowed MATCH credit loop "
-     "(v2.7.0 B2 measurement shape); requires exclusive queue access"},
+     "(recvd, nframes, wall_s, t_active_s, n_status, n_dup, n_other, "
+     "n_retx) -- native P2d windowed MATCH credit loop (v2.7.0 B2 "
+     "measurement shape + P2e retransmit watchdog); requires exclusive "
+     "queue access"},
     {NULL}
 };
 

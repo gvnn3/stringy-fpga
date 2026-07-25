@@ -115,14 +115,15 @@ def main():
             print(f"native loop over {len(paths)} TX queue(s)")
             best = None
             for w in WINDOWS:
-                recvd, n, wall, t_active, n_status, n_dup, n_other = native(
-                    paths, SLOT, CHUNK, TOTAL_BYTES, w)
+                (recvd, n, wall, t_active, n_status, n_dup, n_other,
+                 n_retx) = native(paths, SLOT, CHUNK, TOTAL_BYTES, w)
                 mib = recvd * CHUNK / wall / (1 << 20) if wall else 0.0
                 usf = wall / recvd * 1e6 if recvd else 0.0
                 lost = n - recvd
                 print(f"W={w:>3}  {mib:8.1f} MiB/s  {usf:7.1f} us/frame  "
                       f"ok={recvd}/{n}"
                       + (f"  LOST={lost}" if lost else "")
+                      + (f"  RETX={n_retx}" if n_retx else "")
                       + (f"  [status={n_status} dup={n_dup} other={n_other}]"
                          if (n_status or n_dup or n_other) else ""))
                 if not lost and (best is None or mib > best[1]):
