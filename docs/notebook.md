@@ -1717,3 +1717,77 @@ is a prerequisite for any hardware build. Full design captured in
 - Benchmark CPython `re` vs. `re2`/`hyperscan` on target corpora to set the
   offload break-even thresholds (AC targets in the spec)
 - Prototype Phase 0 software-only shim (`fpga_re`) with CPython fallback
+
+---
+
+# 2026-07-25 — Panic root-cause + multi-queue H2C frame-loss investigation
+
+## Panic (04:00:26, resolved)
+
+`BUG: NULL pointer deref addr 0x80` during onic probe, right after the
+qdma-pf→onic swap on a JTAG-wedged card. `onic_q_handler` dereferences
+`priv->rx_queue[qid]` (NULL until ndo_open); a wedged RP holds a queue MSI-X
+vector pending across the swap and fires it the instant request_irq completes.
+`napi` sits at +0x70 in onic_rx_queue, `napi.state` at +0x10 → 0x80. Fixed:
+NULL guard in the handler (open-nic-driver 9282346) + the swap-control path
+now pulses user[0]/shell[0] resets before insmod (stringy-fpga 8ddee80).
+Separately: the Jul 20 09:40 outage shows a silent log stop — power cut, not
+a panic.
+
+## x4 core on silicon
+
+`pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit` (built 03:54, fmax
+259.8 MHz, pr_verified) loads and answers MATCH. Peak measured: **5.27 GB/s =
+5.14 GiB/s at W=64** (4 TX queues, jumbo) — above the 5 GiB/s target — but
+runs are not reliably loss-free (below), so the R1-target number cannot be
+certified yet.
+
+## Multi-queue H2C stochastic frame loss (open)
+
+Symptom: with ≥2 H2C queues active, individual MATCH_REQUEST frames vanish
+(~1/1500 at 4q); the reply never exists, the reader then eats the qdma-pf 10 s
+request timeout, and the bench window aborts (large LOST numbers are that
+abort draining, not additional per-frame loss). Aborted windows leave
+in-flight frames that flush later with no reader — runs following aborted
+runs look catastrophically worse until a reset + fresh queues.
+
+Evidence matrix (all on silicon today):
+
+| Config                            | Result |
+|-----------------------------------|--------|
+| 1 queue — every window, any core  | 0 loss (repeated, incl. MAXFETCH=0) |
+| ≥2 queues, x4 core, jumbo         | lossy |
+| ≥2 queues, N=8 core, jumbo        | lossy (same stack was 0-loss Jul 20) |
+| ≥2 queues, small frames (1-desc)  | lossy → not multi-desc interleave |
+| Direct-intr / auto / poll mode    | all lossy → not the IRQ re-arm race |
+| hw_server killed                  | lossy → not JTAG/TAP interference |
+| WB_ACC_INT 5→0                    | lossy (no change) |
+| MAXFETCH 2→0                      | ~100× worse → fetch-latency dose-response |
+| MAXFETCH 0, 1 queue               | 0 loss → multi-queue is the trigger |
+| Sysmon                            | 58.8 °C, VCCINT 0.844 V — not thermal |
+| PCIe                              | Gen3 x16, no AER — not the link |
+
+Drop point: `qdma_subsystem_h2c.sv` ("Drop error packets") silently discards
+H2C packets the EQDMA5.0 Soft IP flags with `tuser_err`. char-dev write()
+returns success (writeback CIDX advances), so the loss is invisible to the
+host. DMAR history: 3 read faults (Jul 20 02:25–02:29, fault 0x06) + 1 write
+fault (Jul 25 16:05, fault 0x05) from 02:00.0 — device DMA to unmapped IOVAs;
+consistent with engine-side stale/erroneous fetches; IOMMU is in translated +
+lazy-invalidation mode. dma-ctl context reads during traffic aggravate loss
+(CSR/context engine contention) — same engine family as the TCP_CSR_TIMEOUT
+(0x12EC) latched on the wedged card at 03:56.
+
+Conclusion: defect (or IOMMU-interaction) in the EQDMA5.0 Soft IP multi-queue
+H2C descriptor path. Host software, harness RTL (both old and x4), and all
+driver modes exonerated.
+
+Candidate next steps (decision needed):
+1. Host retransmission layer in the native loop (seq-idempotent MATCH makes
+   retry safe) — converts ~0.1% loss into goodput noise; unblocks the 5 GiB/s
+   certification; protocol-level adoption would need a spec amendment.
+2. Reboot with `iommu=pt` or `intel_iommu=strict` to split IP bug vs
+   IOMMU-latency interaction (pt removes write-protection from the stray-write
+   failure mode — do it as a controlled experiment only).
+3. Add an err-drop counter to `qdma_subsystem_h2c` in the next static-shell
+   spin (needs QSPI reflash) for direct visibility.
+4. Try EQDMA IP version bump / AMD support case with the evidence matrix.

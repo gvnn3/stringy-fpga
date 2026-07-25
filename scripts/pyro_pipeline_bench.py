@@ -25,7 +25,7 @@ MATCH_PREFIX = struct.Struct(">QHH")
 MAX_PAYLOAD = (pdev.MAX_PAYLOAD_JUMBO if os.environ.get("PYRO_BENCH_JUMBO")
                else pdev.MAX_PAYLOAD)
 CHUNK = MAX_PAYLOAD - MATCH_PREFIX.size               # corpus bytes per frame
-TOTAL_BYTES = 4 << 20                                  # 4 MiB per window size
+TOTAL_BYTES = int(os.environ.get("PYRO_BENCH_TOTAL_MB") or 4) << 20  # per window
 SLOT = 1
 WINDOWS = (1, 2, 4, 8, 16, 32, 64)
 TIMEOUT_S = 2.0
@@ -108,6 +108,10 @@ def main():
             prefix = cfg.chardev.rsplit("-", 1)[0]
             paths = tuple(p for p in sorted(_glob.glob(prefix + "-*"))
                           if os.access(p, os.R_OK | os.W_OK)) or (cfg.chardev,)
+            # PYRO_BENCH_QUEUES=n caps the TX fan-out (loss isolation: 1 queue
+            # vs many distinguishes host writer races from RTL arbitration).
+            nq = int(os.environ.get("PYRO_BENCH_QUEUES") or len(paths))
+            paths = paths[:max(1, nq)]
             print(f"native loop over {len(paths)} TX queue(s)")
             best = None
             for w in WINDOWS:
@@ -117,7 +121,10 @@ def main():
                 usf = wall / recvd * 1e6 if recvd else 0.0
                 lost = n - recvd
                 print(f"W={w:>3}  {mib:8.1f} MiB/s  {usf:7.1f} us/frame  "
-                      f"ok={recvd}/{n}" + (f"  LOST={lost}" if lost else ""))
+                      f"ok={recvd}/{n}"
+                      + (f"  LOST={lost}" if lost else "")
+                      + (f"  [status={n_status} dup={n_dup} other={n_other}]"
+                         if (n_status or n_dup or n_other) else ""))
                 if not lost and (best is None or mib > best[1]):
                     best = (w, mib, usf)
             if best:

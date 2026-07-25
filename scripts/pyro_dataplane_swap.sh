@@ -14,6 +14,18 @@
 # usable immediately. Defaults are overridable via environment:
 set -euo pipefail
 
+mode="${1:-status}"
+
+# sudo strips the environment, so overrides ride as trailing PYRO_*=value
+# args:  sudo .../pyro_dataplane_swap.sh data PYRO_QDMA_MODE=02:0:0
+shift 2>/dev/null || true
+for kv in "$@"; do
+  case "$kv" in
+    PYRO_[A-Z_]*=*) export "$kv" ;;
+    *) echo "ERROR: unrecognized arg '$kv' (want PYRO_*=value)" >&2; exit 1 ;;
+  esac
+done
+
 BDF="${PYRO_BDF:-0000:02:00.0}"
 QDEV="qdma$(echo "$BDF" | sed 's/^0000://; s/[:.]//g')"        # qdma02000
 DMA_IP="${DMA_IP_DRIVERS:-/home/gnn/Repos/Yale/dma_ip_drivers/QDMA/linux-kernel}"
@@ -28,8 +40,6 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "ERROR: run me with sudo:  sudo $0 {data|control|status}" >&2
   exit 1
 fi
-
-mode="${1:-status}"
 
 status() {
   drv="$(basename "$(readlink -f /sys/bus/pci/devices/$BDF/driver 2>/dev/null)" 2>/dev/null || echo none)"
