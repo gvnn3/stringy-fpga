@@ -34,8 +34,14 @@
 //   0x4108 |  RO  | RX bytes into QDMA
 //   0x410C |      |
 // -----------------------------------------------------------------------------
+//   0x4110 |  RO  | TX packets from QDMA flagged tuser_err (implemented)
+// -----------------------------------------------------------------------------
+// Only 0x4000 (TX packets) and 0x4110 (TX err packets) are implemented —
+// EQDMA multi-queue loss instrumentation, stringy-fpga notebook 2026-07-25.
 `timescale 1ns/1ps
 module qdma_subsystem_register (
+  input  [31:0] h2c_pkt_count,   // axis_aclk domain, unsynchronized readback
+  input  [31:0] h2c_err_count,   // axis_aclk domain, unsynchronized readback
   input         s_axil_awvalid,
   input  [31:0] s_axil_awaddr,
   output        s_axil_awready,
@@ -106,6 +112,16 @@ module qdma_subsystem_register (
     end
     else if (reg_en && ~reg_we) begin
       case (reg_addr)
+        // H2C debug counters (EQDMA multi-queue loss instrumentation).
+        // Counters run on axis_aclk; this readback crosses domains without
+        // synchronization, so a value sampled mid-increment may be torn —
+        // read twice and compare when it matters (debug use only).
+        15'h4000: begin
+          reg_dout <= h2c_pkt_count;
+        end
+        15'h4110: begin
+          reg_dout <= h2c_err_count;
+        end
         default: begin
           reg_dout <= 32'hDEADBEEF;
         end

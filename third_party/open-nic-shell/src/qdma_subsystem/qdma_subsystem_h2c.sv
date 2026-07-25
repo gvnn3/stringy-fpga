@@ -47,6 +47,14 @@ module qdma_subsystem_h2c #(
   output                  [15:0] h2c_status_bytes,
   output reg               [1:0] h2c_status_func_id,
 
+  // Debug counters (axis_aclk domain; see EQDMA multi-queue loss,
+  // stringy-fpga notebook 2026-07-25).  tuser_err is otherwise IGNORED by
+  // this module (the header's "drop error packets" is an unimplemented
+  // TODO): err-flagged packets pass through with corrupt payload and die in
+  // the consumer's frame resync.  These counters make that visible.
+  output reg              [31:0] h2c_pkt_count,
+  output reg              [31:0] h2c_err_count,
+
   input                          axis_aclk,
   input                          axil_aresetn
 );
@@ -61,6 +69,29 @@ module qdma_subsystem_h2c #(
 
   wire         size_valid;
   wire  [15:0] size;
+
+  // Count at the IP-facing handshake so packets are counted even when a
+  // downstream stall means they never reach the consumer.  tuser_err can
+  // assert on any beat; latch it across the packet.
+  reg err_seen;
+  always @(posedge axis_aclk) begin
+    if (~axil_aresetn) begin
+      h2c_pkt_count <= 0;
+      h2c_err_count <= 0;
+      err_seen      <= 1'b0;
+    end
+    else if (s_axis_qdma_h2c_tvalid && s_axis_qdma_h2c_tready) begin
+      if (s_axis_qdma_h2c_tlast) begin
+        h2c_pkt_count <= h2c_pkt_count + 1;
+        if (err_seen || s_axis_qdma_h2c_tuser_err)
+          h2c_err_count <= h2c_err_count + 1;
+        err_seen <= 1'b0;
+      end
+      else if (s_axis_qdma_h2c_tuser_err) begin
+        err_seen <= 1'b1;
+      end
+    end
+  end
 
   axi_stream_register_slice #(
     .TDATA_W (512),

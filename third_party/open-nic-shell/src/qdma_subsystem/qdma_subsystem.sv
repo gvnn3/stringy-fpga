@@ -632,6 +632,8 @@ module qdma_subsystem #(
     wire                         h2c_status_valid;
     wire                  [15:0] h2c_status_bytes;
     wire                   [1:0] h2c_status_func_id;
+    wire                  [31:0] h2c_pkt_count;
+    wire                  [31:0] h2c_err_count;
 
     wire     [NUM_PHYS_FUNC-1:0] axis_c2h_tvalid;
     wire [512*NUM_PHYS_FUNC-1:0] axis_c2h_tdata;
@@ -703,6 +705,8 @@ module qdma_subsystem #(
     );
 
     qdma_subsystem_register reg_inst (
+      .h2c_pkt_count  (h2c_pkt_count),
+      .h2c_err_count  (h2c_err_count),
       .s_axil_awvalid (axil_awvalid),
       .s_axil_awaddr  (axil_awaddr),
       .s_axil_awready (axil_awready),
@@ -750,6 +754,9 @@ module qdma_subsystem #(
       .h2c_status_valid                (h2c_status_valid),
       .h2c_status_bytes                (h2c_status_bytes),
       .h2c_status_func_id              (h2c_status_func_id),
+
+      .h2c_pkt_count                   (h2c_pkt_count),
+      .h2c_err_count                   (h2c_err_count),
 
       .axis_aclk                       (axis_aclk),
       .axil_aresetn                    (axil_aresetn)
