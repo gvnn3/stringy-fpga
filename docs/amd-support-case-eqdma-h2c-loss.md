@@ -6,12 +6,18 @@ below was measured on silicon 2026-07-25/26; full lab log in `docs/notebook.md`.
 ## Summary
 
 With **two or more H2C ST queues** active on a single PF, the QDMA soft IP
-intermittently corrupts/errs H2C stream packets (observed ~1/1500 packets at
-4 queues) and intermittently freezes the C2H completion path for ≥10 s. With
-**one queue the design is loss-free in every configuration we can produce**,
-including worst-case descriptor-fetch settings (`GLBL_DSC_CFG.MAXFETCH=0`).
-The host `write()` on the char-dev returns success (H2C CIDX writeback
-advances), so the loss is silent from the host's perspective.
+intermittently **drops H2C stream packets without any error indication**:
+the packets never appear on the H2C AXIS master interface at all, and
+`tuser_err` is never asserted (0 assertions across ~28,000 delivered
+packets, measured with counters at the IP↔user-logic boundary — see "Where
+the packets go"). Loss rate is ~1/600–1/1500 on a fresh configuration,
+degrading with accumulated multi-queue traffic to >13% of packets. The IP
+also intermittently freezes the C2H completion path for ≥10 s. With
+**one queue the design is loss-free in every configuration we can produce**
+(boundary counters exact to the packet), including worst-case
+descriptor-fetch settings (`GLBL_DSC_CFG.MAXFETCH=0`). The host `write()`
+on the char-dev returns success (H2C CIDX writeback advances), so the loss
+is silent from both ends: writeback says sent, the fabric never sees it.
 
 ## Environment
 
@@ -32,9 +38,12 @@ advances), so the loss is silent from the host's perspective.
    (also reproduced with 1,504 B single-descriptor) packets; single C2H
    queue 0 carries responses from user logic (echo-style request/reply).
 2. At ≥2 H2C queues, individual request packets vanish between a successful
-   `write()` (writeback-confirmed) and the user logic behind the
-   `qdma_subsystem` AXIS interface. Rate ~1/1500 packets at 4 queues.
-   At 1 queue: 0 losses in >20,000-packet runs, repeated.
+   `write()` (writeback-confirmed) and the H2C AXIS master interface of the
+   IP — boundary packet counters show the lost packets are never delivered
+   to user logic, with or without `tuser_err` (see "Where the packets go").
+   Rate ~1/600–1/1500 packets at 4 queues on a fresh configuration.
+   At 1 queue: 0 losses in >20,000-packet runs, repeated; boundary
+   counters account for every packet exactly.
 3. Loss also arrives as **episodes**: ~0.5–1 s windows in which every packet
    on one queue is lost, and separately the C2H side stops delivering
    completions for ≥10 s (driver `qdma_request_wait_for_cmpl ... tm 10000`
@@ -46,7 +55,13 @@ advances), so the loss is silent from the host's perspective.
    low rate only briefly: on a fresh cold boot (2026-07-26) the first
    4-queue run already lost ~1/340 packets, and after roughly 25k further
    multi-queue packets (~250 MB) individual measurement windows degraded to
-   hundreds of retransmissions with throughput collapsing 10–30×. The decay
+   hundreds of retransmissions with throughput collapsing 10–30×. On a
+   second cold boot (2026-07-26 PM, instrumented shell) the same pattern
+   reproduced with exact packet accounting: first 4-queue run lost 5/3072
+   (~1/614); after ~28k further multi-queue packets, 13.2% of sent packets
+   (3,727 of 28,208) never reached the AXIS boundary, and in the worst
+   measurement window the application-level retransmit watchdog itself was
+   exhausted (525 frames permanently lost, throughput 1.6 MiB/s). The decay
    tracks accumulated multi-queue traffic, not wall-clock uptime. Throughout
    — interleaved between degraded 4-queue runs on the same boot — the
    1-queue path stayed at 0 losses over 24k+ packets at full throughput.
@@ -77,20 +92,44 @@ advances), so the loss is silent from the host's perspective.
 | Host SW regression | byte-identical driver + app binaries across good/bad days | reproduces |
 | JTAG/hw_server interference | hw_server killed | still lossy |
 
-## Where the packets go
+## Where the packets go — measured at the IP boundary (2026-07-26)
 
-`qdma_subsystem_h2c` (OpenNIC) passes `m_axis` data through unchanged and
-ignores `s_axis_qdma_h2c_tuser_err` (drop-on-error is an unimplemented TODO
-upstream), so err-flagged packets reach user logic with corrupt payload and
-fail framing there. We are adding packet/err counters at that boundary to
-quantify `tuser_err` assertions directly; counts can be supplied once the
-instrumented shell is deployed.
+We instrumented the shell with two counters directly on the QDMA IP's H2C
+AXIS master interface (the `qdma_subsystem_h2c` ingest boundary): total
+packets delivered, and packets delivered with `s_axis_qdma_h2c_tuser_err`
+asserted. Measured on silicon, fresh cold boot, per-packet accounting
+(the single-queue control run matches sent-count exactly, validating the
+counters):
+
+| Run (jumbo, 9,556 B) | packets written (incl. retx) | delivered at boundary | delivered with `tuser_err` |
+|---|---|---|---|
+| 4-queue, first traffic after cold boot | 3,072 | 3,067 | **0** |
+| 1-queue control | 3,067 | 3,067 (exact) | **0** |
+| 4-queue, degraded (after ~28k mq packets) | 28,208 | 24,481 | **0** |
+
+Two conclusions:
+
+1. **`tuser_err` is never asserted** — not once in ~28,000 delivered
+   packets, including heavily degraded periods. This is not a
+   deliver-with-error-flag failure mode.
+2. **The lost packets never appear on the AXIS interface at all.** In the
+   first run the shortfall (5) equals exactly the set of retransmitted
+   originals; in the degraded run 3,727 packets (13.2%) vanished. H2C CIDX
+   writeback advances for these packets (host `write()` succeeds), so the
+   IP retires descriptors for data it never delivers.
+
+The loss is therefore entirely internal to the EQDMA5.0 soft IP, between
+descriptor fetch/writeback and the H2C AXIS master — silent in both
+directions.
 
 ## Questions for AMD
 
 1. Are there known EQDMA5.0 Soft IP (Vivado 2025.2) errata for multi-queue
-   H2C ST descriptor fetch/engine arbitration, `tuser_err` assertion rates,
-   or internal CSR (`TCP_CSR_TIMEOUT` @ 0x12EC) timeouts under load?
+   H2C ST descriptor fetch/engine arbitration under which the engine
+   retires a descriptor (CIDX writeback advances) but never emits the
+   packet on the H2C AXIS master — with no `tuser_err` and no logged
+   error — or for internal CSR (`TCP_CSR_TIMEOUT` @ 0x12EC) timeouts
+   under load?
 2. Is cumulative state degradation (worsening with traffic, cleared only by
    reconfiguration) a known signature of any errata?
 3. Recommended `GLBL_DSC_CFG` / perf-opt register settings for a 4-queue
@@ -100,7 +139,8 @@ instrumented shell is deployed.
 
 ## Attachments to include when filing
 
-- `docs/notebook.md` 2026-07-25 entries (evidence matrix + timeline)
+- `docs/notebook.md` 2026-07-25/26 entries (evidence matrix + timeline +
+  boundary-counter accounting tables)
 - dmesg extracts: `GLBL_TRQ_ERR` decode, `qdma_request_wait_for_cmpl`
   timeouts, DMAR faults
 - Shell build: OpenNIC + 1 DFX partition; QDMA IP tcl:

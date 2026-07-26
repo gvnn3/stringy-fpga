@@ -12,13 +12,12 @@ NOPASSWD-sudo for this user; nothing else needs root.
 
 ## 0. One-time state notes (2026-07-25)
 
-* QSPI holds the **instrumented jumbo shell** (H2C packet/err counters,
-  commit `84d1228`). It activates on the next **cold** power cycle (full
-  AC off — the image must load before BIOS enumeration). After that boot:
-  `lspci -d 10ee: -nn` should show `10ee:903f` at `02:00.0`.
+* QSPI holds the **counter-fixed instrumented jumbo shell** (commit
+  `46186bf`, `build_timestamp=0x07260427`), activated by the 2026-07-26
+  cold cycle and verified on silicon: `lspci -d 10ee: -nn` shows
+  `10ee:903f` at `02:00.0` and `h2cstats` reads live counters.
 * `.superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit`
-  is built against the **new** static. Do not `pyro_hw.py load` it until the
-  cold boot has happened — a partial and its static must match.
+  matches this static (fmax 260.8 MHz) and is the bit to `pyro_hw.py load`.
 * Known open issue: the EQDMA5.0 soft IP silently corrupts ~1/1500 H2C
   packets when **2+ TX queues** are active (single-queue is loss-free; see
   `docs/notebook.md` and `docs/amd-support-case-eqdma-h2c-loss.md`). The
@@ -135,15 +134,14 @@ sudo scripts/pyro_dataplane_swap.sh h2cstats     # after
 
 On the pre-instrumentation shell this prints `H2C_STATS unavailable`.
 
-**2026-07-26 status:** the shell flashed on 2026-07-25 had a counter
-*readback* decode bug (84d1228 case labels weren't base-stripped; fixed in
-46186bf) — it printed `H2C_STATS unavailable [raw pkt=0xDEADBEEF ...]` even
-though the counters were counting. The **fixed shell was QSPI-flashed
-2026-07-26 07:4x** and activates on the next cold power cycle; until then
-the card is off-line (the flash left the SPI-programmer design in the
-fabric). The x4 partial in `.superpowers/pr-builds/` matches the *pending*
-static (fmax 260.8 MHz); the bit matching the previous static is preserved
-as `*_x4_partial.bit.static-20260725.bak`.
+**2026-07-26 status: verified on silicon after the cold cycle.** The
+counters account for traffic exactly (1q control run: delta = frames+1
+probe frame, to the packet). Headline measurement: across ~28k delivered
+packets including heavily degraded multi-queue periods, the err counter
+stayed **0** — the QDMA IP never asserts `tuser_err`; lost packets simply
+never emerge on the AXIS interface. The err delta is therefore expected to
+read 0; the *pkts shortfall* vs frames written (+retx, +1 probe) is the
+loss measurement. Details in `docs/notebook.md` and the AMD case doc.
 
 ## 6. Recovery cheat-sheet
 

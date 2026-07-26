@@ -1373,3 +1373,35 @@ The system panic'd again.  Find the root cause befrore continuing to build the r
 
 Carry out the fixes and proceed with the project.
 
+## 2026-07-25 19:15:07
+
+Continue through all four suggestsions 1-4 in order.
+
+## 2026-07-25 20:53:05
+
+Continue when the build finishes
+
+## 2026-07-25 21:23:50
+
+Continue when the build finishes
+
+## 2026-07-25 21:39:44
+
+Continue
+
+## 2026-07-25 22:04:29
+
+Once all jobs are complete write a demo.md into the docs directory that explains how to demonstrate the usage of the system as it exists now.  This includes any benchmarks.c
+
+## 2026-07-26 04:06:31
+
+Continue when the build finishes
+
+## 2026-07-26 04:19:50
+
+Continue
+
+## 2026-07-26 16:50:31
+
+Power cycled, continue
+

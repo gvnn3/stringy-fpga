@@ -1903,3 +1903,46 @@ untouched). The fabric now holds the SPI-programmer design — the card is
 dead to PCIe until the next cold boot. **Next cold power cycle activates
 the counter-fixed shell; then `h2cstats` before/after a 4q bench gives the
 direct tuser_err packet count for the AMD case.**
+
+## 2026-07-26 afternoon — cold cycle done; counters live; tuser_err is NEVER asserted
+
+Cold power cycle at ~16:50 activated the counter-fixed shell
+(`build_timestamp=0x07260427`). Bring-up was textbook: enumerated at
+02:00.0, onic vermagic already matched 6.8.0-136, wedge-recover + probe
+clean, x4 partial loaded in 44.7 s, control-path MATCH good.
+
+`h2cstats` now reads real values (decode fix 46186bf verified on
+silicon). Counter accounting, all runs jumbo, x4 child, same boot:
+
+| Run | frames+probe+retx sent | pkts delta | err delta | missing |
+|---|---|---|---|---|
+| 4q, 4 MiB/w (first mq traffic) | 3066+1+5 = 3072 | 3067 | **0** | 5 = exactly the 5 RETX'd originals |
+| 1q, 4 MiB/w (control) | 3066+1+0 = 3067 | 3067 | **0** | 0 — exact to the packet |
+| 4q, 32 MiB/w (degraded) | 24577+1+3630 = 28208 | 24481 | **0** | 3727 (13.2%) |
+
+(The +1 is the bench's `probe_device` round-trip; the 1q run pins the
+counter as exact, which makes the 4q shortfalls trustworthy.)
+
+**Headline: the err counter stayed 0 through ~28k delivered packets
+including a heavily degraded window. The EQDMA IP never asserts
+`tuser_err`. Lost packets simply never emerge on the H2C AXIS interface
+— silent non-delivery inside the IP, not delivered-with-error.** This
+kills the "shell ignores tuser_err so corrupt payloads fail framing"
+hypothesis (AMD doc "Where the packets go" rewritten accordingly; the
+upstream OpenNIC drop-on-error TODO is irrelevant to this bug).
+
+Heavy-run new severity datum: W=2 window collapsed to 1.6 MiB/s with
+**LOST=525 — the retransmit watchdog itself gave up**, first permanent
+application-visible loss. RETX=1796 at W=32 (49.2 MiB/s) in the same
+sweep; windows in between partially recovered (938 MiB/s at W=4) —
+episodic, consistent with symptom §3.
+
+Fresh-boot first-mq loss today: 5/3072 ≈ 1/614 (yesterday 1/340, day
+before 1/3000) — the fresh-boot baseline itself is noisy.
+
+Bench peaks today: 4q 2.66 GiB/s @ W=32, 1q 2.29 GiB/s @ W=8. No
+recurrence of the 5.14 GiB/s number.
+
+Card parked in control mode, probe clean. AMD case doc is now
+evidence-complete: direct boundary counts replace the inference in
+"Where the packets go". R1 certification still blocked on the mq loss.
