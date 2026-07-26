@@ -1884,3 +1884,22 @@ Conclusions that revise yesterday's picture:
 AMD case doc updated with the cold-boot re-baseline evidence
 (symptom §4). Next concrete step stays: counter-fixed shell → flash →
 cold cycle → err-count deltas for the case.
+
+## 2026-07-26 morning — counter-fixed shell built and flashed; awaiting cold cycle
+
+Full DFX rebuild with the decode fix (46186bf): PR_VERIFY_ALL_OK, 0 errors,
+~2h40m. Static WNS -0.015 ns — single violated path, entirely inside the
+CMAC `txoutclk_out[0]` clock group (CMACE4 hard block → tx_slice), the
+inherited-waivable 2025.2 condition documented in dfx_build.sh; pyro_rp and
+box_250mhz close. (Last night's +0.042 was the lucky end of the same
+distribution; Ethernet FCS covers the marginal path.) x4 partial rebuilt
+against the new static: pr_verified, met_timing, fmax 260.8 MHz. The
+previous x4 bit (matches the 2026-07-25 static) is preserved as
+`*_x4_partial.bit.static-20260725.bak`.
+
+QSPI flashed 07:4x over JTAG with the card live (same operator-risk
+procedure as 2026-07-25; erase+program+verify clean, host survived, golden
+untouched). The fabric now holds the SPI-programmer design — the card is
+dead to PCIe until the next cold boot. **Next cold power cycle activates
+the counter-fixed shell; then `h2cstats` before/after a 4q bench gives the
+direct tuser_err packet count for the AMD case.**

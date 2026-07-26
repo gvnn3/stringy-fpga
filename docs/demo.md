@@ -135,11 +135,15 @@ sudo scripts/pyro_dataplane_swap.sh h2cstats     # after
 
 On the pre-instrumentation shell this prints `H2C_STATS unavailable`.
 
-**2026-07-26 status:** the shell flashed on 2026-07-25 has a counter
+**2026-07-26 status:** the shell flashed on 2026-07-25 had a counter
 *readback* decode bug (84d1228 case labels weren't base-stripped; fixed in
-46186bf) — it prints `H2C_STATS unavailable [raw pkt=0xDEADBEEF ...]` even
-though the counters are counting. The fixed shell needs to be flashed and
-cold-booted before h2cstats works.
+46186bf) — it printed `H2C_STATS unavailable [raw pkt=0xDEADBEEF ...]` even
+though the counters were counting. The **fixed shell was QSPI-flashed
+2026-07-26 07:4x** and activates on the next cold power cycle; until then
+the card is off-line (the flash left the SPI-programmer design in the
+fabric). The x4 partial in `.superpowers/pr-builds/` matches the *pending*
+static (fmax 260.8 MHz); the bit matching the previous static is preserved
+as `*_x4_partial.bit.static-20260725.bak`.
 
 ## 6. Recovery cheat-sheet
 
