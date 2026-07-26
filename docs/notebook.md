@@ -1830,3 +1830,57 @@ do NOT JTAG-load it before the cold boot. Old-shell DCPs preserved in
 hw/dfx/build/dcp.jumbo-20260717.bak. Demo walkthrough: docs/demo.md.
 Post-boot: read h2cstats before/after a 4q bench — err delta is the direct
 measurement of IP-corrupted packets for the AMD case.
+
+---
+
+# 2026-07-26 — cold boot: instrumented shell live, counter decode dead, re-baseline results
+
+## Cold boot (04:18) and bring-up
+
+The power cycle happened between 04:06 and 04:18. The QSPI image took:
+`build_timestamp=0x07251929`, static_shell_id `0x0202f370` (ID stub) —
+the instrumented shell is on silicon. Bring-up was by the book: vermagic
+ok, `pyro_wedge_recover.sh`, x4 partial load in 29.8 s, probe
+`0x02020000`, MATCH round-trip correct. All pr-build artifacts survived
+the power cycle (no 0-byte files).
+
+## H2C counters unreadable — decode bug in 84d1228 (fixed, rebuilding)
+
+`h2cstats` reads BAR2 0x5000/0x5110 and got 0xDEADBEEF — the register
+file's default. Root cause: `qdma_subsystem_address_map` subtracts
+C_SUBSYS_BASE_ADDR (0x4000) before the subsystem register slave
+(`qdma_subsystem_address_map.sv:146`), so the register file sees
+0x000/0x110, and the case labels added in 84d1228 (`15'h4000`/`15'h4110`)
+were unreachable. The counters themselves are in the fabric and counting;
+only readback is dead. Fix: decode at 0x000/0x110 (commit 46186bf).
+Full DFX rebuild launched 04:2x (`dfx_build_20260726_ctrfix.log`);
+needs x4 partial rebuild, QSPI reflash, and ANOTHER cold power cycle.
+Lesson: the stub register block had never had an implemented register, so
+nothing had ever exercised the base-strip path on silicon.
+
+## Re-baseline benches (current silicon, x4 child, jumbo)
+
+| Run | Result |
+|---|---|
+| 1q, 4 MiB/window | 0 loss, peak 2.75 GiB/s @ W=32 |
+| 4q, 4 MiB/window (first mq traffic since boot) | RETX 1–3 per 438-frame window (~1/340), peak 3.09 GiB/s @ W=64 |
+| 4q, 32 MiB/window | heavily degraded: RETX=417 @ W=4, RETX=681 @ W=64, throughput collapse to 31/171 MiB/s in those windows |
+| 1q, 32 MiB/window (AFTER the degraded 4q runs) | 0 RETX in 24.6k frames, 2.56 GiB/s — 1q path untouched by the degraded state |
+
+Conclusions that revise yesterday's picture:
+
+1. **Cold boot does NOT durably re-baseline.** The very first 4q run was
+   already at ~1/340 (vs the historical fresh-boot 1/3000), and within
+   ~25k multi-queue frames (~250 MB) windows were collapsing. Decay is a
+   function of accumulated multi-queue H2C traffic, not uptime.
+2. **The 1q path is immune even while the mq path is degraded** — same
+   boot, interleaved runs. Whatever state accumulates lives strictly in
+   the multi-queue arbitration/fetch path of the IP.
+3. Yesterday's 5.14 GiB/s @ W=64 did not reproduce (3.09 GiB/s best 4q
+   today). Plausibly the same degradation: yesterday's peak was measured
+   in the first mq windows after a cold boot with less prior mq traffic.
+   R1-certification remains blocked on the loss issue either way.
+
+AMD case doc updated with the cold-boot re-baseline evidence
+(symptom §4). Next concrete step stays: counter-fixed shell → flash →
+cold cycle → err-count deltas for the case.

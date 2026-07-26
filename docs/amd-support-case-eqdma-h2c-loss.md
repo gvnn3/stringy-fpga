@@ -1,7 +1,7 @@
 # AMD support case draft — QDMA (EQDMA5.0 Soft IP) multi-queue H2C ST packet corruption/loss
 
 Status: ready to file (needs the filer's account/case metadata). All data
-below was measured on silicon 2026-07-25; full lab log in `docs/notebook.md`.
+below was measured on silicon 2026-07-25/26; full lab log in `docs/notebook.md`.
 
 ## Summary
 
@@ -39,11 +39,17 @@ advances), so the loss is silent from the host's perspective.
    on one queue is lost, and separately the C2H side stops delivering
    completions for ≥10 s (driver `qdma_request_wait_for_cmpl ... tm 10000`
    timeouts with `cidx 0` pinned).
-4. Severity increases monotonically with accumulated multi-queue traffic
+4. Severity increases monotonically with accumulated **multi-queue** traffic
    across a power-on session and is NOT cleared by: QDMA soft reset
    (`soft_reset_n`), driver reload, queue teardown/re-add, or user-logic
-   reset. Only a full reconfiguration (cold boot from QSPI) restores the
-   initial low rate.
+   reset. A full reconfiguration (cold boot from QSPI) restores the initial
+   low rate only briefly: on a fresh cold boot (2026-07-26) the first
+   4-queue run already lost ~1/340 packets, and after roughly 25k further
+   multi-queue packets (~250 MB) individual measurement windows degraded to
+   hundreds of retransmissions with throughput collapsing 10–30×. The decay
+   tracks accumulated multi-queue traffic, not wall-clock uptime. Throughout
+   — interleaved between degraded 4-queue runs on the same boot — the
+   1-queue path stayed at 0 losses over 24k+ packets at full throughput.
 5. During the worst episodes the driver has latched
    `GLBL_TRQ_ERR_STS.TCP_CSR_TIMEOUT` (`GLBL_TRQ_ERR_LOG_ADDRESS=0x12EC`)
    — a timeout on the IP's own internal CSR path — and

@@ -135,6 +135,12 @@ sudo scripts/pyro_dataplane_swap.sh h2cstats     # after
 
 On the pre-instrumentation shell this prints `H2C_STATS unavailable`.
 
+**2026-07-26 status:** the shell flashed on 2026-07-25 has a counter
+*readback* decode bug (84d1228 case labels weren't base-stripped; fixed in
+46186bf) — it prints `H2C_STATS unavailable [raw pkt=0xDEADBEEF ...]` even
+though the counters are counting. The fixed shell needs to be flashed and
+cold-booted before h2cstats works.
+
 ## 6. Recovery cheat-sheet
 
 | Symptom | Fix |
