@@ -195,7 +195,8 @@ with open(path, "r+b") as f:
     m = mmap.mmap(f.fileno(), 0x6000)
     pkt, err = stable(m, 0x5000), stable(m, 0x5110)
     if pkt in (0xDEADBEEF, 0xFFFFFFFF):
-        print("H2C_STATS unavailable (pre-instrumentation shell)")
+        print(f"H2C_STATS unavailable (pre-instrumentation shell) "
+              f"[raw pkt=0x{pkt:08X} err=0x{err:08X}]")
     else:
         print(f"H2C_STATS pkts={pkt} err={err}")
 PYEOF

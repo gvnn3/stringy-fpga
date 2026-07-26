@@ -116,10 +116,13 @@ module qdma_subsystem_register (
         // Counters run on axis_aclk; this readback crosses domains without
         // synchronization, so a value sampled mid-increment may be torn —
         // read twice and compare when it matters (debug use only).
-        15'h4000: begin
+        // qdma_subsystem_address_map subtracts C_SUBSYS_BASE_ADDR (0x4000)
+        // before this slave, so decode is relative to the block: the header's
+        // 0x4000/0x4110 arrive here as 0x000/0x110 (BAR2 0x5000/0x5110).
+        15'h0000: begin
           reg_dout <= h2c_pkt_count;
         end
-        15'h4110: begin
+        15'h0110: begin
           reg_dout <= h2c_err_count;
         end
         default: begin
