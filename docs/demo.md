@@ -1,10 +1,13 @@
-# Demonstrating the system (state as of 2026-07-25)
+# Demonstrating the system (state as of 2026-07-27)
 
 What this shows: Python `re`-compatible regex matching transparently
 accelerated by a resident pattern-matching circuit on an Alveo U250, over
 two host bindings — a raw-Ethernet control path (`onic` netdev) and a
-QDMA ST char-dev data plane that has been measured at **5.14 GiB/s**
-(W=64, 4 TX queues, jumbo frames) against the R1 5 GiB/s target.
+QDMA ST char-dev data plane. Reproducible zero-loss throughput is
+**~2.3 GiB/s** (1 queue); multi-queue runs have reached 5.14 GiB/s once
+but are gated by an open EQDMA IP loss issue (§0) and currently land at
+2.6–3.1 GiB/s on a fresh boot, so the R1 5 GiB/s target is not yet
+certifiable.
 
 Everything below runs from the repo root on `nf-server06`. The two
 privileged scripts (`pyro_dataplane_swap.sh`, `pyro_wedge_recover.sh`) are
@@ -94,15 +97,20 @@ PYRO_QDMA_CHARDEV=/dev/qdma02000-ST-0 PYRO_BENCH_JUMBO=1 \
     .venv-pyro/bin/python3 scripts/pyro_pipeline_bench.py
 ```
 
-Reference numbers measured on silicon 2026-07-25 (fresh boot, x4 child,
-4 queues, jumbo):
+Reference numbers, x4 child, jumbo. **Demo with 1 queue** — it is
+loss-free and reproduces run after run. 4-queue numbers depend on how
+much multi-queue traffic the boot has already seen (§0) and degrade
+within a session; the one-off 5.14 GiB/s peak of 2026-07-25 has not
+reproduced since (best 2026-07-26: 2.66 GiB/s) and should not be quoted
+as expected performance.
 
-| Window | Throughput | Notes |
+| Config (measured 2026-07-26, fresh cold boot) | Throughput | Notes |
 |--------|-----------|-------|
-| W=1    | ~0.45 GiB/s | latency-bound |
-| W=8    | ~2.3 GiB/s  | |
-| W=64   | **5.14 GiB/s peak** | above the 5 GiB/s target |
-| W=32, 1 queue | ~2.0 GiB/s | zero-loss baseline, no retransmits ever |
+| 1 queue, W=1 | ~0.40 GiB/s | latency-bound |
+| 1 queue, W=8 | **~2.2–2.3 GiB/s** | zero-loss, the reliable demo number |
+| 4 queues, W=1 | ~0.31 GiB/s | |
+| 4 queues, W=16–32 | ~2.5–2.7 GiB/s | best 4q on a fresh boot; expect RETX≥1 |
+| 4 queues, after heavy mq traffic | 0.002–0.9 GiB/s, erratic | degraded state, §0; windows can fail outright |
 
 Env knobs:
 
