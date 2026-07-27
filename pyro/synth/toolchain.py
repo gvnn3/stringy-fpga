@@ -571,8 +571,12 @@ class VivadoToolchain:
 
             # 3. Run Vivado in batch with a hard per-job timeout (R77).  A new
             #    session group lets us kill the *entire* process tree on expiry.
+            #    -stack 2000: synth_design overruns its default stack on the
+            #    generator's per-stage closure loops once NSTATES climbs past
+            #    ~100 (Synth 8-7098, first hit by the 151-state SNORT-PF S1
+            #    child); the flag only raises the synth thread's stack.
             cmd = [exe, "-mode", "batch", "-source", "flow.tcl",
-                   "-nojournal", "-log", "vivado.log"]
+                   "-stack", "2000", "-nojournal", "-log", "vivado.log"]
             proc = subprocess.Popen(
                 cmd, cwd=workdir, env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -754,6 +758,7 @@ class VivadoToolchain:
             # R84: PR jobs use VIVADO_PR_JOB_TIMEOUT (3600 s) not R77's 1800 s;
             # the R77 kill-the-process-tree discipline applies verbatim.
             cmd = [exe, "-mode", "batch", "-source", "flow.tcl",
+                   "-stack", "2000",  # Synth 8-7098 guard, same as OOC flow
                    "-nojournal", "-log", "vivado.log"]
             proc = subprocess.Popen(
                 cmd, cwd=workdir, env=env,
