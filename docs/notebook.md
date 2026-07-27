@@ -1946,3 +1946,18 @@ recurrence of the 5.14 GiB/s number.
 Card parked in control mode, probe clean. AMD case doc is now
 evidence-complete: direct boundary counts replace the inference in
 "Where the packets go". R1 certification still blocked on the mq loss.
+
+## 2026-07-27 — Phase 2 opened: SNORT-PF (branch phase2-snort)
+
+Snort3 community rules (4,017 alert rules) unpacked to
+`third_party/snort3-community-rules/`. Found the dormant SNORT-PF draft
+spec (`specs/snort-rule-offload.md` v0.1.0, 2026-07-15, unadopted) —
+rule-group pattern-set partials, nomination-only prefilter, residency
+swap by observed port mix — exactly the stated phase-2 goal. Wrote
+`docs/phase2-snort-plan.md`: adoption recommendation with a 3-item
+amendment slate (P2d char-dev transport at 2.3 GiB/s revises the draft's
+tens-of-MB/s ceiling ~100×; 8 B/cyc x4 harness revises SF6; CMAC WNS now
+−0.015 vs the recorded −0.427), OQ-1..5 recommendations, and the S1–S4
+work breakdown. Per the spec's §11 gate, implementation waits on the
+owner adopting at 1.0.0; the SR1 triage parser (validate against
+SF8–SF11 counts) is the authorized-as-analysis first step.

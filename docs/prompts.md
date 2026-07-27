@@ -1409,3 +1409,19 @@ Power cycled, continue
 
 File the AMD case
 
+## 2026-07-27 01:18:49
+
+Has the demo document been written?
+
+## 2026-07-27 01:30:24
+
+Yes, update the reference numbers
+
+## 2026-07-27 14:57:37
+
+There is a repo of snort rules in ~/snort3-community-rules.tar.gz this is part of the next stage of this set of experiements.  Create the next branch to work in, unpack the rules and plan to implement a dynamic filtering system based on that rule set.  The overall goal is ot be able to swap FPGA programs at run time based on the rules and what data is seen on the NIC.
+
+## 2026-07-27 15:02:11
+
+Continue when the survey finishes
+
