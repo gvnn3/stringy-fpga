@@ -2059,3 +2059,46 @@ Two protocol notes for the S3 daemon:
 Phase S1 is done. S2 opens with three carried-forward blockers recorded
 above: SF6 cost model under-predicts ~6x, the dpb=8 codegen spins synth
 past ~150 states, and SR3 needs the bytes-mode case-fold conformance test.
+
+## 2026-07-27 night — S2 opens: the synth blocker is a codegen bug, fixed
+
+Root cause of the "synth finishes then spins forever" stall, found by
+reading the emitter: the eps/assert closure is emitted as
+`for (it = 0; it < NSTATES; it = it + 1)` with **`it` never referenced in
+the body** (generator.py:193 and :536) — a pure NSTATES-fold *textual
+replication* of the relaxation body. Vivado unrolls it into NSTATES x E
+blocking read-modify-writes of one NSTATES-bit vector, a serial
+self-referential chain of ~(dpb+1)*N^2*E bit-nodes, and burns
+superlinear time in "Cross Boundary and Area Optimization" — a phase
+that emits NO log line while running, which is exactly the observed
+signature. (The earlier Synth 8-7098 stack abort was the same cause.)
+
+The real fixpoint depth is tiny: `closure_passes(au)` computes it as the
+max over singleton start states of the passes to converge. Correctness is
+structural, not empirical — the body only sets bits from single source
+bits, so it is monotone and *additive*: the closure of a union of start
+sets is the union of the closures, hence the worst case is attained at a
+singleton. Assertion conditions are taken as always-true (disabling an
+edge can only shrink reachability, never lengthen a chain), so the result
+upper-bounds every runtime valuation. Measured K over the corpus: 1..4.
+
+Result on the exact circuit that was killed twice at 7,200 s
+(151 states, E=45, dpb=8): **synth_design completes in 2 min 3 s,
+1,358 LUTs.** Pure `content:` literals have E=0 and emit no closure block
+at all — which is why the final S1 child built fine.
+
+Verification: tests/hw/xsim_diff.py (drives real R78 frames through the
+generated engine + wrapper under xsim and compares replies byte-for-byte
+against the model) PASSES 10/10 on the canonical dpb=8 pattern and on the
+K=2/K=3 eps-heavy patterns `(a*)*b`, `((x?)?)?y`, `(a?b?c?d?e?f?)g`.
+Note a PRE-EXISTING failure unrelated to this change: `^(?:a|)(?:b|)(?:c|)$`
+mismatches 1/10 replies on BOTH the patched and the stock generator
+(verified by stashing) — a real model-vs-RTL disagreement on anchored
+empty alternations, logged for S2 follow-up.
+
+Emitted text changed => GENERATOR_VERSION/HARNESS_VERSION 2.2.0 -> 2.3.0
+(R47b), in pyro/hdl/generator.py AND src/pyro_rt.c (the C runtime pins the
+same constants and rejects mismatched artifacts with code 7; `make`
+rebuilds). 687 unit tests pass. **Consequence: every cached bitstream and
+the flashed S1 child are now stale — AC-S1-2 must be re-established on
+the next build.**

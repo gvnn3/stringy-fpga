@@ -33,8 +33,14 @@ from . import estimator as _estimator
 # wrapper's wire protocol gains PERF_REQUEST/PERF_REPLY and the emitted engine
 # RTL rolls its HARNESS_VER localparam; both bump together again so pre-2.2.0
 # artifacts (whose children drop PERF_REQUEST, R78.4) are stale (R47b).
-GENERATOR_VERSION = 0x00020200
-HARNESS_VERSION = 0x00020200
+# 2.3.0: the eps/assert closure loop runs closure_passes(au) rounds instead of
+# NSTATES.  Emitted text changes (loop bound only; semantics identical — the
+# extra rounds were provably no-ops), so identities/caches roll over per R47b.
+# Without it Vivado elaborates NSTATES x edges redundant read-modify-writes and
+# a 151-state datapath_bytes=8 circuit does not converge in 2 h; with it the
+# same circuit synthesizes in 2 min 3 s to 1,358 LUTs.
+GENERATOR_VERSION = 0x00020300
+HARNESS_VERSION = 0x00020300
 DATAPATH_BYTES = 1  # default bytes/cycle (R42 datapath_bytes)
 
 # P2b (specs/p2-dataplane.md): supported widened datapaths.  N > 1 emits the
@@ -102,6 +108,7 @@ def _ranges_expr(ranges: Tuple[Tuple[int, int], ...]) -> str:
 
 def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     N = au.n_states
+    _kpasses = closure_passes(au)
     L: List[str] = []
     add = L.append
 
@@ -190,8 +197,9 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     add("    // --- epsilon/assertion closure (combinational relaxation) ---")
     add("    always @(*) begin")
     add("        active = state_reg;")
-    add("        for (it = 0; it < NSTATES; it = it + 1) begin")
-    # emit eps/assert relaxation body (repeated NSTATES times by the for loop)
+    # CLOSURE_PASSES, not NSTATES: the body is replicated by the loop and the
+    # fixpoint is reached in closure_passes(au) rounds (see its docstring).
+    add(f"        for (it = 0; it < {_kpasses}; it = it + 1) begin")
     eps_lines = _emit_closure_body(au)
     for ln in eps_lines:
         add("            " + ln)
@@ -354,6 +362,53 @@ def _emit_rtl(au: _auto.Automaton, circ_id, circ_flags, num_patterns) -> str:
     return "\n".join(L)
 
 
+def closure_passes(au: _auto.Automaton) -> int:
+    """Relaxation passes the emitted closure body needs to reach its fixpoint.
+
+    ``_emit_closure_body`` applies every eps/assert edge once, in a fixed
+    order.  Propagation therefore advances one edge per pass along a chain
+    only when the chain follows that order; a chain that runs *against* it
+    needs another pass.  The emitted loop must run at least this many times.
+
+    The relaxation is monotone and additive — each rule fires on the presence
+    of one source bit, independently — so the closure of a union of start sets
+    is the union of the closures, and the worst case over all initial ``active``
+    values is attained at some single start state.  Assertion conditions are
+    treated as always-true: a disabled edge can only shrink the reachable set,
+    never lengthen a chain, so this is an upper bound over all runtime
+    condition valuations.
+
+    Emitting ``NSTATES`` passes (as pre-2.3.0 did) is always sufficient but
+    replicates the body ``NSTATES`` times; Vivado unrolls it, elaborates
+    ``NSTATES * edges`` blocking read-modify-writes of one ``NSTATES``-bit
+    vector, and the redundancy proof is superlinear — a 151-state 45-edge
+    circuit at ``datapath_bytes=8`` did not converge in two hours.  The real
+    depth over the Snort community corpus is <= 4.
+    """
+    seq: List[Tuple[int, int]] = []
+    for s in range(au.n_states):
+        for e in au.sorted_edges(s):
+            if e.kind in (_auto.E_EPS, _auto.E_ASSERT):
+                seq.append((s, e.target))
+    if not seq:
+        return 1
+    worst = 1
+    for start in range(au.n_states):
+        active = bytearray(au.n_states)
+        active[start] = 1
+        changed_passes = 0
+        while True:
+            before = bytes(active)
+            for src, dst in seq:
+                if active[src]:
+                    active[dst] = 1
+            if bytes(active) == before:
+                break
+            changed_passes += 1
+        worst = max(worst, changed_passes)
+    return worst
+
+
 def _emit_closure_body(au: _auto.Automaton) -> List[str]:
     """Relaxation body: propagate eps/assert edges into ``active`` once."""
     lines: List[str] = []
@@ -425,6 +480,7 @@ def _emit_rtl_wide(au: _auto.Automaton, circ_id, circ_flags, num_patterns,
       advances by the beat's kept-lane count.
     """
     N = au.n_states
+    _kpasses = closure_passes(au)
     L: List[str] = []
     add = L.append
 
@@ -533,7 +589,7 @@ def _emit_rtl_wide(au: _auto.Automaton, circ_id, circ_flags, num_patterns,
         add(f"    integer it{j};")
         add("    always @(*) begin")
         add(f"        act{j} = {src};")
-        add(f"        for (it{j} = 0; it{j} < NSTATES; it{j} = it{j} + 1) begin")
+        add(f"        for (it{j} = 0; it{j} < {_kpasses}; it{j} = it{j} + 1) begin")
         subs = [("active[", f"act{j}["), ("word_boundary", f"wb_{j}"),
                 ("at_sob", f"at_sob_{j}"), ("at_bol", f"at_bol_{j}"),
                 ("at_eob", f"at_eob_{j}"), ("at_eol", f"at_eol_{j}"),

@@ -58,8 +58,8 @@ _Static_assert(sizeof(pyro_match) == 24, "pyro_match must be a 24-byte R47 ring 
 
 /* --- normative harness / version constants (R42/R45) ----------------------*/
 #define PYRO_ABI_VER          0x00020000u  /* ABI 2.0.0 (R37)                 */
-#define HARNESS_VERSION       0x00020200u  /* §7.4 harness contract 2.2.0 (R78.11) */
-#define GENERATOR_VERSION     0x00020200u  /* L2 HDL generator 2.2.0 (R78.11) */
+#define HARNESS_VERSION       0x00020300u  /* §7.4 harness contract 2.3.0 (closure_passes) */
+#define GENERATOR_VERSION     0x00020300u  /* L2 HDL generator 2.3.0 (closure_passes) */
 #define SHELL_VERSION         0x0A000001u  /* target shell/PR-region id (R47b)*/
 #define ID_MAGIC              0x5059524Fu  /* "PYRO" (R45 0x0000)             */
 #define DATAPATH_BYTES        1u
