@@ -2025,3 +2025,37 @@ lowering silently produces a match-everything prefilter that still passes
 any completeness-only test. Worth an explicit conformance test.
 
 Attempt 5 (running): bytes pattern, dpb=8, x1.
+
+## 2026-07-27 late — S1 COMPLETE: AC-S1-1 and AC-S1-2 both PASS on silicon
+
+Corrected child (bytes-mode nocase, dpb=8, x1): built in 2697 s,
+payload_kind=pr_bitstream, pr_verified=True, met_timing=True,
+fmax 252.02 MHz, luts=7685 ffs=1983, 3,611,668 B. **AC-S1-1 PASS**
+(manifest + SR4 over-approximation classes + sidecar gid:sid map).
+
+JTAG load 14.0 s (fastest yet — no wedge recovery needed this time).
+ID_REPLY = {0x02020000, 0x00010000, 0x61c9fde7}: rp_child_id is the
+byte-swapped low-32 of pattern hash e7fdc961..., SR14 identity satisfied.
+
+AC-S1-2 run via tests/data/snortpf/ac_s1_2.py (reads C2S TCP payloads out
+of the pcaps, MATCH_REQUESTs them, maps pattern_id -> gid:sid via the
+sidecar):
+  positive: 1 nomination — 192.168.50.10:40222 -> 10.0.0.21:21, 1:1927,
+            window b'RETR AuthoRized_Keys' (mixed case, so the R15
+            byte-fold is load-bearing)
+  negative: 0 nominations
+  Snort 3.12.2.0 re-verification: positive fires 1:1927 exactly once,
+  negative silent. **AC-S1-2 PASS.**
+
+Two protocol notes for the S3 daemon:
+1. `out_cap` in MATCH_REQUEST is NOT optional — sending 0 returns
+   count=0 with OVF set (looks like "no match", is really "no room").
+2. Hardware `start` is the chunk start (start_off), not the match start:
+   silicon reported 0..20 where the software model reports (5,20). Only
+   `end` is the exact match end. Nomination offsets MUST be attributed
+   from `end`; treat [start,end] as the conservative candidate window
+   (R78.7) — the host re-verifier resolves it either way.
+
+Phase S1 is done. S2 opens with three carried-forward blockers recorded
+above: SF6 cost model under-predicts ~6x, the dpb=8 codegen spins synth
+past ~150 states, and SR3 needs the bytes-mode case-fold conformance test.
