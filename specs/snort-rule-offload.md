@@ -1,15 +1,17 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 0.1.0
-- **Status:** **DRAFT FOR OWNER REVIEW — NOT ADOPTED.** Nothing in this
-  document is normative until the owner adopts it via the §11 change-control
-  process. No implementation work is authorized by this draft.
-- **Owner:** Spec Writer (drafted for owner review)
-- **Date:** 2026-07-15
-- **Depends on:** `specs/python-regex-offload.md` (PYRO) **v2.5.0** — this spec
+- **Version:** 1.0.0
+- **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
+  post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
+  adoption. Phases S1–S3 are authorized; S4 requires the further owner
+  reviews noted in §6/§10.
+- **Owner:** George Neville-Neil (adopted); drafted by Spec Writer 2026-07-15
+- **Date:** 2026-07-27
+- **Depends on:** `specs/python-regex-offload.md` (PYRO) **v2.7.0** — this spec
   reuses PYRO's shell, transport, synthesis, cache, residency, and honesty
   machinery by requirement-ID reference and adds no obligations to PYRO itself.
+  (Drafted against v2.5.0; the v2.7.0 deltas are captured as SF17/SF18.)
 
 ---
 
@@ -114,6 +116,40 @@ MUST NOT assume different numbers.
   load-bearing; closing it is a **gating prerequisite** for that phase, and
   there is no evidence today that it is closable. (Graft from the Angle-3
   analysis; see §9 Out of scope and Risk 2.)
+
+### 1.1a Post-draft facts (adopted with 1.0.0, 2026-07-27)
+
+Measured between the 0.1.0 draft and adoption; each supersedes the named
+clause of SF4–SF7 where they conflict. None changes an SR obligation.
+
+- **SF17 (P2d char-dev transport supersedes SF4's throughput ceiling).**
+  PYRO v2.7.0 (amendments B1/B2) binds a QDMA ST char-dev data plane
+  carrying the same R78-framed payloads in jumbo (9,556 B) frames:
+  measured **2.3 GiB/s zero-loss at 1 queue** on this host (2026-07-26,
+  `docs/notebook.md`). SF4's 1,518 B lockstep control path remains the
+  control transport; Risk 2's "tens of MB/s, frame-RTT-bound" scan-rate
+  bound is superseded for the daemon path. **Constraint:** the EQDMA soft
+  IP silently drops H2C packets when ≥2 queues are active (no `tuser_err`;
+  AMD support case filed 2026-07-27, `docs/amd-support-case-eqdma-h2c-loss.md`).
+  SNORT-PF SHALL bind the daemon transport to **1 queue** and carry the
+  loss-accounting watchdog until the AMD case resolves; completeness (SR3)
+  over a silently lossy transport is otherwise unprovable.
+- **SF18 (8 B/cycle engine harness supersedes SF6's 1 B/cycle ceiling).**
+  The P2e x4 frame-parallel child (DATAPATH_BYTES=8, 4 cores) is built and
+  measured (fmax 260.8 MHz, on silicon 2026-07-26). Group circuits SHOULD
+  target the 8 B/cycle harness (~2 GB/s per core-column at 250 MHz); the
+  SF6 LUT cost model is calibrated for 1 B/cycle and MUST be recalibrated
+  at AC-S2-2 before it is trusted for 8 B/cycle pattern sets.
+- **SF19 (SF7's CMAC violation is smaller than recorded).** The
+  2026-07-26 static rebuild closed to **WNS −0.015 ns** in the same
+  waivable `txoutclk_out[0]` group (vs −0.427 ns at drafting; both runs
+  documented in `docs/notebook.md`). This revises OQ-2's feasibility
+  input only; the CMAC datapath remains tied off and out of scope.
+- **SF20 (JTAG swap cost, current numbers).** Partial load measured at
+  **17 s (single-core, ~4.06 MB) to 44.7 s (x4, ~5.09 MB)** including the
+  automatic in-band wedge recovery. SR10's rotation scheduler MUST treat
+  a swap as costing ~45 s and apply hysteresis so swap time stays small
+  relative to residency time.
 
 ### 1.2 Corpus facts (`snort3-community.rules`, 4,017 alert rules, full parse)
 
@@ -576,6 +612,29 @@ Emergency rules: instant CPU coverage, FPGA coverage one synthesis later.
 
 ## 10. Open questions for the owner
 
+**Decisions recorded at adoption (2026-07-27):**
+
+- **OQ-1 — DEFERRED.** No A5 slot is opened now. S3's measured swap
+  cadence and unfiltered-window stats (SR19) are the evidence base for
+  revisiting at the S3 review. Until then, rules change only by
+  re-synthesis (SR9) and residency by JTAG rotation (SR10/SF20).
+- **OQ-2 — FEASIBILITY SPIKE ONLY, after S3.** No line-rate commitment.
+  SF19's −0.015 ns result makes the spike worthwhile; the host-tap
+  deployment model with SF17's 2.3 GiB/s ceiling is the accepted shape
+  for S1–S4.
+- **OQ-3 — DECIDE AT AC-S2-2.** `GROUP_MAX` stays 256 until the first
+  group's post-route utilization is measured, per SR8/R74.
+- **OQ-4 — NOMINATION-ONLY THROUGH S3.** The SR17 suppression pilot
+  remains gated on its four conditions including a fresh owner approval
+  at S4; operators are told 97% is *compilable* coverage, not resident
+  coverage.
+- **OQ-5 — pcap replay for S1–S2; AF_PACKET tap for S3** on the control
+  binding of the single PF, accepting the control/data interleave (or a
+  second capture NIC if measurement shows the blind window matters —
+  decided at S3 design time).
+
+The original questions are retained below for their analysis:
+
 - **OQ-1 (A5 boundary).** Does the owner want a future amendment slot opened
   for a *loadable*-table AC engine (seconds-scale rule pushes over R78,
   vs SR9's 30–60 min re-synthesis)? This draft deliberately excludes it to
@@ -619,6 +678,14 @@ from this file and the PYRO spec, not from each other. Additionally:
 
 ## 12. Changelog
 
+- **1.0.0** (2026-07-27) — **ADOPTED by the owner** (per the §11 adoption
+  gate; decision recorded in `docs/phase2-snort-plan.md` and
+  `docs/prompts.md` 2026-07-27). Adds §1.1a post-draft facts SF17–SF20
+  (P2d char-dev transport + EQDMA 1-queue constraint; 8 B/cycle harness;
+  revised CMAC WNS; measured JTAG swap costs) and records the §10 OQ
+  decisions (A5 deferred; line-rate spike-only post-S3; GROUP_MAX at
+  AC-S2-2; nomination-only through S3; pcap→AF_PACKET tap). Phases S1–S3
+  authorized.
 - **0.1.0** (2026-07-15) — Initial draft for owner review. Compile-to-circuits
   architecture (rule groups as PR partials on the unmodified PYRO shell),
   grounded in the 4,017-rule corpus profile and the flashed-shell facts;
