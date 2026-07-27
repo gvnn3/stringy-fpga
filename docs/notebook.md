@@ -1961,3 +1961,67 @@ tens-of-MB/s ceiling ~100×; 8 B/cyc x4 harness revises SF6; CMAC WNS now
 work breakdown. Per the spec's §11 gate, implementation waits on the
 owner adopting at 1.0.0; the SR1 triage parser (validate against
 SF8–SF11 counts) is the authorized-as-analysis first step.
+
+## 2026-07-27 — S1 build attempts (sid 1927): two toolchain lessons
+
+Attempt 1 (x4, 8 B/cyc): synth_design ABORTS (Synth 8-7098, exit 134)
+elaborating the generator's per-stage closure loops at NSTATES=151 —
+first pattern circuit past ~100 states. Fixed with `-stack 2000` on the
+Vivado batch invocation (05c0148); synth then finishes in 64 s.
+
+Attempt 2 (x4): killed at the 7200 s R84 timeout, workdir destroyed
+(pre-pr_verify failures rmtree; only post-verify workdirs are preserved
+per A3.5). No stage attribution. **Calibration warning for SR8/AC-S2-2:
+one 151-state case-folded 15-byte literal at 8 B/cyc × 4 cores does not
+close in 2 h on this host, while 8-state abc[a-f]{2} took 55 min. The
+SF6 model estimated 1,224 LUTs for this child — clearly not predictive
+at dpb=8.** GROUP_MAX=256 sizing rests on that model; expect AC-S2-2 to
+force either a repartitioned closure-stage pipeline in the generator or
+much smaller groups.
+
+Attempt 3 (running): RP_CORES=1, same 8 B/cyc harness, workdir kept via
+rmtree stub + stage monitor for attribution.
+
+Attempt 3 post-mortem: single-core dpb=8 spun exactly like the x4 —
+synth "finishes" in 64 s then one thread pegs 100% CPU with zero log
+output (killed after 1 h). The spin is per-automaton, in a synthesis
+optimization on the closure logic, so core count is irrelevant.
+Root datum: NSTATES=151 comes from R15's case-fold construction itself
+(~10 NFA states per folded char of the 15-byte literal), not from the
+dpb=8 position expansion; but at dpb=1 the closure logic is one stage
+(430 RTL lines) vs eight (1,999) — same shape as every circuit built
+to date. Attempt 4 (running): dpb=1, single core, stall watchdog armed.
+**S2 blocker candidate: the dpb=8 closure codegen must be re-staged
+(pipelined/partitioned) before any 8 B/cyc group circuit is feasible.**
+
+## 2026-07-27 evening — S1 built, loaded, and the case-fold lowering lesson
+
+Attempt 4 (dpb=1, x1) BUILT: 3024 s, pr_verified=True, met_timing=True,
+fmax 253.6 MHz, luts=7852 ffs=2063 (est was 1224/663 — SF6 under-predicts
+6.4x here; another AC-S2-2 calibration datum). JTAG load + wedge-recover
+brought it up; ID_REPLY payload = {static_shell_id 0x02020000, harness
+0x00010000, rp_child_id 0xcc442279} — byte-swapped low-32 of the pattern
+hash 792244cc..., i.e. SR14 identity confirmed on silicon.
+
+**But AC-S1-2 FAILED on the negative corpus: the child nominated a window
+at every position of every input.** Root cause is NOT a bug — it is R15
+working as documented. `generate()` was called with a *str* pattern and
+re.IGNORECASE but no re.ASCII: in str mode that path deliberately
+over-approximates to "any code point" (OA_CROSS_LENGTH_CASEFOLD,
+automaton.py:230-237) because Unicode simple folds can cross UTF-8
+lengths ('K' <-> U+212A). The circuit was complete but matched
+everything: NSTATES 151 instead of 16.
+
+Snort content is BYTES. `generate(b"authorized_keys", re.IGNORECASE)`
+(or str + re.IGNORECASE|re.ASCII) gives the exact 2-byte fold set:
+NSTATES=16, over_approx=(), and in the model the positive yields exactly
+[(5,20)] while the negative yields []. The software model reproduced the
+hardware's behaviour exactly in both cases — the model/silicon agreement
+is itself evidence for the R54-style oracle.
+
+**SR3 amendment candidate for S2:** the spec's "nocase via the existing
+ASCII case-fold (PYRO R15)" MUST be lowered in bytes mode; a str-mode
+lowering silently produces a match-everything prefilter that still passes
+any completeness-only test. Worth an explicit conformance test.
+
+Attempt 5 (running): bytes pattern, dpb=8, x1.
