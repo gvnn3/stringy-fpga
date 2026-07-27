@@ -1,7 +1,7 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 1.0.0
+- **Version:** 1.0.1
 - **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
   post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
   adoption. Phases S1–S3 are authorized; S4 requires the further owner
@@ -171,8 +171,13 @@ clause of SF4–SF7 where they conflict. None changes an SR obligation.
   anchor on < 4 bytes (high nomination rate on random traffic; must be gated
   by their port predicate).
 - **SF11 (buffer visibility — the soundness boundary).** Best-anchor buffer:
-  **raw/pkt_data 1,760**; HTTP-textual buffers (uri/header/body/cookie/method)
-  1,892; file_data 239; dce_stub_data 5. **2,258 rules (56%) match only
+  **raw/pkt_data 1,759**; HTTP-textual buffers (uri/header/body/cookie/method)
+  1,893; file_data 239; dce_stub_data 5. *(Amended 1.0.1: sid 42886's anchor
+  follows `http_header:field user-agent`, which in Snort 3 IS a sticky-buffer
+  selection — the value narrows the normalized-header cursor to one field —
+  so its content is evaluated in the inspector-normalized User-Agent field,
+  not pkt_data; 1,760/1,892 → 1,759/1,893. The valued `sip_method:`/
+  `sip_stat_code:` forms remain genuine match options and stay raw.)* **2,258 rules (56%) match only
   inside inspector-normalized sticky buffers** (http_uri 1,692, http_header
   556, file_data 263, …) that exist only after Snort's HTTP inspector
   (dechunk, gunzip, %-decode). A raw-byte prefilter can be blinded by encoding
@@ -303,9 +308,15 @@ Requirements are numbered `SR1…` in this spec's own namespace.
   report (rule count per tier, per-rule tier + reason) analogous to PYRO
   `explain()` (R31).
 - **SR2 (tier classification is change-controlled, not code).** The
-  `anchor-compilable` tier is sub-tiered `raw-anchor` (anchor targets
-  raw/pkt_data, SF11: 1,760 rules) vs `normalized-buffer` (2,131 rules +
-  5 dce_stub_data). Because the raw/normalized boundary is the **soundness
+  `anchor-compilable` tier is sub-tiered into exactly two values:
+  `raw-anchor` (anchor targets raw/pkt_data, SF11 as amended: 1,759 rules)
+  vs `normalized-buffer` (2,137 rules, of which 5 are dce_stub_data — those
+  5 are inside `normalized-buffer`, visible per-buffer in the report's
+  histograms, never a third sub-tier value). A buffer key selects its
+  sticky buffer in both bare and valued form (`http_header:field x`,
+  `http_param:"x"` narrow the cursor within the buffer); the valued
+  `sip_method:`/`sip_stat_code:` forms are match options, not selections
+  (amendment 1.0.1). Because the raw/normalized boundary is the **soundness
   boundary for any future suppression claim** (SF11, Risk 3), the
   classification rules for this sub-tier SHALL be stated in this spec's §4.1
   and changed only by spec amendment (§11), never by silent code change.
@@ -460,8 +471,8 @@ Requirements are numbered `SR1…` in this spec's own namespace.
 | Tier | Rules | % | Disposition |
 |---|---|---|---|
 | Anchor-compilable prefilter circuits | 3,896 | 97.0% | FPGA nominates; Snort verifies |
-| — of which raw/pkt_data anchors (SR2 `raw-anchor`) | 1,760 | 43.8% | nomination sound even vs encoding; only suppression-eligible tier (SR17) |
-| — HTTP-textual / file_data anchors (`normalized-buffer`) | 2,131 | 53.0% | nomination best-effort (SF11); tripwires cover the known-blind cases (SR15) |
+| — of which raw/pkt_data anchors (SR2 `raw-anchor`) | 1,759 | 43.8% | nomination sound even vs encoding; only suppression-eligible tier (SR17) |
+| — HTTP-textual / file_data / dce anchors (`normalized-buffer`) | 2,137 | 53.2% | nomination best-effort (SF11); tripwires cover the known-blind cases (SR15) |
 | Header-only | 95 | 2.4% | host var-table match (SR13); no payload circuit |
 | Never literal-prefilterable | 26 | 0.6% | always forwarded (SR1) |
 
@@ -678,6 +689,17 @@ from this file and the PYRO spec, not from each other. Additionally:
 
 ## 12. Changelog
 
+- **1.0.1** (2026-07-27) — SR2 amendment (per §11: the raw/normalized
+  boundary changes only by spec amendment). (a) Snort 3 grammar correction:
+  `http_header:field <name>` (and valued `http_param:`/`http_uri:` etc.)
+  is a sticky-buffer *selection* whose value narrows the cursor within the
+  buffer — sid 42886 moves raw-anchor → normalized-buffer; SF11 best-anchor
+  histogram 1,760/1,892 → 1,759/1,893; the valued `sip_method:`/
+  `sip_stat_code:` forms remain match options (their five rules stay raw).
+  (b) Clarifies SR2's sub-tier vocabulary as exactly two values —
+  `raw-anchor` (1,759) and `normalized-buffer` (2,137, incl. the 5
+  dce_stub_data, which are reported per-buffer, not as a third sub-tier).
+  §5 coverage table updated accordingly. Corpus snapshot unchanged.
 - **1.0.0** (2026-07-27) — **ADOPTED by the owner** (per the §11 adoption
   gate; decision recorded in `docs/phase2-snort-plan.md` and
   `docs/prompts.md` 2026-07-27). Adds §1.1a post-draft facts SF17–SF20

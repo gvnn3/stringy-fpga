@@ -1425,3 +1425,11 @@ There is a repo of snort rules in ~/snort3-community-rules.tar.gz this is part o
 
 Continue when the survey finishes
 
+## 2026-07-27 15:11:26
+
+Adopt the spec at 1.0.0 with your recommendations and start S1
+
+## 2026-07-27 15:19:49
+
+Continue when the builds finish
+

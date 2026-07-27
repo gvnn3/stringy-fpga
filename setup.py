@@ -41,7 +41,7 @@ class build_ext(_build_ext):
 setup(
     name="pyro",
     version="0.0.1",
-    packages=["pyro", "pyro.hdl", "pyro.synth"],
+    packages=["pyro", "pyro.hdl", "pyro.synth", "pyro.snort"],
     cmdclass={"build_ext": build_ext},
     ext_modules=[
         Extension(
