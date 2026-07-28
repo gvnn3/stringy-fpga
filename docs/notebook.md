@@ -2262,3 +2262,68 @@ daemon that hot-swaps groups by observed port mix (~45 s/swap, SF20
 hysteresis), content-chain lowering, and the weekly-diff incremental
 rebuild path. S4 (ROM-baked shared trie, suppression pilot) is gated on
 owner review.
+
+## 2026-07-28 — S3 day 1: chain lowering, daemon, scheduler, drill; full build launched
+
+**AC-S3-2 landed first, deliberately** — the lowering changes every
+group's canonical bytes (the SR9 cache key), so it had to precede the
+21-group build or the overnight Vivado run would be paid twice.
+
+**The lowering** (`pyro/snort/lowering.py`): anchor content chains with
+`distance/within` as bounded superset gap windows `[max(0,D), D+W]`,
+per-fragment `nocase` as scoped `(?i:)` byte-fold groups, `offset/depth`
+as `\A` prefixes, clean `R`-flagged cursor-anchored pcre fused as
+literal⋅regex concatenation. Everything inadmissible stays a dropped
+conjunct. Corpus: 245 chains, 91 `\A` rules, 36 fusions → 181 lowered
+slots; groups.py v2 serializes pattern/flags/tail_span into the identity.
+
+**The differential caught a real soundness bug in the first design.**
+The initial `\A` lowering admitted tcp rules; AC-S2-3's Snort
+differential immediately reported a **raw-anchor miss** on sid 509
+(`depth 36`, service:http): Snort 3 binds a raw-cursor depth to the
+current **PDU section** of an inspected flow, not to raw stream offset 0
+— the anchor sat deep in a POST body and Snort alerted where our chunk-0
+window could not. Exactly what SR16 exists to catch ("any diff is a
+completeness defect, full stop"). Fix: `\A` prefixes only for
+PDU-aligned rules (udp/icmp/ip, no `service` option); tcp offset/depth
+stays a dropped conjunct, pinned by test. After the fix the entire
+AC-S2-3 suite is green again and — a pleasing invariant — the
+silicon-verified `$HTTP_PORTS/0` is **automaton-identical** to its S2
+shape (its 6 offset/depth rules are all tcp/service, so nothing in it
+lowered further).
+
+**Oracle coverage** (`test_acs3_2_lowering_oracle.py`, 11 gates): the S2
+closed-form oracle grew a stdlib-re longest-end enumerator (independent
+of the automaton) + a parse-tree exemplar builder; every one of the 181
+lowered slots passes model↔oracle equality at min/max gap widths; SR12
+chunk-cut sweeps prove chain matches survive the (generalized) overlap
+tail; the Snort differential on a 32-case chain sub-corpus shows **zero
+misses**; sabotage (narrowed window, dropped fragment) is caught.
+
+**The daemon** (`pyro/snort/daemon.py` + `scripts/pyro_snortpf_daemon.py`)
+and **SR10 scheduler** (`pyro/snort/scheduler.py`): SR13 variable table,
+port-mix histogram (most-specific-class signal — $HTTP_PORTS must beat
+its $FILE_DATA_PORTS superset on port 80), SR15 tripwires, SR12 per-flow
+tails, SR14 identity gate (mismatch → unfiltered, never misattribution),
+trimmed-corpus OVF resume plus the new `\A`-flood rule (a buffer-aligned
+request that overflows nominates every `\A` slot — the resume trim
+cannot recover those windows; `literal/3` holds 59 of them against
+out_cap 61). Hysteresis: challenger class needs a 2× lead sustained 60 s,
+300 s dwell, round-robin within the dominant class. SR19 stats surface
+complete. End-to-end on a synthetic pcap: mix-driven swap to
+$HTTP_PORTS/0, dedup slot nominates both its sids, benign silent.
+
+**AC-S3-3 drill green**: a 33-rule SF15-shaped diff dirties exactly 2
+groups by SR9 key; tombstones never renumber; 19/21 groups hit a real
+BitstreamCache; the rebuild's unfiltered window is SR19-visible.
+
+**AC-S3-1 build launched**: all 21 groups, 2 concurrent Vivado
+pr_bitstream jobs (~14 GB resident, on the R63c profile), SR9
+cache-resumable. Expected overnight (~8 h at the measured ~46–53
+min/group for the big ones). On-silicon serve/identity clauses follow
+once artifacts exist; SR18 SKIP discipline until then.
+
+**Owner slate drafted**: `docs/spec-amendments-s3.md` — A1 SR12 tail =
+max floating span − 1; A2 the SR3 admission conditions (raw-only chains,
+PDU-aligned prefixes with the sid-509 evidence, 255/384 bounds); A3 the
+measured 21-group count; A4 the `\A`-overflow daemon obligation.

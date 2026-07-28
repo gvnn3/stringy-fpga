@@ -324,3 +324,67 @@ print(len(gs), 'groups;', {g.port_class for g in gs})
 g = next(g for g in gs if g.port_class=='\$HTTP_PORTS' and g.index==0)
 print('AC-S2-2 group:', g.rule_count, 'rules ->', g.n_slots, 'slots')"
 ```
+
+## 9. S3 — chain lowering, the filter daemon, and the full-build flow
+
+### 9.1 What changed under the hood (AC-S3-2)
+
+Slots are no longer anchor-only: rules with bounded content chains,
+PDU-aligned `offset/depth`, or a clean anchored relative pcre compile
+richer circuits (181 lowered slots corpus-wide; see
+`docs/spec-amendments-s3.md` for the admission rules and the sid-509
+story). Inspect any rule's lowering:
+
+```sh
+.venv-pyro/bin/python3 - <<'PY'
+from pyro.snort import triage, lowering
+from pyro.snort.rules import parse_rule
+r = parse_rule('alert udp any any -> any 53 (msg:"x"; '
+               'content:"abc", depth 16; content:"def", within 8; sid:1;)', 1)
+lo = lowering.lower_rule(r, triage.triage_rule(r))
+print(lo.pattern, "tail_span:", lo.tail_span, "dropped:", lo.dropped)
+# b'(?s:\\A.{0,15}abc.{0,8}def)' tail_span: 0 dropped: ()
+PY
+```
+
+### 9.2 The filter daemon (device-free replay)
+
+```sh
+# Replay any pcap through the real daemon: SR13 classify, SR10 swap,
+# SR14 identity, SR15 tripwires, SR12 tails, SR19 stats as JSONL.
+.venv-pyro/bin/python3 scripts/pyro_snortpf_daemon.py \
+    --pcap /path/to/capture.pcap --tick-interval 0
+# stderr: "[daemon] resident -> $HTTP_PORTS/0", one line per nomination;
+# stdout: SR19 snapshots (nominations_by_tier, tripwire_hits,
+#         unfiltered_seconds, resident identity, swaps, ovf counters)
+```
+
+Live tap (control binding must be active; CAP_NET_RAW):
+
+```sh
+sudo env PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_snortpf_daemon.py --tap --wire --stats-out /tmp/sr19.jsonl
+# --wire scans through the resident child over R78 and JTAG-swaps groups
+# by port mix (SF20 ~14-45 s blind window, visible in unfiltered_seconds)
+```
+
+### 9.3 Building all 21 groups (AC-S3-1, overnight)
+
+```sh
+env PYRO_VIVADO=/usr/local/cad/2025.2/Vivado \
+    PYRO_PR_STATIC_DCP=$PWD/hw/dfx/build/dcp/static_routed_locked.dcp \
+    PYRO_PR_REFERENCE_DCP=$PWD/hw/dfx/build/dcp/static_full_config0.dcp \
+    .venv-pyro/bin/python3 .superpowers/pr-builds/pr_build_driver_s3_all_groups.py
+# 2 concurrent jobs (~9.4 GB each), SR9 cache-resumable: re-run after a
+# crash and only missing groups rebuild. --dry-run shows cache state;
+# --only '$HTTP_PORTS/1,any/0' builds a subset. Summary lands in
+# .superpowers/pr-builds/s3_build_summary.json
+```
+
+### 9.4 The weekly-diff drill (AC-S3-3)
+
+```sh
+.venv-pyro/bin/python3 -m pytest tests/acceptance/test_acs3_3_weekly_diff.py -q
+# 33-rule diff -> 2 dirty groups, tombstones stable, 19/21 cache hits,
+# unfiltered window bounded and SR19-visible
+```
