@@ -33,12 +33,19 @@ from typing import Callable, Dict, Optional, Tuple
 
 from .cache import BitstreamCache, BitstreamKey, key_digest
 from .toolchain import (
-    MockToolchain, SynthJob, SynthesisFailed, ToolchainConfig, VivadoToolchain,
+    ConfigurationError, MockToolchain, SynthJob, SynthesisFailed,
+    ToolchainConfig, VivadoToolchain,
 )
 
 # Result records pushed from the worker back to the client.
 STATUS_OK = "ok"
 STATUS_FAILED = "failed"
+#: The job's INPUTS were inconsistent (:class:`ConfigurationError`) — the design
+#: was never synthesized, so this is NOT an R65 negative and NOTHING is written
+#: to the cache.  Kept distinct from ``STATUS_FAILED`` because the R65 entry is
+#: permanent and its key does not contain the offending inputs (SR9), so caching
+#: one would make the corrected job unbuildable forever on that key.
+STATUS_MISCONFIGURED = "misconfigured"
 
 
 def _pick_context():
@@ -87,6 +94,12 @@ def _worker_main(job_q, result_q, cache_root: str, config: ToolchainConfig) -> N
             payload, manifest = toolchain.run(job)
             cache.put(key, payload, manifest)
             result_q.put((key, STATUS_OK, ""))
+        except ConfigurationError as exc:     # inconsistent JOB, not a design
+            # Deliberately NOT cached: see ConfigurationError's docstring.  A
+            # negative entry here would be permanent (R65) under a key that does
+            # not encode the offending input, so the fixed job would be refused
+            # resubmission on the very key it needs.
+            result_q.put((key, STATUS_MISCONFIGURED, str(exc)))
         except SynthesisFailed as exc:        # R65 fit/timing/tool/timeout fail
             cache.put_failure(key, str(exc))
             result_q.put((key, STATUS_FAILED, str(exc)))

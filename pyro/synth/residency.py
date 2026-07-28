@@ -43,7 +43,8 @@ from .. import hdl
 from ..hdl import identity as _identity
 from . import artifact as _artifact
 from .cache import BitstreamCache, BitstreamKey, make_key, key_digest
-from .service import SynthesisService, STATUS_OK, STATUS_FAILED
+from .service import (
+    SynthesisService, STATUS_OK, STATUS_FAILED, STATUS_MISCONFIGURED)
 from .toolchain import (
     TOOLCHAIN_VERSION, VIVADO_TOOLCHAIN_VERSION, SHELL_VERSION, SynthJob,
     ToolchainConfig,
@@ -110,6 +111,7 @@ class ResidencyManager:
             "synth_launched": 0,
             "synth_succeeded": 0,
             "synth_failed": 0,
+            "synth_misconfigured": 0,     # inconsistent job; NOT an R65 negative
             "circuits_synthesizing": 0,   # gauge
             "circuits_resident": 0,        # gauge
             "circuits_evicted": 0,
@@ -153,6 +155,13 @@ class ResidencyManager:
             elif status == STATUS_FAILED:
                 self._stats["synth_failed"] += 1
                 self._verdict[dig] = "failed"  # negative cache entry (R65)
+            elif status == STATUS_MISCONFIGURED:
+                # The JOB was inconsistent (engine/wrapper pairing), so nothing
+                # was synthesized and NOTHING was cached: the key stays cold and
+                # a corrected job can be resubmitted.  Counted separately so it
+                # is visible rather than looking like a fit/timing failure.
+                self._stats["synth_misconfigured"] += 1
+                self._verdict[dig] = "misconfigured"
             self._stats["circuits_synthesizing"] = len(self._synthesizing)
 
     def poll(self) -> None:

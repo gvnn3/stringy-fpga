@@ -103,6 +103,64 @@ def pattern_hash(pattern, flags: int, generator_version: int,
     return h.digest()[:16]
 
 
+#: Domain tag for the *standalone* pattern-set hash (SR7 fallback).  The
+#: SNORT-PF path passes :func:`pyro.snort.groups.group_hash` in explicitly —
+#: that hash covers the sidecar (gid:sid lists) and the port class, which this
+#: module never sees.  This tag exists so a group generated straight from a
+#: list of patterns (tests, ``xsim_diff``, ad-hoc experiments) still gets a
+#: stable, collision-free identity, and so it can NEVER alias either a
+#: single-pattern R47a identity (tag ``PYRO\0``) or a real SNORT-PF group
+#: (tag ``PYROGRP\0``).
+_PATTERN_SET_MAGIC = b"PYROPSET"
+
+
+def pattern_set_hash(patterns, flags_per_pattern, generator_version: int,
+                     harness_version: int, datapath_bytes: int = 1,
+                     enc: int = 0) -> bytes:
+    """16-byte identity of an ordered pattern SET (SR7), for CIRC_ID0..3.
+
+    Same construction as :func:`pattern_hash` — SHA-256 over a domain-separated,
+    length-prefixed canonical pre-image, truncated to 128 bits.  Slot order is
+    part of the identity (slot index *is* ``pattern_id``, R47), and a
+    tombstoned slot (``pattern is None``) is serialized as a distinct
+    zero-length marker so it can never alias a live empty pattern.
+
+    ``enc`` is :func:`pyro.hdl.generator.generate_group`'s **requested** R38
+    encoding, and it is part of the identity because it changes the emitted
+    circuit: ``generate_group(['ab\\xe9'], enc=ENC_BYTES)`` and the same call
+    with ``ENC_UTF8`` build automata with different state counts and emit
+    different RTL.  The per-slot ``enc_tag`` below cannot stand in for it — it
+    is derived from the pattern object's *type* (str vs bytes), not from the
+    lowering the caller asked for — so without this the two circuits would
+    receive identical ``CIRC_ID0..3``, which is exactly the R47a trust
+    boundary the fallback identity exists to protect.  Mixed in only when
+    non-default, as ``datapath_bytes`` is, so the ENC_BYTES digest is stable.
+    """
+    h = hashlib.sha256()
+    h.update(_PATTERN_SET_MAGIC)                 # domain separation
+    h.update(int(generator_version).to_bytes(4, "little"))
+    h.update(int(harness_version).to_bytes(4, "little"))
+    if int(enc) != 0:                            # R38 requested encoding
+        h.update(b"ENC\x00")
+        h.update(int(enc).to_bytes(4, "little"))
+    if int(datapath_bytes) != 1:
+        h.update(b"DPB\x00")                     # domain separation (P2b)
+        h.update(int(datapath_bytes).to_bytes(4, "little"))
+    pats = list(patterns)
+    flags_list = list(flags_per_pattern)
+    h.update(len(pats).to_bytes(8, "little"))
+    for pat, fl in zip(pats, flags_list):
+        if pat is None:                          # tombstoned slot (SR6)
+            h.update(b"\xff")
+            continue
+        pb, enc_tag = canonical_pattern_bytes(pat)
+        h.update(bytes([enc_tag]))
+        h.update(int(fl).to_bytes(4, "little"))
+        h.update(len(pb).to_bytes(8, "little"))
+        h.update(pb)
+    return h.digest()[:16]
+
+
 def descriptor_key(pattern, flags: int, generator_version: int) -> tuple:
     """The canonical R4 host-classification / bitstream cache key prefix.
 

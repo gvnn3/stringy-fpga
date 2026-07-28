@@ -23,6 +23,7 @@ from .cache import (
     make_key,
 )
 from .toolchain import (
+    ConfigurationError,
     MockToolchain,
     SHELL_VERSION,
     SynthJob,
@@ -30,7 +31,8 @@ from .toolchain import (
     TOOLCHAIN_VERSION,
     ToolchainConfig,
 )
-from .service import STATUS_FAILED, STATUS_OK, SynthesisService
+from .service import (
+    STATUS_FAILED, STATUS_MISCONFIGURED, STATUS_OK, SynthesisService)
 from .residency import (
     N_SYNTH_DEFAULT,
     ROUTE_NOT_RESIDENT,
@@ -52,9 +54,10 @@ __all__ = [
     "Manifest", "payload_crc32",
     "BitstreamCache", "BitstreamKey", "CacheEntry", "default_root",
     "key_digest", "make_key",
-    "MockToolchain", "SynthJob", "SynthesisFailed", "ToolchainConfig",
+    "MockToolchain", "SynthJob", "SynthesisFailed", "ConfigurationError",
+    "ToolchainConfig",
     "TOOLCHAIN_VERSION", "SHELL_VERSION",
-    "SynthesisService", "STATUS_OK", "STATUS_FAILED",
+    "SynthesisService", "STATUS_OK", "STATUS_FAILED", "STATUS_MISCONFIGURED",
     "ResidencyManager", "N_SYNTH_DEFAULT",
     "TIER_COLD", "TIER_SYNTHESIZING", "TIER_WARM", "TIER_RESIDENT",
     "TIER_FALLBACK_ONLY",

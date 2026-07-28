@@ -36,7 +36,7 @@ import re._constants as _c
 import threading
 from bisect import bisect_left
 from functools import lru_cache
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 # Requires CPython >= 3.11 (P7/R26): this model and the L2 front end depend on
 # the ``re._parser`` / ``re._constants`` modules (present under those names only
@@ -285,6 +285,202 @@ class CircuitModel:
             self._out_count = min(len(windows), out_cap)
             self._status = ST_DONE | (ST_OVF if overflowed else 0)
             return windows[:out_cap], overflowed
+
+
+class GroupMatch(NamedTuple):
+    """One entry of a group circuit's result ring (R47 ``pyro_match`` shape).
+
+    ``pattern_id`` is the group-local **slot** index (SR7): the sidecar maps it
+    to the LIST of ``gid:sid`` rules that share that slot's anchor.  ``start``
+    and ``end`` follow :class:`CircuitModel`'s convention exactly — see
+    :class:`GroupCircuitModel` for the (load-bearing) definition of ``start``.
+    """
+
+    pattern_id: int
+    start: int          # inclusive byte offset — TRUE match start (see below)
+    end: int            # exclusive byte offset
+    flags: int = 0      # bit0 verified, bit1 zero_width (R47) — unverified
+
+    @property
+    def slot(self) -> int:
+        """Alias: the group slot this entry came from."""
+        return self.pattern_id
+
+    def as_window(self) -> MatchWindow:
+        """The same entry in :class:`pyro._model.MatchWindow` field order."""
+        return MatchWindow(self.start, self.end, self.pattern_id, self.flags)
+
+
+class GroupCircuitModel:
+    """Behavioral model of one resident **group** circuit (SNORT-PF SR7).
+
+    A group circuit is N automata sharing one harness; slot *i* is
+    ``pattern_id`` *i* (SR7).  This is the model the SR16 differential oracle
+    compares against.
+
+    **Scope: fixed-length literal slots.**  Every SNORT-PF slot is one (spec §2
+    "Anchor"; ``pyro.snort.groups.slot_pattern`` lowers it with ``re.escape``),
+    and for those this model and the hardware agree exactly.  It is NOT the
+    RTL's twin for an arbitrary automaton: ``_scan_windows`` is *per-start
+    leftmost-longest* (one window per start offset, the longest), while the
+    emitted engine is a continuously-seeded NFA that emits on every accepting
+    cycle.  The two coincide for a literal and diverge otherwise — this model
+    under-reports a ``+``/``*`` slot (one window per start where the RTL emits
+    one per accepting byte) and reports separate windows where a bounded
+    repeat lets one start accept at several lengths.  ``tests/hw/xsim_diff.py``
+    therefore diffs the RTL against its own engine-semantics reference
+    (``group_entries``), and ``test_acs2_3_oracle`` pins that the two agree on
+    the real group's corpora — for literal slots, which is what S2 ships.
+
+    The circuit argument
+    --------------------
+    Any object exposing the :class:`pyro.hdl.GeneratedCircuit` fields with
+    ``automaton`` replaced by ``automata`` — an ordered sequence, index =
+    slot = ``pattern_id``, entries may be ``None`` for a **tombstoned** slot
+    (SR6: index retained, can never match).  Optional but honored:
+    ``datapath_bytes`` (R45a perf counters), ``circ_id`` / ``circ_flags`` /
+    ``harness_version`` / ``generator_version`` (R45/R47a CSR block).  A
+    single-pattern :class:`pyro.hdl.GeneratedCircuit` is accepted as the
+    degenerate 1-slot group (that is exactly the Phase-S1 child).
+
+    Definition of ``start`` — read this before writing host code
+    ------------------------------------------------------------
+    This model reports the **true match start**: the leftmost byte offset from
+    which the slot's automaton reaches accept, in absolute buffer offsets,
+    identical to :class:`CircuitModel` / :func:`_scan_windows`.
+
+    **Silicon does not.**  AC-S1-2 on the flashed shell reported ``start`` =
+    the *chunk* start (the request's ``start_off``, i.e. 0 for a single-chunk
+    request) where this model reports 5 — the harness emits an entry when an
+    accept fires and never tracked where the run began (docs/notebook.md,
+    2026-07-27 late, protocol note 2; ``tests/hw/xsim_diff.py``'s reference
+    composer packs literal ``0`` into the entry's start field for the same
+    reason).  Only ``end`` is exact on hardware.
+
+    The model implements the true-start convention because (a) it is
+    :class:`CircuitModel`'s, and forking it would give SNORT-PF two
+    incompatible notions of a window, and (b) it is the *stronger* statement:
+    a host that only trusts ``end`` is correct under both.  For a group, the
+    two are reconcilable without new hardware — every slot's anchor is a fixed
+    length literal, so ``start == end - len(anchor[pattern_id])`` and the
+    daemon recovers the true start from ``end`` plus the sidecar's anchor
+    length.  Attribution MUST therefore be driven from ``end``; treat
+    ``[start, end]`` as the conservative candidate window (R78.7) and let the
+    Snort re-verifier resolve it (SR5).
+
+    Ring order
+    ----------
+    Entries are ordered by ``(end, pattern_id, start)`` ascending.  That is the
+    hardware writer's order: the shared harness emits on accept (so ``end``
+    ascending is emission time) and serializes slots that accept on the same
+    byte by ascending slot index (priority encoder over the accept vector).
+    This is the order the SR7 emitter MUST match.  The gate on the emitter is
+    ``tests/hw/xsim_diff.py`` against *its own* reference (see the scope note
+    above), run from ``tests/acceptance/test_acs2_3_oracle.py``; this class is
+    what gate 1 checks the automata with.  Truncation on overflow keeps the
+    earliest-*ending* entries, which is what the R41 resume needs.
+
+    ``start_off`` is a MODEL-SIDE convenience.  :meth:`scan` honours it, but the
+    emitted ``pyro_rp`` wrapper never reads the R78.6 ``start_off`` header
+    field — it always feeds the corpus from byte 0.  A host resume must
+    therefore re-send the TRIMMED corpus and re-label the offsets itself; see
+    ``snortpf_s2_support.nominate_with_resume``.
+    """
+
+    __slots__ = ("circuit", "automata", "enc", "datapath_bytes", "resident",
+                 "_status", "_out_count", "_cycles", "_bytes", "_lock")
+
+    def __init__(self, circuit):
+        self.circuit = circuit
+        automata = getattr(circuit, "automata", None)
+        if automata is None:  # degenerate 1-slot group (the S1 child)
+            automata = (circuit.automaton,)
+        self.automata = tuple(automata)
+        self.enc = getattr(circuit, "enc", ENC_BYTES)
+        self.datapath_bytes = int(getattr(circuit, "datapath_bytes", 1) or 1)
+        self.resident = False
+        self._status = 0
+        self._out_count = 0
+        self._cycles = 0
+        self._bytes = 0
+        self._lock = threading.Lock()
+
+    @property
+    def n_slots(self) -> int:
+        """Number of slots == ``NUM_PAT`` in ``CIRC_FLAGS`` (R45 0x0028)."""
+        return len(self.automata)
+
+    # -- harness CSR block (R45/R47a) --------------------------------------
+    def csr_read(self, offset: int) -> int:
+        c = self.circuit
+        table = {
+            CSR_ID: hdl.ID_MAGIC,
+            CSR_HARNESS_VER: getattr(c, "harness_version", 0),
+            CSR_CAPS0: (self.datapath_bytes & 0xFFFF)
+            | ((hdl.budget()["pr_partitions"] & 0xFFFF) << 16),
+            CSR_CAPS1: getattr(c, "generator_version", 0),
+            CSR_STATUS: self._status,
+            CSR_CIRC_FLAGS: getattr(c, "circ_flags", 0),
+            CSR_RESERVED: 0,
+            CSR_OUT_COUNT: self._out_count,
+            CSR_CYCLES_LO: self._cycles,
+            CSR_CYCLES_HI: self._cycles >> 32,
+            CSR_BYTES_LO: self._bytes,
+            CSR_BYTES_HI: self._bytes >> 32,
+        }
+        circ_id = getattr(c, "circ_id", (0, 0, 0, 0))
+        for i, reg in enumerate(
+                (CSR_CIRC_ID0, CSR_CIRC_ID1, CSR_CIRC_ID2, CSR_CIRC_ID3)):
+            table[reg] = circ_id[i]
+        return int(table.get(offset, 0)) & 0xFFFFFFFF
+
+    def identity_block(self) -> Tuple[int, int, int, int, int]:
+        """(CIRC_ID0..3, CIRC_FLAGS) — the baked identity read for R47a/SR14."""
+        c = self.circuit
+        return (*getattr(c, "circ_id", (0, 0, 0, 0)),
+                getattr(c, "circ_flags", 0))
+
+    # -- R41 scan against a resident group circuit -------------------------
+    def scan(self, buf: bytes, start_off: int = 0, out_cap: int = 1 << 62,
+             ) -> Tuple[List[GroupMatch], bool]:
+        """Scan ``buf`` across every slot; returns ``(entries, overflowed)``.
+
+        Semantics per slot are :func:`_scan_windows` verbatim (the *generated*
+        automaton is executed, so a lowering bug surfaces here rather than
+        being masked, R7/R19), so a slot reports one entry per start position
+        from which it can accept — several slots CAN and DO report at the same
+        offset, and one slot can report overlapping windows.  Entries are
+        unverified (bit0 clear); the host re-verifies (R19/R47a, SR5: every
+        FPGA match is a nomination, never a verdict).
+
+        Overflow is :class:`CircuitModel`'s exactly (R47): more than
+        ``out_cap`` entries sets ``STATUS.OVF``, returns ``overflowed=True``,
+        and truncates the ring to ``out_cap`` — in ring order, so the survivors
+        are the earliest-ending entries and the host resumes by ``start_off``
+        (R41/R78.7).
+        """
+        if not self.resident:
+            raise NotResident("group circuit not resident")
+        if out_cap < 0:
+            raise ValueError("out_cap must be non-negative")
+        with self._lock:  # single-issue per circuit (R48)
+            self._status = ST_BUSY
+            data = bytes(buf)
+            entries: List[GroupMatch] = []
+            for pid, au in enumerate(self.automata):
+                if au is None:      # tombstoned slot (SR6): never matches
+                    continue
+                for w in _scan_windows(au, data, start_off):
+                    entries.append(GroupMatch(pid, w.start, w.end, w.flags))
+            entries.sort(key=lambda m: (m.end, m.pattern_id, m.start))
+            # R45a perf counters: idealized datapath numbers, as CircuitModel
+            # (only hardware-measured values are performance evidence, R59).
+            self._bytes = max(0, len(data) - start_off)
+            self._cycles = -(-self._bytes // self.datapath_bytes)
+            overflowed = len(entries) > out_cap
+            self._out_count = min(len(entries), out_cap)
+            self._status = ST_DONE | (ST_OVF if overflowed else 0)
+            return entries[:out_cap], overflowed
 
 
 class CircuitContext:

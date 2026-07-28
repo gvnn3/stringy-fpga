@@ -17,6 +17,12 @@ ends coalesced to the highest per beat — pyro.hdl.generator._emit_rtl_wide):
 Run:  python3 tests/hw/xsim_diff.py [--datapath 8] [--pattern 'abc[a-f]{2}']
 Needs the pinned Vivado (PYRO_VIVADO or the R70a-pin default); exits 2 if
 absent (honest skip for callers).
+
+This is not only a hand-run script: ``tests/acceptance/test_acs2_3_oracle.py``
+imports :func:`main` and calls it as the AC-S2-3 **RTL gate** (gate 1b) — the
+only check in the suite that executes the emitted Verilog at all, since the
+SR16 oracle runs against ``GroupCircuitModel`` over the automata and never
+reads ``GeneratedGroup.rtl``.  Keep :func:`main` importable and argv-driven.
 """
 import argparse
 import os
@@ -70,6 +76,26 @@ def coalesce(ends, n: int):
     return [best[k] for k in sorted(best)]
 
 
+def group_entries(automata, buf: bytes):
+    """Reference ring for an SR7 GROUP engine: every (end, pattern_id).
+
+    The group engine does **no** per-beat coalescing (unlike the wide
+    single-pattern engine): each slot's accept at each lane becomes its own
+    entry, and the priority encoder drains ascending (lane, slot) — i.e.
+    ascending ``(end, pattern_id)``, the ring order
+    ``pyro._circuit_model.GroupCircuitModel`` pins.  That makes this reference
+    WIDTH-INDEPENDENT: the same expected bytes gate datapath_bytes 1 and 8.
+    """
+    ents = []
+    for pid, au in enumerate(automata):
+        if au is None:                     # tombstoned slot (SR6): never matches
+            continue
+        for e in engine_end_set(au, buf):
+            ents.append((e, pid))
+    ents.sort()
+    return ents
+
+
 # ---------------------------------------------------------------------------
 # Expected-reply composers (mirror pyro_rp's ST_BHDR/ST_BENT layout)
 # ---------------------------------------------------------------------------
@@ -93,12 +119,14 @@ def expect_status(req, code=7):
 
 
 def expect_match(req, ends, cap, maxent=61):
+    """``ends`` is a list of ``end`` (pattern_id 0) or of ``(end, pattern_id)``."""
+    pairs = [e if isinstance(e, tuple) else (e, 0) for e in ends]
     cap_eff = min(cap, maxent)
-    entries = ends[:cap_eff]
-    ovf = 1 if len(ends) > cap_eff else 0
+    entries = pairs[:cap_eff]
+    ovf = 1 if len(pairs) > cap_eff else 0
     payload = struct.pack(">HH", len(entries), ovf) + bytes(4)
-    for e in entries:
-        payload += struct.pack("<QQII", 0, e, 0, 1)   # R47 little-endian
+    for end, pid in entries:
+        payload += struct.pack("<QQII", 0, end, pid, 1)   # R47 little-endian
     return _reply_shell(req, 0x04, payload)
 
 
@@ -137,16 +165,28 @@ def mk_match_req(seq, corpus, out_cap, slot=SLOT, max_payload=1486):
 
 
 # ---------------------------------------------------------------------------
-def main():
+def main(argv=None):
+    """Run one differential; returns 0 (pass), 1 (mismatch) or 2 (no Vivado).
+
+    ``argv`` is accepted so this is callable **in-process** from pytest —
+    ``tests/acceptance/test_acs2_3_oracle.py`` invokes it as the AC-S2-3 RTL
+    gate, and being importable is what lets that suite sabotage the emitter
+    and prove the gate bites.  Nothing else about the script changes.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--datapath", type=int, default=8)
     ap.add_argument("--pattern", default="abc[a-f]{2}")
+    ap.add_argument("--group", default=None,
+                    help="comma-separated slot patterns: builds the SR7 GROUP "
+                         "engine (N automata, one harness) instead of the "
+                         "single-pattern engine.  An empty element is a "
+                         "tombstoned slot (SR6).")
     ap.add_argument("--max-frame", type=int, default=1536,
                     help="wrapper MAX_FRAME_BYTES: 1536 or 9600 (R78.9a)")
     ap.add_argument("--engines", type=int, default=1,
                     help="v4 frame-parallel core count (P2e); 1 = classic")
     ap.add_argument("--keep-workdir", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     n = args.datapath
     max_payload = args.max_frame - 14 - 14 - 4   # R78.9/R78.9a accounting
     max_corpus = max_payload - 12                # MATCH body prefix
@@ -160,22 +200,52 @@ def main():
         print(f"SKIP: no Vivado at {vivado_dir!r}")
         return 2
 
-    circ = _gen.generate(args.pattern, 0, datapath_bytes=n)
+    group = None
+    if args.group is not None:
+        # "pat" | "pat/i" (nocase, the R15 ASCII fold most Snort anchors carry)
+        # | "" (a tombstoned slot, SR6).
+        group, gflags = [], []
+        for p in args.group.split(","):
+            ic = p.endswith("/i")
+            group.append(p[:-2].encode("latin-1") if ic
+                         else (p.encode("latin-1") or None))
+            gflags.append(stdre.IGNORECASE if ic else 0)
+        circ = _gen.generate_group(group, gflags, datapath_bytes=n)
+        automata = circ.automata
+    else:
+        circ = _gen.generate(args.pattern, 0, datapath_bytes=n)
+        automata = (circ.automaton,)
     child_id = _wrap.rp_child_id_from_hash(circ.pattern_hash16.hex())
     sv = _wrap.generate_rp_child(circ.pattern_hash16.hex(), datapath_bytes=n,
                                  max_frame_bytes=args.max_frame,
-                                 cores=args.engines)
-    au = circ.automaton
+                                 cores=args.engines,
+                                 engine_backpressure=group is not None)
+    au = automata[0]
 
     # ---- request schedule + expected replies -----------------------------
-    corpora = [
-        b"xxabcdeyyabcffz",                        # 2 windows, short beat
-        b"abcdd",                                  # exactly one, len==5
-        b"no matches at all here",                 # zero windows
-        b"abcab" * 60,                             # 300 B, many windows
-        (b"padpad" * 20) + b"abcfe",               # match at the very end
-        b"a",                                      # tiny corpus
-    ]
+    if group is not None:
+        # Corpora chosen for SIMULTANEOUS and overlapping accepts: with slots
+        # like ("abc", "bc", "c") every "abc" makes three slots accept on the
+        # SAME byte (three ring entries, one byte) — the case the priority
+        # encoder, the feed stall and the skid buffer exist for.
+        corpora = [
+            b"xxabcdeyyabcffz",
+            b"abcabcabc",                          # back-to-back multi-accepts
+            b"no matches at all here",
+            b"abcab" * 60,                         # 300 B, saturating drains
+            (b"padpad" * 20) + b"abcd",            # accepts on the FINAL byte
+            b"a",
+            b"abc",                                # whole corpus == one match
+        ]
+    else:
+        corpora = [
+            b"xxabcdeyyabcffz",                    # 2 windows, short beat
+            b"abcdd",                              # exactly one, len==5
+            b"no matches at all here",             # zero windows
+            b"abcab" * 60,                         # 300 B, many windows
+            (b"padpad" * 20) + b"abcfe",           # match at the very end
+            b"a",                                  # tiny corpus
+        ]
     if args.max_frame > 1536:
         # R78.9a jumbo: a max-size corpus with matches at the head, middle,
         # and final byte — exercises the widened word-select slices end to end.
@@ -185,6 +255,12 @@ def main():
         body[mid:mid + 5] = b"abcff"
         body[max_corpus - 5:] = b"abcfa"
         corpora.append(bytes(body))
+    def ref(c):
+        """Expected ring for corpus ``c`` — group or single-pattern engine."""
+        if group is not None:
+            return group_entries(automata, c)
+        return coalesce(engine_end_set(au, c), n)
+
     reqs, expected = [], []
     seq = 100
     r = ETH_REQ + pdev.encode_frame(pdev.KIND_ID_REQUEST, 0, seq, b"")
@@ -195,12 +271,24 @@ def main():
         seq += 1
         r = mk_match_req(seq, c, out_cap=8, max_payload=max_payload)
         reqs.append(r)
-        expected.append(expect_match(r, coalesce(engine_end_set(au, c), n), 8))
-    # cap overflow: cap=1 on the many-window corpus
+        expected.append(expect_match(r, ref(c), 8))
+    # cap overflow: cap=1 on the many-window corpus.  For a group this also
+    # exercises HAZARD (b) — the dropped entries must still retire from `pend`
+    # or the engine never asserts DONE and the reply never comes.
     seq += 1
     r = mk_match_req(seq, b"abcab" * 60, out_cap=1)
     reqs.append(r)
-    expected.append(expect_match(r, coalesce(engine_end_set(au, b"abcab" * 60), n), 1))
+    expected.append(expect_match(r, ref(b"abcab" * 60), 1))
+    # out_cap = 0: overflow, NOT "no match" (S1 protocol note 1) — every accept
+    # is dropped, so the whole drain runs with the ring closed.
+    if group is not None:
+        seq += 1
+        r = mk_match_req(seq, b"abcabc", out_cap=0)
+        reqs.append(r)
+        expected.append(expect_match(r, ref(b"abcabc"), 0))
+        last_scan = b"abcabc"
+    else:
+        last_scan = b"abcab" * 60
     # wrong slot -> NOT_RESIDENT
     seq += 1
     r = mk_match_req(seq, b"abcde", out_cap=8, slot=0)
@@ -231,7 +319,9 @@ def main():
                 fd.write(d[::-1].hex() + "\n")     # verilog %h MSB-first
                 fk.write(f"{k:016x}\n")
                 fl.write(f"{l}\n")
-        runcyc = sum(len(r) for r in reqs) * 2 + 4000
+        # A group engine adds a stall cycle per pending accept, so give the
+        # tail-drain generous headroom (it only costs simulated time).
+        runcyc = sum(len(r) for r in reqs) * (6 if group else 2) + 8000
         env = dict(os.environ)
         cmds = [
             [xvlog, "engine.v"],
@@ -285,10 +375,14 @@ def main():
         if e is None:                              # PERF: loose field checks
             dec = pdev.decode_frame(g[14:])
             cyc, byt = struct.unpack(">QQ", dec.payload[:16])
-            last_len = len(corpora[-1])            # engine state = last MATCH scan?
-            # the last scan was the cap=1 corpus (300 B), then slot-miss (no scan)
-            scan_len = len(b"abcab" * 60)
-            bound = -(-scan_len // n) + 16
+            # the last scan is the last MATCH request that reached the engine
+            # (the slot-miss after it never scans).
+            scan_len = len(last_scan)
+            # A group engine stalls the feed one cycle per pending accept plus
+            # the feeder's one-cycle reaction, so CYCLES is bounded by the
+            # idealized ceil(len/N) PLUS the drain, not by ceil(len/N) alone.
+            drain = 3 * len(ref(last_scan)) if group is not None else 0
+            bound = -(-scan_len // n) + drain + 16
             ok = (byt == scan_len) and (0 < cyc <= bound)
             print(f"[{i}] PERF  BYTES={byt} CYCLES={cyc} "
                   f"(<= {bound}) {'OK' if ok else 'FAIL'}")

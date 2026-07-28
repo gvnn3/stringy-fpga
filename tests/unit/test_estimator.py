@@ -32,6 +32,52 @@ def test_budget_advertises_pr_region_resources():
     assert b["pr_partitions"] >= 1  # single-tenant region (R64)
 
 
+def test_budget_matches_the_flashed_shell_manifest():
+    """The advertised budget IS the real ``pyro_rp`` envelope (SNORT-PF SF2).
+
+    Through Phase 2 these constants were device-scale placeholders (216k LUT)
+    — 2.7x the actual region — which made every "does this fit" answer
+    fiction.  Pinned to ``hw/dfx/platform_manifest.json`` so they cannot drift
+    apart again.
+    """
+    import json
+    import os
+
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    with open(os.path.join(repo, "hw", "dfx",
+                           "platform_manifest.json")) as fh:
+        rp = json.load(fh)["rp_budget"]
+    b = hdl.budget()
+    assert b["pr_luts"] == rp["lut"] == 80_000
+    assert b["pr_ffs"] == rp["ff"] == 160_000
+    assert b["pr_dsps"] == rp["dsp"] == 400
+    # BRAM is advertised in KB of usable storage: BRAM36 blocks x 4.5 KB.
+    assert b["pr_bram_kb"] == int(rp["bram"] * 4.5) == 720
+
+
+def test_c_runtime_caps_mirror_the_python_budget():
+    """``src/pyro_rt.c``'s CAP_PR_* advertise the same envelope (R42/R45)."""
+    import os
+    import re as _re
+
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    with open(os.path.join(repo, "src", "pyro_rt.c")) as fh:
+        src = fh.read()
+
+    def cap(name):
+        m = _re.search(r"#define\s+%s\s+(\d+)u" % name, src)
+        assert m, name
+        return int(m.group(1))
+
+    b = hdl.budget()
+    assert cap("CAP_PR_LUTS") == b["pr_luts"]
+    assert cap("CAP_PR_FFS") == b["pr_ffs"]
+    assert cap("CAP_PR_BRAM_KB") == b["pr_bram_kb"]
+    assert cap("CAP_PR_DSPS") == b["pr_dsps"]
+
+
 # --- R11/R12: eligible patterns carry resource numbers -------------------
 
 def test_eligible_pattern_reports_resources():

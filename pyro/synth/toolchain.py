@@ -86,6 +86,27 @@ class SynthesisFailed(Exception):
     """The (mock) toolchain could not produce a fitting/timing-clean artifact."""
 
 
+class ConfigurationError(Exception):
+    """A build *input* is inconsistent — NOT a synthesis outcome (R65).
+
+    The distinction is load-bearing, not cosmetic.  :class:`SynthesisFailed`
+    means "this design does not fit / does not close timing on this toolchain",
+    which :mod:`pyro.synth.service` records as a **permanent** negative cache
+    entry (R65) keyed by the R4/SR9 bitstream key; residency then treats the
+    key as terminal (``TIER_FALLBACK_ONLY``, resubmission refused).  That is
+    correct for a property of the design.
+
+    An inconsistent job — an engine/wrapper pairing mismatch, say — is a
+    property of the *caller*, not of the design, and it is invisible to the
+    cache key (``engine_backpressure`` and the engine's own datapath width are
+    nowhere in ``descriptor_key``).  Caching it as an R65 failure would
+    launder a fixable configuration gap into an indistinguishable,
+    permanent "this group does not fit" verdict **on the very key the fix
+    needs** — the group could then never be built, at any generator version.
+    So this exception is reported to the caller and deliberately NOT cached.
+    """
+
+
 @dataclass(frozen=True)
 class SynthJob:
     """A self-contained synthesis job (primitives only, so it is picklable and
@@ -121,6 +142,13 @@ class SynthJob:
     # flow emits the matching wrapper (generate_rp_child datapath_bytes); 1 =
     # the original single-byte engine + v2 wrapper, byte-identical to pre-P2b.
     datapath_bytes: int = 1
+    # SNORT-PF SR7: does the engine in `rtl` back-pressure via `in_ready`?
+    # ``None`` (the default) means DERIVE IT FROM THE RTL — the engine text
+    # either declares the port or it does not, so this is not an independent
+    # degree of freedom and a hand-assembled group job cannot forget it into a
+    # deaf wrapper.  An explicit ``True``/``False`` that contradicts the RTL is
+    # a :class:`ConfigurationError`, never a cacheable R65 failure.
+    engine_backpressure: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -714,7 +742,22 @@ class VivadoToolchain:
 
         # The RP-child wrapper is the same for every pattern (params differ); the
         # engine RTL is job.rtl.  Import lazily to keep the OOC path light.
-        from ..hdl.rp_wrapper import generate_rp_child
+        from ..hdl.rp_wrapper import (
+            check_engine_pairing, generate_rp_child, _declares_in_ready)
+
+        # SNORT-PF SR7.  `engine_backpressure` is a property of the ENGINE TEXT,
+        # not an independent build knob: the engine either declares `in_ready`
+        # or it does not.  Derive it, so a hand-assembled group job that never
+        # set the field cannot produce a deaf wrapper (the silent byte-drop),
+        # and treat an explicit contradiction as a configuration error.
+        derived_bp = _declares_in_ready(job.rtl)
+        asked_bp = getattr(job, "engine_backpressure", None)
+        if asked_bp is not None and bool(asked_bp) != derived_bp:
+            raise ConfigurationError(
+                "SynthJob.engine_backpressure=%r contradicts the engine RTL, "
+                "which %s an in_ready port — the wrapper is emitted from the "
+                "engine text, so fix the job, not the wrapper"
+                % (asked_bp, "declares" if derived_bp else "does not declare"))
 
         workdir = tempfile.mkdtemp(prefix="pyro_vivado_pr_")
         # A3.5: once the pr_verify gate has passed, a good (verified) partial
@@ -726,14 +769,28 @@ class VivadoToolchain:
         try:
             with open(os.path.join(workdir, "design.v"), "w") as f:
                 f.write(job.rtl)                       # generated engine (pyro_circuit)
+            # RP-child wrapper (R80); width must match the engine (P2b),
+            # frame buffer must match the substrate shell (R78.9a/P2c).
+            wrapper = generate_rp_child(
+                job.pattern_hash,
+                datapath_bytes=getattr(job, "datapath_bytes", 1),
+                max_frame_bytes=int(cfg.rp_max_frame_bytes),
+                cores=int(getattr(cfg, "rp_cores", 1)),
+                engine_backpressure=derived_bp)
+            # SNORT-PF SR7: an unconnected .in_ready and an under-driven
+            # in_keep are both legal Verilog and both drop bytes silently.
+            # Both texts exist only here, so this is the only place the pairing
+            # can be checked at all.  A mismatch is a CONFIGURATION error, not
+            # an R65 synthesis failure: the pairing inputs (`datapath_bytes`
+            # agreement between `job.rtl` and the wrapper) are not in the
+            # bitstream key, so caching a negative here would permanently poison
+            # the very key the fix has to reuse.
+            try:
+                check_engine_pairing(job.rtl, wrapper)
+            except ValueError as exc:
+                raise ConfigurationError(str(exc)) from exc
             with open(os.path.join(workdir, "pyro_rp.sv"), "w") as f:
-                # RP-child wrapper (R80); width must match the engine (P2b),
-                # frame buffer must match the substrate shell (R78.9a/P2c)
-                f.write(generate_rp_child(
-                    job.pattern_hash,
-                    datapath_bytes=getattr(job, "datapath_bytes", 1),
-                    max_frame_bytes=int(cfg.rp_max_frame_bytes),
-                    cores=int(getattr(cfg, "rp_cores", 1))))
+                f.write(wrapper)
             flow = (self._PR_FLOW_TCL
                     .replace("@RPCELL@", cfg.rp_cell)
                     .replace("@PART@", cfg.part)

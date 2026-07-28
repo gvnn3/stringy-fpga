@@ -70,10 +70,15 @@ _Static_assert(sizeof(pyro_match) == 24, "pyro_match must be a 24-byte R47 ring 
 #define CAP_MAX_PATTERNS      256u
 #define CAP_MAX_REPEAT        255u
 #define CAP_ALPHABET          256u
-#define CAP_PR_LUTS           216000u
-#define CAP_PR_FFS            432000u
-#define CAP_PR_BRAM_KB        4320u
-#define CAP_PR_DSPS           768u
+/* Real pyro_rp budget from hw/dfx/platform_manifest.json rp_budget (SF2);
+ * mirrors pyro/hdl/estimator.py PR_* exactly.  Pre-S2 these were the
+ * device-scale placeholders 216000/432000/4320/768.  Caps are advertised
+ * values, not identity: changing them does NOT roll GENERATOR_VERSION/
+ * HARNESS_VERSION or invalidate any cached artifact. */
+#define CAP_PR_LUTS           80000u
+#define CAP_PR_FFS            160000u
+#define CAP_PR_BRAM_KB        720u
+#define CAP_PR_DSPS           400u
 
 /* STATUS register bits (R45 0x0014). */
 #define ST_BUSY 0x1u

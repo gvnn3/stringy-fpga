@@ -220,6 +220,179 @@ def _widen_template(n: int) -> str:
     return t
 
 
+def _engine_backpressure(t: str) -> str:
+    """Honor the engine's ``in_ready`` in ST_FEED (SNORT-PF SR7 group engine).
+
+    The single-pattern engine consumes a byte every cycle unconditionally, so
+    the v2/v3 feed never had to look at anything.  A GROUP engine cannot: N
+    slots can accept on one byte and the R47 result ring writes one entry per
+    cycle, so the engine stalls the feed (``in_ready`` low) while it drains
+    pending accepts.
+
+    **The hazard this rewrite exists for.**  The ungated ST_FEED asserts
+    ``eng_in_valid`` and advances ``feed_idx`` in the SAME cycle, so by the
+    time ``in_ready`` can be observed the next beat is already committed and
+    ``feed_idx`` has moved past it.  Simply gating here would therefore DROP
+    that in-flight beat — a missed byte, hence a missed match, with nothing on
+    the wire to show for it.  Gating is only safe because the group engine
+    accepts and HOLDS that beat in a 1-deep skid buffer (see HAZARD (a) in
+    ``pyro.hdl.generator._emit_rtl_group``); this side is the *second* half of
+    that contract, and the two must stay together.  A wrapper emitted without
+    this rewrite MUST NOT be paired with a group engine.
+
+    Emission is unchanged (byte-identical) unless asked for, so the flashed
+    single-pattern child and every cached artifact are untouched (R47b).
+    """
+    t = _replace1(
+        t,
+        "  wire        eng_res_wr;",
+        "  wire        eng_in_ready;   // SR7 group engine backpressure\n"
+        "  wire        eng_res_wr;")
+    t = _replace1(
+        t,
+        "    .in_last        (eng_in_last),",
+        "    .in_last        (eng_in_last),\n"
+        "    .in_ready       (eng_in_ready),")
+    head = "        ST_FEED: begin\n"
+    tail = "\n        end\n\n        // ---- wait for DONE"
+    assert t.count(head) == 1 and t.count(tail) == 1, (
+        "wrapper template ST_FEED anchors drifted; backpressure rewrite unsafe")
+    i0 = t.index(head) + len(head)
+    i1 = t.index(tail)
+    body = "\n".join(("  " + ln) if ln.strip() else ln
+                     for ln in t[i0:i1].split("\n"))
+    gated = (
+        "          // SR7: the group engine stalls the feed while its result\n"
+        "          // ring drains.  Freezing the WHOLE body (valid, keep, last,\n"
+        "          // feed_idx and the ST_DRAIN hand-off) is what keeps the\n"
+        "          // clamp and the last-byte detection consistent; the beat\n"
+        "          // already in flight when in_ready fell is held by the\n"
+        "          // engine's skid buffer, not re-sent from here.\n"
+        "          if (eng_in_ready) begin\n" + body + "\n          end")
+    return t[:i0] + gated + t[i1:]
+
+
+#: The wire the ``engine_backpressure`` rewrite introduces.
+_WRAPPER_IN_READY = "eng_in_ready"
+
+
+def _declares_in_ready(engine_rtl: str) -> bool:
+    """Does the engine RTL declare an ``in_ready`` output port?
+
+    Plain scanning, no ``re``: this module is imported lazily from the synth
+    path and a module-level ``re.compile`` here would capture the *patched*
+    compiler while ``pyro.install()`` is active (spurious R66 reuse-counter
+    ticks — the same reasoning as :mod:`pyro.hdl.identity`).
+    """
+    for line in (engine_rtl or "").splitlines():
+        code = line.split("//", 1)[0].strip()
+        if code.startswith("output") and "in_ready" in code:
+            return True
+    return False
+
+
+def _decl_width_bits(rtl: str, signal: str, starts) -> Optional[int]:
+    """Declared width in bits of ``signal``, or ``None`` if not declared.
+
+    Plain scanning, no ``re``, for :func:`_declares_in_ready`'s reason.
+    A bare declaration (``input wire in_last``) is 1 bit; ``[63:0]`` is 64.
+    """
+    for line in (rtl or "").splitlines():
+        code = line.split("//", 1)[0].strip()
+        if not code.startswith(starts):
+            continue
+        toks = code.rstrip(",;").replace("[", " [").replace("]", "] ").split()
+        if not toks or toks[-1] != signal:
+            continue
+        for tok in toks:
+            if tok.startswith("[") and tok.endswith("]") and ":" in tok:
+                hi, lo = tok[1:-1].split(":", 1)
+                try:
+                    return int(hi) - int(lo) + 1
+                except ValueError:
+                    return None
+        return 1
+    return None
+
+
+def _engine_feed_shape(engine_rtl: str):
+    """``(in_data bits, has in_keep)`` of a generated engine, or ``None``."""
+    bits = _decl_width_bits(engine_rtl, "in_data", ("input",))
+    if bits is None:
+        return None
+    return bits, _decl_width_bits(engine_rtl, "in_keep", ("input",)) is not None
+
+
+def _wrapper_feed_shape(wrapper_rtl: str):
+    """``(eng_in_data bits, has eng_in_keep)`` of a ``pyro_rp`` wrapper."""
+    bits = _decl_width_bits(wrapper_rtl, "eng_in_data", ("reg", "wire", "logic"))
+    if bits is None:
+        return None
+    return bits, _decl_width_bits(
+        wrapper_rtl, "eng_in_keep", ("reg", "wire", "logic")) is not None
+
+
+def check_engine_pairing(engine_rtl: str, wrapper_rtl: str) -> None:
+    """Fail loud when an engine is paired with a wrapper that mis-drives it.
+
+    Neither side can detect a bad pairing alone (the engine cannot see the
+    wrapper, the wrapper cannot see the engine), so the check lives where both
+    texts exist: the build path that writes ``design.v`` and ``pyro_rp.sv``
+    into one Vivado workdir.  Two axes, both of which fail SILENTLY in the
+    dangerous direction — a clean build, a well-formed reply, zero matches:
+
+    **1. Backpressure.**  An unconnected ``.in_ready`` output is perfectly
+    legal Verilog: a group engine wired into an ungated ``pyro_rp``
+    elaborates, synthesizes, meets timing, and then drops a byte on every
+    stall.
+
+    **2. Datapath width.**  ``generate_rp_child(datapath_bytes=)`` and the
+    engine's width are two independent inputs (the synth path takes the
+    wrapper's from ``SynthJob.datapath_bytes`` while the engine's is baked
+    into ``SynthJob.rtl``), and Verilog will happily connect an 8-bit
+    ``eng_in_data`` to a 64-bit ``in_data`` — zero-extending — and leave the
+    engine's ``in_keep`` **unconnected, tied low**.  Measured under xsim
+    (``tests/hw/xsim_diff.py``, dpb=8 group engine + dpb=1 wrapper): xelab and
+    xsim complete without a warning that matters, every ``MATCH_REPLY`` comes
+    back ``count=0`` and ``PERF`` reports ``BYTES=0``, because ``fed_keep==0``
+    makes every ``accv[j]`` zero and ``byte_index`` never advances.  That is
+    the maximal false negative for a completeness-absolute circuit (SR3).
+    The opposite mismatch (narrow engine, wide wrapper) fails loud at
+    elaboration (``VRFC 10-3180: cannot find port in_keep``), so the axis is
+    checked here precisely because the harmful direction is the quiet one.
+
+    Raises :class:`ValueError` on either dangerous pairing; silent otherwise.
+    The single-pattern engine declares no ``in_ready``, so the historical
+    pairing is unaffected (and stays byte-identical, R47b).
+    """
+    # -- axis 2: datapath width (applies to EVERY engine, group or not) -----
+    eng = _engine_feed_shape(engine_rtl)
+    wrap = _wrapper_feed_shape(wrapper_rtl)
+    if eng is not None and wrap is not None:
+        eng_bits, eng_keep = eng
+        wrap_bits, wrap_keep = wrap
+        if eng_bits != wrap_bits or eng_keep != wrap_keep:
+            raise ValueError(
+                "engine/wrapper datapath width mismatch: engine in_data is "
+                "%d bits (in_keep %s) but the pyro_rp wrapper drives %d bits "
+                "(eng_in_keep %s) — generate_rp_child(..., datapath_bytes=%d) "
+                "is REQUIRED; a wide engine on a narrow wrapper elaborates "
+                "with in_keep tied low and matches NOTHING, silently"
+                % (eng_bits, "present" if eng_keep else "absent",
+                   wrap_bits, "present" if wrap_keep else "absent",
+                   max(1, eng_bits // 8)))
+
+    # -- axis 1: backpressure ---------------------------------------------
+    if not _declares_in_ready(engine_rtl):
+        return                                   # single-pattern engine (v2/v3)
+    if _WRAPPER_IN_READY not in (wrapper_rtl or ""):
+        raise ValueError(
+            "engine declares in_ready (SR7 group engine) but the pyro_rp "
+            "wrapper ignores it — generate_rp_child(..., "
+            "engine_backpressure=True) is REQUIRED for a group child; an "
+            "ungated wrapper drops bytes on every stall, silently")
+
+
 def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
                       rp_child_id: Optional[int] = None, build16: int = 0,
                       spec16: int = DEFAULT_SPEC16,
@@ -227,6 +400,7 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
                       datapath_bytes: int = 1,
                       max_frame_bytes: int = MAX_FRAME_BYTES,
                       cores: int = 1,
+                      engine_backpressure: bool = False,
                       ) -> str:
     """Emit the ``pyro_rp`` pattern-child wrapper SystemVerilog for one engine.
 
@@ -244,6 +418,13 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     MAX_PKT_LEN=9600 shell (widened address slices via _jumbo_slices).  A
     1536 child on a jumbo shell is safe (the W5 clamp truncates long
     corpora); a 9600 child on a 1518 shell simply never sees long frames.
+
+    ``engine_backpressure`` (SNORT-PF SR7): connect and honor the engine's
+    ``in_ready``.  REQUIRED for a group engine
+    (:func:`pyro.hdl.generator.generate_group`, whose result ring can need
+    several cycles per byte) and MUST stay off for a single-pattern engine,
+    which has no such port — see :func:`_engine_backpressure`.  Default off, so
+    the emission stays byte-identical for every existing artifact.
     """
     if max_frame_bytes not in (MAX_FRAME_BYTES, JUMBO_FRAME_BYTES):
         raise ValueError(
@@ -262,6 +443,8 @@ def generate_rp_child(pattern_hash_hex: str, *, slot: int = DEFAULT_SLOT,
     template = _TEMPLATE if datapath_bytes == 1 else _widen_template(datapath_bytes)
     if max_frame_bytes != MAX_FRAME_BYTES:
         template = _jumbo_slices(template)
+    if engine_backpressure:
+        template = _engine_backpressure(template)
     child = (template
              .replace("@ENGINE@", ENGINE_MODULE)
              .replace("@MAXFRAME@", str(max_frame_bytes))
