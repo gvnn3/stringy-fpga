@@ -2179,3 +2179,86 @@ resident (re-loaded, MATCH re-confirmed).
 
 S2 exit state: AC-S2-1/-2/-3 all pass; spec at 1.0.2 (SF21). S3 opens
 with residency/rotation and the host filter daemon.
+
+## 2026-07-28 — System summary: what this is, what it does, how it is built
+
+A periodic orientation entry — the whole system in one place, as of the
+end of Phase S2 (branch phase2-snort, spec snort-rule-offload v1.0.2,
+PYRO spec v2.7.0).
+
+**What it is.** A reconfigurable pattern-matching offload on an Alveo
+U250 (xcu250-figd2104-2L-e, `nf-server06`, 02:00.0) with two product
+surfaces sharing one shell: **PYRO**, a drop-in `re`-compatible Python
+module (`pyro.re`) that transparently routes large, reused regex scans
+to a matching circuit on the FPGA; and **SNORT-PF**, which compiles
+hundreds of Snort community rules into a single pattern-set circuit that
+acts as a candidate-nominating prefilter — the FPGA says "this flow may
+match rule X", and Snort re-verifies every nomination, so hardware
+over-approximation can never create a false alert.
+
+**What it does today, measured.** The resident SNORT-PF child holds the
+$HTTP_PORTS/0 group: 256 rules deduped onto 253 anchor slots, one
+1 B/cycle shared harness, 10,147 LUTs / 5,681 FFs (12.7 % of the 80k
+PR budget), fmax 250.44 MHz, verified on silicon (33/33 acceptance,
+including the resident-identity clause). A MATCH round-trip on a
+malicious URI nominates the right slot with the exact end offset; the
+sidecar maps slot → [gid:sid,…]; benign traffic returns silence. The
+PYRO x4 regex child (8 B/cycle, 4 cores, 260.8 MHz) demonstrates
+~2.3 GiB/s zero-loss host-to-card scanning over one QDMA ST queue
+(multi-queue is gated by the open EQDMA silent-loss issue — AMD case
+filed). Circuit swap is JTAG partial reconfiguration, ~14–45 s including
+automatic in-band wedge recovery.
+
+**How it is built — the layers.**
+1. *Shell (static):* an OpenNIC-derived jumbo shell in QSPI (counter-fixed
+   build, `static_shell_id 0x02020000`), QDMA/EQDMA5.0 host interface,
+   H2C packet/err counters at BAR2 0x5000/0x5110, CMAC tied off (no live
+   wire traffic yet). One DFX dynamic region `pyro_rp` (slot 1, SLR2)
+   receives every generated circuit as a partial bitstream against the
+   locked static (`hw/dfx/build/dcp/static_routed_locked.dcp`).
+2. *Generator (`pyro/hdl`):* pattern → byte automaton
+   (`automaton.py`, bytes/UTF-8 encodings, R15 exact ASCII case fold) →
+   one-hot NFA Verilog (`generator.py`), datapath 1–16 B/cycle. S2 added
+   `generate_group`: N automata on one shared harness, slot index ==
+   pattern_id, tombstones keep their index; a 256-bit pend register +
+   priority encoder serializes same-byte accepts into the ring.
+   Identity is a 128-bit domain-separated hash baked into CIRC_ID0..3;
+   GENERATOR_VERSION/HARNESS_VERSION (2.3.0) are pinned in both the
+   Python emitter and the C runtime, which rejects mismatches (R47b).
+3. *Software twins:* every circuit has an executable model
+   (`pyro/_circuit_model.py` — `CircuitModel` and the width-independent
+   `GroupCircuitModel` share one scanner) and a native C model
+   (`src/pyro_rt.c`) driven by the serialized automaton. RTL, Python
+   model, and C model are three views of one artifact; differential
+   tests keep them byte-identical (xsim_diff drives real R78 frames
+   through the emitted Verilog under xsim).
+4. *Synthesis & residency (`pyro/synth`):* an out-of-process service
+   runs mock or Vivado toolchains; the Vivado PR flow links each child
+   against the locked static, pr_verify's it, and emits partial.bit +
+   manifest (fmax, LUTs, timing honesty). Bitstreams are cached by a
+   descriptor key covering pattern bytes, encoding, flags, versions,
+   and datapath width; misconfiguration (e.g. a group engine paired
+   with a backpressure-deaf wrapper) fails loud *before* tool time and
+   never poisons the cache.
+5. *Transport:* R78 raw-Ethernet control protocol (EtherType 0x88B5:
+   ID/MATCH/PERF, ≤61 24-byte match entries per reply, OVF + resume
+   semantics) over the `onic` netdev, and a QDMA ST char-dev data plane
+   for throughput; one PF swaps between them
+   (`scripts/pyro_dataplane_swap.sh`).
+6. *SNORT-PF pipeline (`pyro/snort`):* parse all 4,017 community rules →
+   triage (3,896 anchor-compilable; anchors are fast-pattern content
+   literals, everything else becomes a declared over-approximation
+   class re-checked host-side) → SR6 packing (port-class groups,
+   GROUP_MAX 256, stable identity, tombstone repack for weekly diffs) →
+   group circuit + sidecar. Verification is two-sided: a closed-form
+   nomination oracle asserted as set equality per slot, plus a Snort
+   3.12.2.0 differential with the FP census pinned by equality — and
+   the gates are proven to bite (re-created defects and sabotaged RTL
+   fail them).
+
+**Where it is going.** S1 (one rule, on silicon) and S2 (256-rule group,
+on silicon) are complete. S3 builds all 21 groups, adds the residency
+daemon that hot-swaps groups by observed port mix (~45 s/swap, SF20
+hysteresis), content-chain lowering, and the weekly-diff incremental
+rebuild path. S4 (ROM-baked shared trie, suppression pilot) is gated on
+owner review.
