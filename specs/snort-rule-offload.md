@@ -1,7 +1,7 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 1.0.1
+- **Version:** 1.0.2 (SF21: AC-S2-2 measured group costs, 2026-07-28)
 - **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
   post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
   adoption. Phases S1–S3 are authorized; S4 requires the further owner
@@ -150,6 +150,19 @@ clause of SF4–SF7 where they conflict. None changes an SR obligation.
   automatic in-band wedge recovery. SR10's rotation scheduler MUST treat
   a swap as costing ~45 s and apply hysteresis so swap time stays small
   relative to residency time.
+- **SF21 (AC-S2-2 measured group costs — SF6 recalibrated, 2026-07-28).**
+  The $HTTP_PORTS/0 group (253 slots / 256 rules, 4,400 states / 4,147
+  byte edges deduped, dpb=1) built through the real PR flow against the
+  locked counter-fixed static: **10,147 LUTs / 5,681 FFs post-route,
+  fmax 250.44 MHz, pr_verified, met_timing, 53 min** — **12.7 % of the
+  80,000-LUT PR budget** (estimator predicted 26,982 LUTs, R74-conservative
+  by 2.7×). PR gates at the same identity discipline: N=32 → 7,800 LUTs /
+  254.84 MHz (46 min); N=64 → 7,994 LUTs / 252.21 MHz (45 min). Marginal
+  cost ≈ **10.6 LUTs per slot** (~1.4 LUT/byte-edge) on a fixed ~7.6k-LUT
+  wrapper+harness floor; build time is static-shell-dominated (46→53 min
+  from N=32→253). The 256-bit pend priority encoder cleared timing with
+  0.44 MHz margin at N=253 — dpb=1 confirmed as the group width; dpb=8
+  groups remain uncalibrated (SF18 caveat stands).
 
 ### 1.2 Corpus facts (`snort3-community.rules`, 4,017 alert rules, full parse)
 

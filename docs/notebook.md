@@ -2110,3 +2110,47 @@ asserts its own precondition `not has_cap_net_raw()` (line 67) — it is
 written for a dev host WITHOUT the capability, and this host's
 .venv-pyro/bin/python3 carries the cap_net_raw xattr on purpose so the
 probe works unprivileged. It fails before touching any generator code.
+
+## 2026-07-28 — S2 lands: group emitter + oracle committed; AC-S2-2 BUILT
+
+The S2 implementation workflow (7 agents, adversarially reviewed) landed as
+commit 00143e8: SR6 packing (`pyro/snort/groups.py`), the SR7 group emitter
+(`generate_group` — N automata, one shared harness, slot index IS
+pattern_id), `GroupCircuitModel` sharing `_scan_windows` with the
+single-pattern model, and the AC-S2-3 two-sided oracle (closed-form
+nomination oracle + Snort 3.12.2.0 differential; FP census pinned by
+EQUALITY per SR4 class: header_predicate 2, case_fold 9, anchor_strip 48,
+dropped_conjuncts 5, unclassified 0; the only completeness misses are the
+two SF11 %-encoding blinding cases, also pinned by equality). The review
+found 7 real majors, all fixed — the standouts: (1) an ungated wrapper
+around a group engine is legal Verilog that silently drops bytes on every
+stall; `check_engine_pairing` now guards both the in_ready AND
+datapath-width axes and a mismatch raises `ConfigurationError` *without*
+R65 cache poisoning; (2) the oracle suite wasn't executing the emitted RTL
+— it now runs xsim gates, proven non-vacuous by a sabotaged priority
+encoder failing 6/12 replies; (3) `estimate_group` omitted every group
+harness register (pend/pend_base/skid). R41 resume bound measured:
+MAX_WINDOWS_PER_START=2 for this ruleset (prefix-chain anchors), safe
+under the out_cap=61 ceiling with margin. Gates: 790 unit + 32 oracle
+tests green; make ABI OK.
+
+**AC-S2-2: the full $HTTP_PORTS/0 group (253 slots / 256 rules) builds
+through the real PR flow and meets timing.** Driver
+`.superpowers/pr-builds/pr_build_driver_s2_group.py` (SynthJob built
+directly from the GeneratedGroup; `--n-slots M` prefix subgroups carry
+their own derived identity). Against the locked counter-fixed static:
+
+| build | LUTs | FFs | fmax | wall |
+|---|---|---|---|---|
+| N=32 gate  (03172668…) | 7,800 | 2,383 | 254.84 | 46 min |
+| N=64 gate  (293105d6…) | 7,994 | 2,696 | 252.21 | 45 min |
+| N=253 FULL (b1a418fc…) | 10,147 | 5,681 | **250.44** | 53 min |
+
+All three: pr_verified, met_timing. Identity matches the pinned group
+hash exactly (rp_child_id 0xfc18a4b1). Marginal cost ≈ 10.6 LUTs/slot on
+a ~7.6k fixed wrapper floor — 12.7 % of the 80k budget at N=253, so the
+top-risk 256-bit pend priority encoder cleared with 0.44 MHz to spare.
+Estimator predicted 26,982 LUTs (R74-conservative 2.7×). SF6 recalibrated
+as SF21; spec bumped to 1.0.2. Next: JTAG load + on-silicon AC-S2-2
+verification (and AC-S1-2 re-establishment — the 2.3.0 bump staled the
+flashed S1 child).
