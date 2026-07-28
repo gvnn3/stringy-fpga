@@ -2154,3 +2154,28 @@ Estimator predicted 26,982 LUTs (R74-conservative 2.7×). SF6 recalibrated
 as SF21; spec bumped to 1.0.2. Next: JTAG load + on-silicon AC-S2-2
 verification (and AC-S1-2 re-establishment — the 2.3.0 bump staled the
 flashed S1 child).
+
+## 2026-07-28 (cont.) — on-silicon: AC-S2-2 group resident; AC-S1-2 re-established at 2.3.0
+
+The 253-slot group partial loaded over JTAG in 14.1 s (in-band recovery
+clean), probe good. Live MATCH on `GET /view-source HTTP/1.0` returns one
+entry: end=16 (exact — offset 4 + 12-byte anchor), pattern_id=40, and the
+sidecar maps slot 40 -> [1:848, 1:849], the two view-source rules sharing
+the deduped anchor. The oracle suite with PYRO_DEVICE_IFACE=ens2 runs
+**33 passed, 0 skipped** — the SR18 hardware clause verified the resident
+rp_child_id (0xfc18a4b1) and its nominations. Sidecar fix along the way:
+`rp_child_id_low32` was the big-endian hex prefix of the hash, not the LE
+CSR value; driver + all three emitted sidecars corrected (the S1 sidecar
+had the same defect).
+
+AC-S1-2 re-established: the flashed S1 child was 2.2.0 (stale per R47b).
+Rebuilt sid-1927 at 2.3.0 — new identity 95b1d1d1…, pr_verified,
+met_timing, 254.91 MHz, 7,729 LUTs, 46 min — loaded, and the pcap corpora
+re-run: positive nominates 1:1927 on the mixed-case payload
+(`RETR AuthoRized_Keys`, nocase carried by the R15 bytes fold), negative
+0 nominations, Snort re-verifies (alert on positive, silence on
+negative). **AC-S1-2: PASS.** Board left with the S2 group child
+resident (re-loaded, MATCH re-confirmed).
+
+S2 exit state: AC-S2-1/-2/-3 all pass; spec at 1.0.2 (SF21). S3 opens
+with residency/rotation and the host filter daemon.
