@@ -2102,3 +2102,11 @@ same constants and rejects mismatched artifacts with code 7; `make`
 rebuilds). 687 unit tests pass. **Consequence: every cached bitstream and
 the flashed S1 child are now stale — AC-S1-2 must be re-established on
 the next build.**
+
+Acceptance suite after the 2.3.0 bump: 724 passed, 10 skipped, 1 failed in
+1:04:52. The single failure is ENVIRONMENTAL, not a regression:
+tests/acceptance/test_ac2b2_probe.py::test_probe_privilege_free_exact_canonical_reason
+asserts its own precondition `not has_cap_net_raw()` (line 67) — it is
+written for a dev host WITHOUT the capability, and this host's
+.venv-pyro/bin/python3 carries the cap_net_raw xattr on purpose so the
+probe works unprivileged. It fails before touching any generator code.
