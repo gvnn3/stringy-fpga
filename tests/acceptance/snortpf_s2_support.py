@@ -164,19 +164,158 @@ def anchor_occurrences(anchor: bytes, nocase: bool, data: bytes,
     return out
 
 
+def slot_is_literal(slot) -> bool:
+    """True when the slot's matcher is the S2 anchor-only lowering (the
+    ``bytes.find`` oracle path); False for an AC-S3-2 chain/prefix/fused
+    slot (the :func:`lowered_occurrences` path)."""
+    import re as _re
+    return (slot.pattern_eff == _re.escape(slot.anchor)
+            and slot.flags_eff == (_re.IGNORECASE if slot.nocase else 0))
+
+
+#: Bound on a lowered match's length for the closed-form enumerator: the
+#: SR3 span cap plus slack for the enclosing group syntax.  Anything the
+#: automaton could match beyond this would be a lowering-invariant bug the
+#: unit suite pins separately (``tail_span <= SPAN_CAP``).
+_LOWERED_SPAN_BOUND = 400
+
+
+def lowered_occurrences(pattern: bytes, flags: int, data: bytes,
+                        base: int = 0) -> List[Tuple[int, int]]:
+    """Every ``(start, longest_end)`` of a lowered slot pattern in ``data``,
+    computed with **stdlib re** — independent of the automaton and the
+    model under test (the S2 oracle's independence discipline, upgraded
+    from ``bytes.find`` to the chain-bearing patterns of AC-S3-2).
+
+    Longest-end semantics match the model's leftmost-longest per start:
+    for each start the enumeration tries ends from the span bound down and
+    keeps the first (= longest) exact match.  ``\\A`` in a pattern binds to
+    ``data[0]`` exactly as the automaton's AT_BEGINNING does.
+    """
+    pat = re.compile(pattern, flags)
+    n = len(data)
+    out: List[Tuple[int, int]] = []
+    for s in range(n + 1):
+        hi = min(n, s + _LOWERED_SPAN_BOUND)
+        for e in range(hi, s, -1):
+            if pat.fullmatch(data, s, e):
+                out.append((base + s, base + e))
+                break
+    return out
+
+
 def oracle_windows(group, data: bytes, base: int = 0) -> Set[Window]:
     """The exact expected window set for ``data`` — closed form, per slot.
 
     Tombstoned slots (SR6) keep their ``pattern_id`` and can never match, so
-    they contribute nothing.
+    they contribute nothing.  Anchor-only slots take the ``bytes.find``
+    path (byte-identical to S2); lowered slots take the independent
+    stdlib-re enumerator.
     """
     out: Set[Window] = set()
     for slot in group.slots:
         if slot.tombstone:
             continue
-        for s, e in anchor_occurrences(slot.anchor, slot.nocase, data, base):
+        if slot_is_literal(slot):
+            occs = anchor_occurrences(slot.anchor, slot.nocase, data, base)
+        else:
+            occs = lowered_occurrences(slot.pattern_eff, slot.flags_eff,
+                                       data, base)
+        for s, e in occs:
             out.add(Window(slot.index, s, e))
     return out
+
+
+# --------------------------------------------------------------------------
+# AC-S3-2: exemplar subjects derived from a lowered pattern's parse tree
+# --------------------------------------------------------------------------
+def slot_exemplar(slot, maximal: bool = False) -> bytes:
+    """A subject that MUST satisfy the slot's lowered pattern.
+
+    Built by walking the stdlib parse tree of ``pattern_eff``: literals
+    verbatim, gaps at their minimum (or maximum, ``maximal=True``) width
+    with ``0x00`` filler, classes by their first admitted byte, branches by
+    their minimal (or widest) alternative.  Independent of the automaton;
+    used to drive the model↔oracle equality gates on chain slots.
+    """
+    try:
+        import re._parser as _sre
+    except ImportError:  # pragma: no cover
+        import sre_parse as _sre  # type: ignore
+    parsed = _sre.parse(slot.pattern_eff, slot.flags_eff)
+    MAXREPEAT = _sre.MAXREPEAT
+
+    def in_bytes(av) -> int:
+        members: Set[int] = set()
+        negate = False
+        for op, val in av:
+            name = str(op)
+            if name == "NEGATE":
+                negate = True
+            elif name == "LITERAL":
+                members.add(val)
+            elif name == "RANGE":
+                members.update(range(val[0], val[1] + 1))
+            elif name == "CATEGORY":
+                members.update(_category_bytes(str(val)))
+        if negate:
+            for b in range(256):
+                if b not in members:
+                    return b
+            raise AssertionError("empty negated class")
+        return min(members)
+
+    def _category_bytes(cat: str) -> Set[int]:
+        if "DIGIT" in cat and "NOT" not in cat:
+            return set(b"0123456789")
+        if "WORD" in cat and "NOT" not in cat:
+            return set(b"abcdefghijklmnopqrstuvwxyz"
+                       b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+        if "SPACE" in cat and "NOT" not in cat:
+            return set(b" \t\r\n\f\v")
+        if "NOT" in cat:
+            return {0x2E}                # '.' is neither digit, word, nor space
+        raise AssertionError("unhandled category %s" % cat)
+
+    def walk(seq) -> bytes:
+        out = bytearray()
+        for op, av in seq:
+            name = str(op)
+            if name == "LITERAL":
+                out.append(av)
+            elif name == "NOT_LITERAL":
+                out.append(0x00 if av != 0x00 else 0x01)
+            elif name == "ANY":
+                out.append(0x00)
+            elif name == "IN":
+                out.append(in_bytes(av))
+            elif name == "AT":
+                continue
+            elif name == "SUBPATTERN":
+                out += walk(av[3])
+            elif name == "BRANCH":
+                alts = [walk(b) for b in av[1]]
+                out += (max(alts, key=len) if maximal
+                        else min(alts, key=len))
+            elif name in ("MAX_REPEAT", "MIN_REPEAT"):
+                mn, mx, sub = av
+                count = int(mn)
+                if maximal and mx is not MAXREPEAT:
+                    count = int(mx)
+                body = walk(sub)
+                out += body * count
+            else:
+                raise AssertionError("unhandled construct %s" % name)
+        return bytes(out)
+
+    subject = walk(list(parsed))
+    # NOT_ categories in _category_bytes returned '.', which IS a word
+    # byte's complement only for digit/space — verify the exemplar really
+    # matches, fail loud otherwise (an exemplar bug must never pass as a
+    # completeness result).
+    assert re.compile(slot.pattern_eff, slot.flags_eff).fullmatch(subject), \
+        "exemplar does not satisfy its own pattern: %r" % slot.pattern_eff
+    return subject
 
 
 def model_windows(model: GroupCircuitModel, data: bytes,

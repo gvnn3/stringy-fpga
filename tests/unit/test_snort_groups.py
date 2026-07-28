@@ -363,6 +363,10 @@ def test_ac_s2_2_group_reproduces_the_measured_shape(corpus_groups):
     n_states = sum(a.n_states for a in aus)
     byte_edges = sum(1 for a in aus for st in range(a.n_states)
                      for e in a.edges[st] if e.kind == _auto.E_BYTE)
+    # Identical to the S2 anchor-only shape: this group's chain-eligible
+    # rules all fail an AC-S3-2 admission condition (its 6 offset/depth
+    # rules are tcp/service-inspected — the sid-509 PDU-alignment defect —
+    # so their prefixes stay dropped conjuncts).
     assert (n_states, byte_edges) == (4400, 4147)
     assert max(a.n_states for a in aus) == 66
     assert n_states <= 256 * 1024            # engine-side sanity

@@ -72,6 +72,7 @@ import hashlib
 import re as _stdre
 from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
+from . import lowering as _lowering
 from . import triage as _triage
 from .rules import Rule
 from .triage import TriageResult
@@ -94,7 +95,11 @@ GROUP_MAX = 256
 #: Canonical-serialization format version.  Bump ⇒ every group hash and every
 #: SR9 cache key rolls over, so it is versioned explicitly rather than
 #: implicitly through code changes.
-GROUP_FORMAT_VERSION = 1
+#: v2 (AC-S3-2): slots carry the SR3 lowered pattern (content chains,
+#: ``offset/depth/distance/within`` windows, fused clean pcre), its flags
+#: word, and its SR12 ``tail_span`` — all serialized, so two groups that
+#: differ only in lowering can never hash equal.
+GROUP_FORMAT_VERSION = 2
 
 #: Domain-separation tag for the canonical bytes and the group hash — keeps a
 #: group key from ever colliding with a PYRO single-pattern key (whose
@@ -111,13 +116,20 @@ ENC_BYTES = 0
 # Data model
 # --------------------------------------------------------------------------
 class RuleRef(NamedTuple):
-    """One rule attached to a slot — the sidecar row (spec §2)."""
+    """One rule attached to a slot — the sidecar row (spec §2).
+
+    ``dropped``/``oa`` are the SR4 per-rule dropped-conjunct list and
+    over-approximation classes; manifest data only, **never hashed**
+    (canonical serialization takes ``gid``/``sid`` alone).
+    """
 
     gid: int
     sid: int
     subtier: Optional[str]   # SR2: raw-anchor | normalized-buffer
     buffer: str              # sticky buffer the anchor lives in (SF11)
     line_no: int             # provenance only; never hashed
+    dropped: Tuple[str, ...] = ()   # SR4 dropped-conjunct option keys
+    oa: Tuple[str, ...] = ()        # SR4 over-approximation classes
 
     @property
     def key(self) -> str:
@@ -126,12 +138,24 @@ class RuleRef(NamedTuple):
 
 
 class GroupSlot(NamedTuple):
-    """One automaton of the group circuit; ``index`` is R47's ``pattern_id``."""
+    """One automaton of the group circuit; ``index`` is R47's ``pattern_id``.
+
+    v2 (AC-S3-2): a slot's matcher is its SR3 **lowered pattern** — an
+    anchor-only literal for most rules, a content chain with bounded gap
+    windows (± a fused clean pcre) where SR3 admits one.  The trailing
+    fields default to "derive from the anchor" so an anchor-only slot can
+    still be constructed positionally exactly as in v1; the effective
+    values (:attr:`pattern_eff`/:attr:`flags_eff`/:attr:`tail_span_eff`)
+    are what the emitter, the model, and the canonical serialization use.
+    """
 
     index: int
     anchor: bytes            # decoded literal; ASCII-lowercased iff ``nocase``
     nocase: bool             # R15 ASCII byte-fold, lowered in BYTES mode
     rules: Tuple[RuleRef, ...]
+    pattern: bytes = b""     # SR3 lowered regex source (b"" = derive)
+    flags: int = -1          # slot re-flags word (-1 = derive from nocase)
+    tail_span: int = -1      # SR12 tail contribution (-1 = derive: len(anchor))
 
     @property
     def tombstone(self) -> bool:
@@ -141,6 +165,25 @@ class GroupSlot(NamedTuple):
     @property
     def length(self) -> int:
         return len(self.anchor)
+
+    @property
+    def pattern_eff(self) -> bytes:
+        """The slot's matcher source: the lowered pattern, else the
+        S1/S2-proven anchor escape."""
+        return self.pattern if self.pattern else _stdre.escape(self.anchor)
+
+    @property
+    def flags_eff(self) -> int:
+        if self.flags >= 0:
+            return self.flags
+        return _stdre.IGNORECASE if self.nocase else 0
+
+    @property
+    def tail_span_eff(self) -> int:
+        """SR12 tail contribution: the max bytes a floating match spans
+        (0 for a ``\\A``-anchored slot — it can only match at buffer
+        start, which chunk 0 contains whole)."""
+        return self.tail_span if self.tail_span >= 0 else len(self.anchor)
 
 
 class RuleGroup(NamedTuple):
@@ -166,14 +209,23 @@ class RuleGroup(NamedTuple):
 
     @property
     def max_anchor_len(self) -> int:
-        """Longest live anchor — SR12's overlap tail is derived from this."""
+        """Longest live anchor literal (reporting; SF10 lineage)."""
         live = [s.length for s in self.slots if not s.tombstone]
         return max(live) if live else 0
 
     @property
+    def max_tail_span(self) -> int:
+        """Longest floating lowered-match span over live slots — the SR12
+        quantity the overlap tail must cover.  Equal to ``max_anchor_len``
+        for a purely anchor-lowered group; larger when chains are lowered
+        (AC-S3-2), zero-contribution from ``\\A``-anchored slots."""
+        live = [s.tail_span_eff for s in self.slots if not s.tombstone]
+        return max(live) if live else 0
+
+    @property
     def overlap_tail(self) -> int:
-        """SR12 per-flow overlap tail: ``max_anchor - 1`` bytes."""
-        return max(0, self.max_anchor_len - 1)
+        """SR12 per-flow overlap tail: ``max floating span - 1`` bytes."""
+        return max(0, self.max_tail_span - 1)
 
     def sidecar(self) -> Dict[int, Tuple[str, ...]]:
         """``pattern_id -> (gid:sid, ...)`` (spec §2 sidecar table).
@@ -204,6 +256,13 @@ class RuleGroup(NamedTuple):
             flags = (0x1 if slot.nocase else 0) | (0x2 if slot.tombstone else 0)
             out += bytes([flags])
             out += _u32(len(slot.anchor)) + slot.anchor
+            # v2 (AC-S3-2): the SR3 lowered matcher is identity-bearing.
+            # EFFECTIVE values are serialized, so a legacy-constructed
+            # anchor slot and its explicit equivalent hash identically.
+            out += _u32(slot.flags_eff)
+            pat = slot.pattern_eff
+            out += _u32(len(pat)) + pat
+            out += _u32(slot.tail_span_eff)
             # Sorted so slot identity does not depend on rule arrival order.
             refs = sorted((r.gid, r.sid) for r in slot.rules)
             out += _u32(len(refs))
@@ -286,7 +345,13 @@ class RuleGroup(NamedTuple):
             "rp_child_id": self.rp_child_id(generator_version,
                                             harness_version, datapath_bytes),
             "max_anchor_len": self.max_anchor_len,
+            "max_tail_span": self.max_tail_span,
             "overlap_tail": self.overlap_tail,   # SR12
+            # SR4: group-level over-approximation classes = union of the
+            # per-rule contributions; an exact circuit declares the empty
+            # set (never true for a chunked prefilter — chunk_overlap).
+            "over_approx_classes": sorted(
+                {c for s in self.slots for r in s.rules for c in r.oa}),
             "slots": [
                 {
                     "pattern_id": s.index,
@@ -294,9 +359,16 @@ class RuleGroup(NamedTuple):
                     "anchor_len": s.length,
                     "nocase": s.nocase,
                     "tombstone": s.tombstone,
+                    "pattern_hex": s.pattern_eff.hex() if not s.tombstone
+                                   else "",
+                    "slot_flags": s.flags_eff,
+                    "tail_span": s.tail_span_eff,
                     "rules": [
                         {"gid": r.gid, "sid": r.sid, "key": r.key,
-                         "subtier": r.subtier, "buffer": r.buffer}
+                         "subtier": r.subtier, "buffer": r.buffer,
+                         # SR4 per-rule dropped-conjunct list + classes
+                         "dropped": list(r.dropped),
+                         "over_approx": list(r.oa)}
                         for r in s.rules
                     ],
                 }
@@ -351,8 +423,14 @@ def slot_pattern(slot: GroupSlot) -> Tuple[bytes, int]:
     corpus on silicon (docs/notebook.md, 2026-07-27 evening).  Bytes mode
     gives the exact 2-byte ASCII fold set (R15).  Every group lowering path —
     emitter, model, oracle — MUST go through this function.
+
+    v2 (AC-S3-2): the slot's matcher is its SR3 lowered pattern when one
+    was stored (content chain / ``\\A`` prefix / fused pcre — built by
+    :mod:`pyro.snort.lowering`, whose case folds are scoped ``(?i:...)``
+    groups in bytes mode, the same R15 fold path); an anchor-only slot
+    derives the S1/S2-proven escape exactly as before.
     """
-    return _stdre.escape(slot.anchor), (_stdre.IGNORECASE if slot.nocase else 0)
+    return slot.pattern_eff, slot.flags_eff
 
 
 def slot_automaton(slot: GroupSlot):
@@ -478,16 +556,29 @@ def _safe_int(value) -> Optional[int]:
 
 
 class GroupEntry(NamedTuple):
-    """A groupable rule: its sort key, its anchor identity, its sidecar row."""
+    """A groupable rule: its sort key, its lowered matcher, its sidecar row."""
 
     sid: int
     gid: int
     line_no: int
-    anchor: bytes            # dedup form (case-folded iff nocase)
+    anchor: bytes            # anchor dedup form (case-folded iff nocase)
     nocase: bool
     ref: RuleRef
     port_class: str
     dst_port: str            # raw token, for reporting; never hashed
+    pattern: bytes = b""     # SR3 lowered matcher source (b"" = derive)
+    flags: int = -1          # matcher flags (-1 = derive from nocase)
+    tail_span: int = -1      # SR12 tail contribution (-1 = len(anchor))
+
+    @property
+    def slot_key(self) -> Tuple[bytes, int]:
+        """Slot-dedup identity: two rules share a slot iff their lowered
+        matchers are identical (v1 deduped on the anchor literal — same
+        thing for anchor-only rules, since the lowering is deterministic)."""
+        pat = self.pattern if self.pattern else _stdre.escape(self.anchor)
+        fl = self.flags if self.flags >= 0 else (
+            _stdre.IGNORECASE if self.nocase else 0)
+        return (pat, fl)
 
 
 def groupable_entries(triaged: Iterable[Tuple[Rule, TriageResult]],
@@ -499,6 +590,11 @@ def groupable_entries(triaged: Iterable[Tuple[Rule, TriageResult]],
     could never be nominated.  Sort key is ``(sid, gid, line_no)``: total,
     deterministic, and independent of the input file's line order, so a
     reordered ruleset packs identically (SR6 stability).
+
+    Each entry carries its SR3 lowering (AC-S3-2): the content chain /
+    fused-pcre matcher from :func:`pyro.snort.lowering.lower_rule`, plus
+    the SR4 dropped-conjunct list and over-approximation classes on the
+    sidecar row.
     """
     out: List[GroupEntry] = []
     for rule, res in triaged:
@@ -508,12 +604,15 @@ def groupable_entries(triaged: Iterable[Tuple[Rule, TriageResult]],
         if sid is None:
             continue
         anchor = res.anchor
+        low = _lowering.lower_rule(rule, res)
         out.append(GroupEntry(
             sid=sid, gid=gid, line_no=rule.line_no,
             anchor=anchor.dedup_key, nocase=anchor.nocase,
-            ref=RuleRef(gid, sid, res.subtier, anchor.buffer, rule.line_no),
+            ref=RuleRef(gid, sid, res.subtier, anchor.buffer, rule.line_no,
+                        dropped=low.dropped, oa=low.oa_classes),
             port_class=class_of(rule.dst_port),
             dst_port=_WS.sub("", (rule.dst_port or "").strip()) or "any",
+            pattern=low.pattern, flags=low.flags, tail_span=low.tail_span,
         ))
     out.sort(key=lambda e: (e.sid, e.gid, e.line_no))
     return out
@@ -522,19 +621,23 @@ def groupable_entries(triaged: Iterable[Tuple[Rule, TriageResult]],
 def _build_group(port_cls: str, index: int, entries: Sequence[GroupEntry],
                  group_max: int) -> RuleGroup:
     """Dedup ``entries`` onto slots, first-claim order (SR6 determinism)."""
-    order: List[Tuple[bytes, bool]] = []
-    by_key: Dict[Tuple[bytes, bool], List[RuleRef]] = {}
+    order: List[Tuple[bytes, int]] = []
+    by_key: Dict[Tuple[bytes, int], List[GroupEntry]] = {}
     for e in entries:
-        key = (e.anchor, e.nocase)
+        key = e.slot_key
         if key not in by_key:
             by_key[key] = []
             order.append(key)
-        by_key[key].append(e.ref)
-    slots = tuple(
-        GroupSlot(i, key[0], key[1], tuple(by_key[key]))
-        for i, key in enumerate(order)
-    )
-    return RuleGroup(port_cls, index, slots, group_max)
+        by_key[key].append(e)
+    slots = []
+    for i, key in enumerate(order):
+        claim = by_key[key][0]           # first-claim: deterministic
+        slots.append(GroupSlot(
+            i, claim.anchor, claim.nocase,
+            tuple(e.ref for e in by_key[key]),
+            pattern=claim.pattern, flags=claim.flags,
+            tail_span=claim.tail_span))
+    return RuleGroup(port_cls, index, tuple(slots), group_max)
 
 
 def pack_groups(triaged: Iterable[Tuple[Rule, TriageResult]],
@@ -598,62 +701,83 @@ def repack_with_tombstones(previous: Sequence[RuleGroup],
     for e in groupable_entries(triaged, class_of):
         new_by_class.setdefault(e.port_class, []).append(e)
 
-    # Where each rule sat, and on which anchor: a surviving rule keeps its
-    # placement only if its anchor is unchanged (SR6 stability).
-    prev_rule: Dict[Tuple[str, int, int], Tuple[int, int, bytes, bool]] = {}
+    # Where each rule sat, and on which matcher: a surviving rule keeps its
+    # placement only if its LOWERED matcher is unchanged (SR6 stability; v1
+    # compared the anchor — same predicate for anchor-only rules, and a
+    # chain change genuinely is a different circuit, so it must move).
+    prev_rule: Dict[Tuple[str, int, int],
+                    Tuple[int, int, Tuple[bytes, int]]] = {}
     for g in previous:
         for s in g.slots:
             for r in s.rules:
                 prev_rule[(g.port_class, r.gid, r.sid)] = (
-                    g.index, s.index, s.anchor, s.nocase)
+                    g.index, s.index, (s.pattern_eff, s.flags_eff))
 
     # Start from the previous shape, emptied: every slot keeps its index.
+    # ``slot_desc`` holds each slot's full matcher descriptor
+    # (pattern, flags, tail_span, anchor, nocase) for reconstruction;
+    # matching is on the effective (pattern, flags) key.
     shape: Dict[str, Dict[int, Dict[int, List[RuleRef]]]] = {}
-    anchors: Dict[Tuple[str, int, int], Tuple[bytes, bool]] = {}
+    slot_desc: Dict[Tuple[str, int, int],
+                    Tuple[bytes, int, int, bytes, bool]] = {}
     caps: Dict[str, int] = {}
     for g in previous:
         cls_slots = shape.setdefault(g.port_class, {}).setdefault(g.index, {})
         caps[g.port_class] = max(caps.get(g.port_class, 0), g.index + 1)
         for s in g.slots:
             cls_slots[s.index] = []
-            anchors[(g.port_class, g.index, s.index)] = (s.anchor, s.nocase)
+            slot_desc[(g.port_class, g.index, s.index)] = (
+                s.pattern, s.flags, s.tail_span, s.anchor, s.nocase)
 
     for cls in sorted(new_by_class):
         for e in new_by_class[cls]:
             prior = prev_rule.get((cls, e.ref.gid, e.ref.sid))
-            if prior is not None and prior[2:] == (e.anchor, e.nocase):
+            if prior is not None and prior[2] == e.slot_key:
                 gi, si = prior[0], prior[1]     # unchanged: stay put
             else:
-                gi, si = _placement(shape, anchors, caps, cls, e, group_max)
+                gi, si = _placement(shape, slot_desc, caps, cls, e, group_max)
             shape.setdefault(cls, {}).setdefault(gi, {}).setdefault(si, [])
             shape[cls][gi][si].append(e.ref)
-            anchors[(cls, gi, si)] = (e.anchor, e.nocase)
+            slot_desc[(cls, gi, si)] = (e.pattern, e.flags, e.tail_span,
+                                        e.anchor, e.nocase)
 
     out: List[RuleGroup] = []
     for cls in sorted(shape):
         for gi in sorted(shape[cls]):
             slots = []
             for si in sorted(shape[cls][gi]):
-                anchor, nocase = anchors[(cls, gi, si)]
+                pattern, flags, tail_span, anchor, nocase = \
+                    slot_desc[(cls, gi, si)]
                 slots.append(GroupSlot(si, anchor, nocase,
-                                       tuple(shape[cls][gi][si])))
-            slots = tuple(slots)
-            out.append(RuleGroup(cls, gi, slots, group_max))
+                                       tuple(shape[cls][gi][si]),
+                                       pattern=pattern, flags=flags,
+                                       tail_span=tail_span))
+            out.append(RuleGroup(cls, gi, tuple(slots), group_max))
     return out
 
 
-def _placement(shape, anchors, caps, cls: str, entry: GroupEntry,
+def _slot_desc_key(desc: Tuple[bytes, int, int, bytes, bool]
+                   ) -> Tuple[bytes, int]:
+    """Effective (pattern, flags) of a stored slot descriptor."""
+    pattern, flags, _tail, anchor, nocase = desc
+    pat = pattern if pattern else _stdre.escape(anchor)
+    fl = flags if flags >= 0 else (_stdre.IGNORECASE if nocase else 0)
+    return (pat, fl)
+
+
+def _placement(shape, slot_desc, caps, cls: str, entry: GroupEntry,
                group_max: int) -> Tuple[int, int]:
     """Where a (re)placed rule goes: an existing matching slot with room, else
     a free slot index in the first group with room, else a new group."""
     groups = shape.setdefault(cls, {})
-    want = (entry.anchor, entry.nocase)
+    want = entry.slot_key
     for gi in sorted(groups):
         rules = sum(len(v) for v in groups[gi].values())
         if rules >= group_max:
             continue
         for si in sorted(groups[gi]):
-            if anchors.get((cls, gi, si)) == want:
+            desc = slot_desc.get((cls, gi, si))
+            if desc is not None and _slot_desc_key(desc) == want:
                 return gi, si            # share the slot (dedup)
         if len(groups[gi]) < group_max:
             return gi, (max(groups[gi]) + 1) if groups[gi] else 0

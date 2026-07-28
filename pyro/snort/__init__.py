@@ -36,6 +36,13 @@ from .triage import (  # noqa: E402
     triage_rule,
 )
 from .report import build_report, check_invariants  # noqa: E402
+from .lowering import (  # noqa: E402
+    LoweredSlot,
+    MAX_LOWER_GAP,
+    OA_CLASSES,
+    SPAN_CAP,
+    lower_rule,
+)
 from .groups import (  # noqa: E402
     GROUP_MAX,
     GroupSlot,
@@ -54,8 +61,13 @@ from .groups import (  # noqa: E402
 __all__ = [
     "TRIAGE_VERSION",
     "GROUP_MAX",
+    "MAX_LOWER_GAP",
+    "OA_CLASSES",
+    "SPAN_CAP",
     "Anchor",
     "GroupSlot",
+    "LoweredSlot",
+    "lower_rule",
     "RuleGroup",
     "RuleRef",
     "Content",
