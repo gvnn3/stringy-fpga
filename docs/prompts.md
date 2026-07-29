@@ -1433,3 +1433,167 @@ Adopt the spec at 1.0.0 with your recommendations and start S1
 
 Continue when the builds finish
 
+## 2026-07-27 19:01:43
+
+Continue when the builds finish
+
+## 2026-07-27 19:02:10
+
+How long to complete?
+
+## 2026-07-27 22:36:30
+
+Start S2
+
+## 2026-07-27 22:41:15
+
+Continue when the workflow finishes
+
+## 2026-07-28 00:24:31
+
+Time estimate
+
+## 2026-07-28 00:46:58
+
+Continue when the workflow finishes
+
+## 2026-07-28 01:02:34
+
+Continue when the workflow finishes
+
+## 2026-07-28 01:43:06
+
+Time to complete.
+
+## 2026-07-28 02:10:41
+
+Continue
+
+## 2026-07-28 02:11:38
+
+Continue
+
+## 2026-07-28 02:12:23
+
+Continue
+
+## 2026-07-28 02:13:40
+
+Continue
+
+## 2026-07-28 02:14:09
+
+Continue
+
+## 2026-07-28 02:14:23
+
+Continue and do not stop until all tasks are complete.
+
+## 2026-07-28 02:16:13
+
+Status
+
+## 2026-07-28 02:17:18
+
+What is causing hte API error, be specific.
+
+## 2026-07-28 02:23:09
+
+Status?
+
+## 2026-07-28 03:11:08
+
+Status
+
+## 2026-07-28 11:48:28
+
+Time estimate S3
+
+## 2026-07-28 11:49:18
+
+What is the shell process that is running now?
+
+## 2026-07-28 11:50:42
+
+Add all information on how to demo the current state to the demo doc.
+
+## 2026-07-28 12:33:44
+
+in the notebook create a new summarizing entry that says what the system is, does, and how it is built.
+
+## 2026-07-28 19:44:41
+
+Continue.
+
+## 2026-07-28 19:55:08
+
+write the system walkthrough to docs/ and commit it.
+
+## 2026-07-28 22:19:18
+
+Continue with S3.
+
+## 2026-07-28 22:21:33
+
+Continue with all work until all stages are complete.
+
+## 2026-07-28 22:21:35
+
+Continue with all work until all stages are complete.
+
+## 2026-07-28 23:53:00
+
+time check
+
+## 2026-07-29 01:34:01
+
+Time check
+
+## 2026-07-29 02:46:57
+
+Continue monitoring and finish all remaining S3 work when the build completes.
+
+## 2026-07-29 16:37:25
+
+Time check.
+
+## 2026-07-29 16:39:53
+
+Can this session alert the app on my phone?
+
+## 2026-07-29 16:41:29
+
+How do I pair the app with this session?
+
+## 2026-07-29 16:44:06
+
+Send a test push.
+
+## 2026-07-29 16:44:37
+
+This session is in tmux.
+
+## 2026-07-29 18:29:28
+
+run the demo
+
+## 2026-07-29 18:32:07
+
+Run the demo.
+
+## 2026-07-29 18:41:23
+
+Update the notebook with the demo results
+
+## 2026-07-29 18:42:19
+
+Describe S4
+
+## 2026-07-29 18:45:22
+
+Put S4 asied for now.  Consider how Overlays can be used to have 1) differetn types of matching programs (regex, exact IP pacthc, packet pattern match ) and 2) Bring in different sections of the snort ruleset in response to external stimuli (packet patterns observed)
+
+## 2026-07-29 19:05:30
+
+Do the working-set measurement, but first make sure eerything is committed and move to a new branch.
+
