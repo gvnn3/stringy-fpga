@@ -65,6 +65,12 @@ LIFECYCLE_COUNTERS = frozenset({
     "synth_launched", "synth_succeeded", "synth_failed",
     "circuits_synthesizing", "circuits_resident", "circuits_evicted",
     "pr_loads",
+    # Added by the S2 group work (00143e8): a misconfigured job (e.g. a
+    # group engine paired with a backpressure-deaf wrapper) fails loud
+    # BEFORE tool time and is counted here, never cached.  R66 is a
+    # minimum-set obligation ("in addition to..."), so an added counter is
+    # spec-legal; this pin tracks the implementation's full surface.
+    "synth_misconfigured",
 })
 ALL_COUNTERS = DISPATCH_COUNTERS | LIFECYCLE_COUNTERS
 GAUGES = frozenset({"circuits_synthesizing", "circuits_resident"})  # R66
