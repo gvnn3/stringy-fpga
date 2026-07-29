@@ -27,8 +27,10 @@ NOPASSWD-sudo for this user; nothing else needs root.
   `10ee:903f` at `02:00.0` and `h2cstats` reads live counters.
 * `.superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit`
   matches this static (fmax 260.8 MHz) and is the bit to `pyro_hw.py load`.
-* **2026-07-28: the resident child is the SNORT-PF 253-slot group**
-  (`group_b1a418fc82f8c28708843068f247fc25_full_partial.bit`, §8). To run
+* **2026-07-29: the resident child is the SNORT-PF 253-slot group,
+  rebuilt at the AC-S3-2 v2 group format** (identity rolled; all 21
+  groups now built — see §9)
+  (`group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit`, §8). To run
   the PYRO demos in §§2–5, load the x4 regex child first (§1 step 3).
 * Generator/harness bumped to **2.3.0** on 2026-07-27 (R47b). Partials
   built before the bump — including the x4 child above — are **stale for
@@ -61,7 +63,7 @@ PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
     .superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit
 # or:
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
-    .superpowers/pr-builds/group_b1a418fc82f8c28708843068f247fc25_full_partial.bit
+    .superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
 
 # 4. Probe — the go/no-go check:
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
@@ -198,8 +200,8 @@ State as of 2026-07-28 (Phase S2 complete, spec `snort-rule-offload` v1.0.2):
 the resident child is the **$HTTP_PORTS group 0** pattern-set circuit —
 256 community rules deduped onto 253 slots, one shared 1 B/cycle harness,
 built through the same PR flow as every PYRO child. Identity
-`b1a418fc82f8c28708843068f247fc25`, `rp_child_id 0xfc18a4b1`; post-route
-10,147 LUTs / 5,681 FFs, fmax 250.44 MHz (12.7 % of the PR budget). The
+`e1e145ba35391796ea6ac7a89af1c8e6`, `rp_child_id 0xba45e1e1`; post-route
+10,323 LUTs, fmax 253.29 MHz (12.7 % of the PR budget). The
 FPGA is a **candidate-nominating prefilter**: a hit means "this flow may
 match rule X — re-verify with Snort", never an alert by itself (R78.7).
 
@@ -207,7 +209,7 @@ match rule X — re-verify with Snort", never an alert by itself (R78.7).
 
 ```sh
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
-    .superpowers/pr-builds/group_b1a418fc82f8c28708843068f247fc25_full_partial.bit
+    .superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
 # -> load_partial OK in ~14 s (in-band recovery included)
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
 # -> device_usable=true — static_shell_id=0x02020000, ...
@@ -248,7 +250,7 @@ Anchors dedup, so one slot can nominate several rules:
 ```sh
 python3 -c "
 import json
-s = json.load(open('.superpowers/pr-builds/group_b1a418fc82f8c28708843068f247fc25_full_snortpf_sidecar.json'))
+s = json.load(open('.superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_snortpf_sidecar.json'))
 print('slot 40 ->', s['slots']['40'])   # ['1:848', '1:849']  view-source rules
 print('slot 85 ->', s['slots']['85'])   # ['1:900', '1:901']  webspirs.cgi rules
 print(s['rp_child_id_low32'])           # 0xfc18a4b1"
@@ -387,4 +389,37 @@ env PYRO_VIVADO=/usr/local/cad/2025.2/Vivado \
 .venv-pyro/bin/python3 -m pytest tests/acceptance/test_acs3_3_weekly_diff.py -q
 # 33-rule diff -> 2 dirty groups, tombstones stable, 19/21 cache hits,
 # unfiltered window bounded and SR19-visible
+```
+
+### 9.5 Live hot-swap demo (verified on silicon 2026-07-29)
+
+The headline S3 behaviour, end to end on hardware — the scheduler holds
+through hysteresis, then swaps the circuit when the traffic mix shifts
+decisively:
+
+```
+start: resident = $HTTP_PORTS/0                     (child 0xba45e1e1)
+phase 1  HTTP traffic     mix {$HTTP_PORTS: 1159}   -> no swap
+phase 2  shift to SSH     mix {HTTP 1143, SSH 1993} -> holding (hysteresis)
+                          mix {HTTP 1128, SSH 3959} -> holding
+                          mix {HTTP 1112, SSH 5897} -> holding
+                          mix {HTTP  910, SSH 6480} -> SWAPPED to $SSH_PORTS/0
+  [scheduler] JTAG-loaded in 16.1s (incl. in-band wedge recovery)
+  SR19: swaps=1, unfiltered_seconds=16.2  (the blind window, accounted)
+  post-swap nomination 1:1324 — an $SSH_PORTS rule: the circuit really changed
+```
+
+Two things this shows that a screenshot cannot: the swap is *earned*
+(three ticks of a growing SSH lead were refused before the fourth
+crossed both the 2x margin and the sustain window), and the blind
+window during reconfiguration is **counted, not hidden** — SR19's
+`unfiltered_seconds` is the honest cost of every rotation.
+
+SR12 across a real TCP segment split, same run:
+
+```
+seg1 ends ...b'GET /view-so'      -> no nomination (correct: anchor incomplete)
+seg2 starts b'urce?f=x HTTP/'...  -> NOMINATE 1:848, 1:849 end=16
+                                     (recovered via the 64 B overlap tail;
+                                      neither segment contains the anchor alone)
 ```
