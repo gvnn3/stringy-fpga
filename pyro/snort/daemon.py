@@ -269,9 +269,10 @@ class ModelTransport:
 class WireTransport:
     """R78 raw-Ethernet transport (SR11) over the ``onic`` control binding.
 
-    Thin adapter over :mod:`pyro.device`'s frame machinery; constructed
-    lazily so the daemon core stays importable on device-free hosts.
-    ``iface`` comes from ``PYRO_DEVICE_IFACE`` (no default — A4/F3).
+    Thin adapter over :mod:`pyro.device`'s frame machinery (the exact
+    round-trip shape the AC-S2-3 silicon gate uses); constructed lazily so
+    the daemon core stays importable on device-free hosts.  ``iface``
+    comes from ``PYRO_DEVICE_IFACE`` (no default — A4/F3).
     """
 
     def __init__(self, iface: str, group):
@@ -280,18 +281,66 @@ class WireTransport:
         self._iface = iface
         self.group = group
 
+    def _roundtrip(self, kind: int, slot: int, body: bytes,
+                   timeout_s: float = 2.0):
+        import struct
+        import time as _time
+        pdev = self._device
+        cfg = pdev.DeviceConfig(iface=self._iface)
+        tr = pdev._make_transport(cfg)
+        try:
+            eth = (bytes(cfg.dst_mac) + bytes(cfg.src_mac)
+                   + struct.pack(">H", pdev.ETHERTYPE))
+            seq = 17
+            tr.send(eth + pdev.encode_frame(kind, slot, seq, body))
+            deadline = _time.monotonic() + timeout_s
+            while _time.monotonic() < deadline:
+                reply = tr.recv(0.5)
+                if reply is None:
+                    continue
+                reply = bytes(reply)
+                if len(reply) < 14 or struct.unpack(
+                        ">H", reply[12:14])[0] != pdev.ETHERTYPE:
+                    continue
+                try:
+                    dec = pdev.decode_frame(reply[14:])
+                except pdev.PyroFrameError:
+                    continue
+                if dec.seq != seq:
+                    continue
+                return dec
+            return None
+        finally:
+            tr.close()
+
     def child_id(self) -> int:
-        cfg = self._device.DeviceConfig(iface=self._iface)
-        ok, ident = self._device.probe_device(cfg)
-        if not ok:
-            return 0                       # SR14: routes to 'no resident'
-        return int(getattr(ident, "rp_child_id", 0))
+        """R78.5a ``ID_REPLY`` ``rp_child_id`` (0 on any failure — SR14
+        routes that to 'no resident group', never to attribution)."""
+        import struct
+        pdev = self._device
+        dec = self._roundtrip(pdev.KIND_ID_REQUEST, 0, b"")
+        if dec is None or dec.kind != pdev.KIND_ID_REPLY or \
+                len(dec.payload) < 12:
+            return 0
+        return struct.unpack(">I", dec.payload[8:12])[0]
 
     def scan(self, payload: bytes, out_cap: int = OUT_CAP) -> ScanResult:
-        cfg = self._device.DeviceConfig(iface=self._iface)
-        entries, overflowed = self._device.match_scan(cfg, payload,
-                                                      out_cap=out_cap)
-        return ScanResult(tuple(entries), overflowed)
+        import struct
+        pdev = self._device
+        body = struct.pack(">QHH", 0, min(out_cap, OUT_CAP), 0) + payload
+        dec = self._roundtrip(pdev.KIND_MATCH_REQUEST, 1, body,
+                              timeout_s=4.0)
+        if dec is None or dec.kind != pdev.KIND_MATCH_REPLY or \
+                len(dec.payload) < 4:
+            return ScanResult((), False)   # no reply: nominate nothing this
+                                           # request; SR14 will drop resident
+        count, status = struct.unpack(">HH", dec.payload[0:4])
+        entries = []
+        for i in range(count):
+            s, e, pid, _fl = struct.unpack_from("<QQII", dec.payload,
+                                                8 + 24 * i)
+            entries.append((int(pid), int(s), int(e)))
+        return ScanResult(tuple(entries), bool(status & 1))
 
 
 # --------------------------------------------------------------------------

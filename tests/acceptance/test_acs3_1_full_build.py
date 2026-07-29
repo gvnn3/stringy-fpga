@@ -63,36 +63,48 @@ def _key(g):
 # Clause 1: all groups build (evidence: the batch summary + the SR9 cache)
 # --------------------------------------------------------------------------
 def test_all_groups_have_verified_bitstreams(corpus_groups):
-    if not os.path.exists(SUMMARY):
-        pytest.skip("s3_build_summary.json absent — batch build not run "
-                    "on this host (AC-S3-1 build clause pends the "
+    """The SR9 cache is the operational source of truth (R63a): every
+    group's key must resolve to a non-torn, pr_verified, met_timing
+    pr_bitstream.  The per-run summary (when present) supplements with
+    the fresh-build stats; it is per-invocation, never authoritative.
+
+    This clause reads the HOST's operational cache at the well-known
+    default root, read-only and explicitly: the acceptance conftest
+    redirects ``PYRO_CACHE_DIR`` to a per-session tempdir to isolate test
+    WRITES, but the build evidence lives (only) in the operator cache the
+    batch driver populated.  Nothing here writes.
+    """
+    cache = C.BitstreamCache(
+        root=os.path.join(os.path.expanduser("~"), ".cache", "pyro",
+                          "bitstreams"))
+    if all(cache.get(_key(g)) is None for g in corpus_groups):
+        pytest.skip("no S3 group artifacts in the SR9 cache — batch build "
+                    "not run on this host (AC-S3-1 build clause pends the "
                     "overnight run)")
-    with open(SUMMARY) as fh:
-        summary = json.load(fh)
-    missing = [g.name for g in corpus_groups
-               if g.name not in summary["groups"]]
-    assert not missing, "groups absent from the build run: %r" % missing
-    incomplete = {name: rec.get("status")
-                  for name, rec in summary["groups"].items()
-                  if rec.get("status") not in ("built", "cached")}
-    assert not incomplete, "unbuilt groups: %r" % incomplete
-    # The cache is the operational source of truth (R63a): every group's
-    # SR9 key must resolve to a non-torn artifact.
-    cache = C.BitstreamCache()
+    problems = []
     for g in corpus_groups:
         entry = cache.get(_key(g))
-        assert entry is not None, "no cache entry for %s" % g.name
-        payload = entry.read_payload()
-        assert payload, "0-byte (crash-torn) artifact for %s" % g.name
-        assert entry.manifest.payload_kind == "pr_bitstream"
-        assert entry.manifest.pr_verified and entry.manifest.met_timing
-    # Utilization honesty (SR8/R74): built groups recorded real ≤ est.
-    built = [rec for rec in summary["groups"].values()
-             if rec.get("status") == "built"]
-    assert built, "summary holds no fresh builds"
-    for rec in built:
-        assert rec["pr_verified"] and rec["met_timing"]
-        assert rec["fmax_mhz"] >= 250.0
+        if entry is None:
+            problems.append("%s: no cache entry (last: %s)"
+                            % (g.name, cache.failure_reason(_key(g))))
+            continue
+        if not entry.read_payload():
+            problems.append("%s: 0-byte (crash-torn) artifact" % g.name)
+            continue
+        m = entry.manifest
+        if not (m.payload_kind == "pr_bitstream" and m.pr_verified
+                and m.met_timing):
+            problems.append("%s: kind=%s pr_verified=%s met_timing=%s"
+                            % (g.name, m.payload_kind, m.pr_verified,
+                               m.met_timing))
+    assert not problems, "AC-S3-1 build clause: %r" % problems
+    if os.path.exists(SUMMARY):
+        with open(SUMMARY) as fh:
+            summary = json.load(fh)
+        for rec in summary["groups"].values():
+            if rec.get("status") == "built":
+                assert rec["pr_verified"] and rec["met_timing"]
+                assert rec["fmax_mhz"] >= 250.0
 
 
 # --------------------------------------------------------------------------
@@ -194,10 +206,11 @@ def test_loaded_child_serves_wire_nominations(corpus_groups, device_iface):
                     "not configured (SR18/R83)")
     from pyro import device as _device
     cfg = _device.DeviceConfig(iface=device_iface)
-    ok, ident = _device.probe_device(cfg)
+    ok, reason = _device.probe_device(cfg)
     if not ok:
-        pytest.skip("device_usable=false — %s" % (ident,))
-    child = int(getattr(ident, "rp_child_id", 0))
+        pytest.skip(str(reason))
+    any_group = corpus_groups[0]
+    child = D.WireTransport(device_iface, any_group).child_id()
     expected = {g.name: g.rp_child_id(gen.GENERATOR_VERSION,
                                       gen.HARNESS_VERSION, 1)
                 for g in corpus_groups}
