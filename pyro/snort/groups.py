@@ -130,6 +130,15 @@ class RuleRef(NamedTuple):
     line_no: int             # provenance only; never hashed
     dropped: Tuple[str, ...] = ()   # SR4 dropped-conjunct option keys
     oa: Tuple[str, ...] = ()        # SR4 over-approximation classes
+    #: The rule's own destination-port TOKEN (``$HTTP_PORTS``, ``21``,
+    #: ``[80,443]``, ``any``, ...) — rule text, resolved against the site's
+    #: SR13 variable table at runtime, never hashed and never compiled in
+    #: (SR13/SF16: the token is rule content, its VALUE is site config).
+    #: Carried so a group is self-describing about which of its rules can
+    #: fire on a given flow — the SR10 scheduler scores residency with it
+    #: (the 2026-07-29 working-set study: scoring by port class alone
+    #: elects groups worth ~1% coverage over universal groups worth ~28%).
+    dst_port: str = "any"
 
     @property
     def key(self) -> str:
@@ -366,6 +375,8 @@ class RuleGroup(NamedTuple):
                     "rules": [
                         {"gid": r.gid, "sid": r.sid, "key": r.key,
                          "subtier": r.subtier, "buffer": r.buffer,
+                         # rule text (SR13: token, never its site value)
+                         "dst_port": r.dst_port,
                          # SR4 per-rule dropped-conjunct list + classes
                          "dropped": list(r.dropped),
                          "over_approx": list(r.oa)}
@@ -609,7 +620,9 @@ def groupable_entries(triaged: Iterable[Tuple[Rule, TriageResult]],
             sid=sid, gid=gid, line_no=rule.line_no,
             anchor=anchor.dedup_key, nocase=anchor.nocase,
             ref=RuleRef(gid, sid, res.subtier, anchor.buffer, rule.line_no,
-                        dropped=low.dropped, oa=low.oa_classes),
+                        dropped=low.dropped, oa=low.oa_classes,
+                        dst_port=_WS.sub("", (rule.dst_port or "").strip())
+                        or "any"),
             port_class=class_of(rule.dst_port),
             dst_port=_WS.sub("", (rule.dst_port or "").strip()) or "any",
             pattern=low.pattern, flags=low.flags, tail_span=low.tail_span,

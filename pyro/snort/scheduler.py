@@ -40,7 +40,6 @@ class ResidencyScheduler:
                  hysteresis: float = 2.0,
                  min_dwell_s: float = 300.0,
                  challenge_s: float = 60.0,
-                 any_floor: float = 0.25,
                  clock: Callable[[], float] = time.monotonic):
         self.daemon = daemon
         self.groups = list(groups)
@@ -49,94 +48,127 @@ class ResidencyScheduler:
         self.hysteresis = float(hysteresis)
         self.min_dwell_s = float(min_dwell_s)
         self.challenge_s = float(challenge_s)
-        self.any_floor = float(any_floor)
         self._clock = clock
-        self._by_class: Dict[str, List] = {}
-        for g in self.groups:
-            self._by_class.setdefault(g.port_class, []).append(g)
-        for cls in self._by_class:
-            self._by_class[cls].sort(key=lambda g: g.index)
-        self._rotation: Dict[str, int] = {}
         self._last_swap = -1e18
         self._challenger: Optional[str] = None
         self._challenge_since = 0.0
+        #: (group name, port) -> rules of that group that could fire there.
+        #: Pure function of rule text + the site's variable table, so it is
+        #: computed once per pair and reused.
+        self._fire_cache: Dict[tuple, int] = {}
 
     # -- scoring -----------------------------------------------------------
-    def scores(self) -> Dict[str, float]:
-        """Byte share per port class that has at least one available group.
+    def rules_that_could_fire(self, group, port: int) -> int:
+        """How many of ``group``'s rules could fire on a flow to ``port``.
 
-        The histogram counts each packet under its most-specific class;
-        the catch-all ``any`` class (whose rules apply to all traffic) gets
-        a floor of ``any_floor`` × total so it rotates in on a steady mix
-        instead of starving — a v1 heuristic, to be recalibrated from the
-        SR19 evidence base (spec §10 OQ-1 discipline)."""
+        A rule counts only if its OWN destination-port token admits the
+        port under the daemon's SR13 variable table — not merely if the
+        group's coarse port class does.  That distinction is the whole
+        correction: a ``literal``-class group holds rules for ports
+        21/25/445 that can never fire on a port-80 flow, while every
+        ``any``-token rule fires on every port.
+        """
+        key = (group.name, port)
+        hit = self._fire_cache.get(key)
+        if hit is None:
+            vt = self.daemon.vars
+            hit = 0
+            for slot in group.slots:
+                if slot.tombstone:
+                    continue
+                for r in slot.rules:
+                    if vt.port_holds(r.dst_port, port):
+                        hit += 1
+            self._fire_cache[key] = hit
+        return hit
+
+    def scores(self) -> Dict[str, float]:
+        """``group name -> expected value`` under the observed traffic.
+
+        V(g) = Σ_ports  decayed_bytes[port] × rules_of_g_that_fire_on(port)
+
+        i.e. the prefilter coverage that having ``g`` resident would have
+        bought over the traffic just seen.  This replaces the pre-2026-07-29
+        heuristic (bytes per port class, then round-robin within the winning
+        class), which was measured to be **worse than pinning a single
+        group** — it elected ``literal``-class groups worth 0.7–1.6%
+        coverage over universal groups worth 27.9%, because matching the
+        traffic's port class says nothing about how many of a group's rules
+        can actually fire (docs/studies/a5-working-set.md).
+        """
         mix = self.daemon.histogram.snapshot()
-        total = sum(mix.values())
-        out = {cls: mix.get(cls, 0.0) for cls in self._by_class
-               if any(self.available(g) for g in self._by_class[cls])}
-        if "any" in out:
-            out["any"] = max(out["any"], self.any_floor * total)
+        out: Dict[str, float] = {}
+        for g in self.groups:
+            if not self.available(g):
+                continue
+            v = 0.0
+            for port, nbytes in mix.items():
+                if nbytes <= 0:
+                    continue
+                v += nbytes * self.rules_that_could_fire(g, port)
+            out[g.name] = v
         return out
 
-    def _resident_class(self) -> Optional[str]:
+    def _resident_name(self) -> Optional[str]:
         pipe = self.daemon._pipeline
-        return pipe.group.port_class if pipe is not None else None
+        return pipe.group.name if pipe is not None else None
 
-    def _next_group(self, cls: str):
-        """Round-robin within the class, skipping unavailable groups."""
-        members = [g for g in self._by_class[cls] if self.available(g)]
-        if not members:
-            return None
-        i = self._rotation.get(cls, -1) + 1
-        self._rotation[cls] = i
-        return members[i % len(members)]
+    def _group_by_name(self, name: str):
+        for g in self.groups:
+            if g.name == name:
+                return g
+        return None
 
     # -- the decision ------------------------------------------------------
     def tick(self) -> Optional[str]:
         """Evaluate the mix; maybe swap.  Returns the newly resident group
-        name when a swap happened, else None."""
+        name when a swap happened, else None.
+
+        Note what this does NOT do any more: it does not rotate among the
+        groups of a dominant class.  Rotation was introduced so the whole
+        class would eventually get coverage, but at single-tenant residency
+        every rotation costs a ~16 s blind window and swaps 256 resident
+        rules for a different 256 — instantaneous coverage is unchanged and
+        the blind window is pure loss (a.k.a. the measured result that the
+        old scheduler underperformed a static pin).  A swap now has to be
+        justified by the value function or it does not happen.
+        """
         now = self._clock()
         scores = self.scores()
         if not scores:
             return None
-        best_cls = max(scores, key=lambda c: scores[c])
-        res_cls = self._resident_class()
+        best_name = max(scores, key=lambda n: scores[n])
+        res_name = self._resident_name()
 
-        if res_cls is None:
-            # Unfiltered: any traffic at all justifies loading immediately
-            # (there is no blind-window cost to weigh — we are already blind).
-            if scores[best_cls] <= 0:
+        if res_name is None:
+            # Unfiltered: any positive-value candidate is worth loading
+            # immediately (there is no blind window to weigh — already blind).
+            if scores[best_name] <= 0:
                 return None
-            return self._swap(best_cls, now)
+            return self._swap(best_name, now)
 
-        if best_cls == res_cls:
-            self._challenger = None
-            # Same class staying dominant: rotate through its groups at
-            # dwell cadence so the whole class gets coverage (SR10).
-            if (len([g for g in self._by_class[res_cls]
-                     if self.available(g)]) > 1
-                    and now - self._last_swap >= self.min_dwell_s):
-                return self._swap(res_cls, now)
-            return None
-
-        # A different class leads: demand a sustained, decisive lead.
-        resident_score = scores.get(res_cls, 0.0)
-        if scores[best_cls] < self.hysteresis * max(resident_score, 1e-9):
+        if best_name == res_name:
             self._challenger = None
             return None
-        if self._challenger != best_cls:
-            self._challenger = best_cls
+
+        # A different group leads: demand a sustained, decisive lead.
+        resident_score = scores.get(res_name, 0.0)
+        if scores[best_name] < self.hysteresis * max(resident_score, 1e-9):
+            self._challenger = None
+            return None
+        if self._challenger != best_name:
+            self._challenger = best_name
             self._challenge_since = now
             return None
         if now - self._challenge_since < self.challenge_s:
             return None
         if now - self._last_swap < self.min_dwell_s:
             return None
-        return self._swap(best_cls, now)
+        return self._swap(best_name, now)
 
-    def _swap(self, cls: str, now: float) -> Optional[str]:
-        group = self._next_group(cls)
-        if group is None:
+    def _swap(self, name: str, now: float) -> Optional[str]:
+        group = self._group_by_name(name)
+        if group is None or not self.available(group):
             return None
         pipe = self.daemon._pipeline
         if pipe is not None and pipe.group.name == group.name:

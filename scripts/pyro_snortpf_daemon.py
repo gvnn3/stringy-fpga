@@ -148,7 +148,9 @@ def main() -> int:
 
     def dump(_sig=None, _frm=None):
         rec = {"t": time.time(), "stats": dm.stats.snapshot(),
-               "mix": dm.histogram.snapshot()}
+               "mix_by_class": dm.histogram.snapshot_by_class(),
+               "mix_by_port": {str(p): round(v, 1) for p, v
+                               in dm.histogram.snapshot().items()}}
         out.write(json.dumps(rec, sort_keys=True) + "\n")
         out.flush()
 

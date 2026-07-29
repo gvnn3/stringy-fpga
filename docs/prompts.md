@@ -1597,3 +1597,7 @@ Put S4 asied for now.  Consider how Overlays can be used to have 1) differetn ty
 
 Do the working-set measurement, but first make sure eerything is committed and move to a new branch.
 
+## 2026-07-29 23:03:43
+
+Fix the scheduler scoring to be value-aware
+

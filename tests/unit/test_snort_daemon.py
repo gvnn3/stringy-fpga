@@ -99,15 +99,42 @@ def test_relevant_versus_most_specific_class():
 # The histogram
 # --------------------------------------------------------------------------
 def test_histogram_decays_with_half_life():
+    """Per-PORT counts (not per-class): the scheduler scores each rule's own
+    port predicate, and aggregating to a class first destroys exactly the
+    information that decision needs."""
     clk = FakeClock()
     vt = D.VarTable(port_vars={"$X": {1234}})
     h = D.PortMixHistogram(vt, half_life_s=10.0, clock=clk)
     h.observe(1234, 1000)
-    assert h.snapshot()["$X"] == pytest.approx(1000)
+    assert h.snapshot()[1234] == pytest.approx(1000)
     clk.advance(10.0)
-    assert h.snapshot()["$X"] == pytest.approx(500, rel=1e-6)
+    assert h.snapshot()[1234] == pytest.approx(500, rel=1e-6)
     clk.advance(20.0)
-    assert h.snapshot()["$X"] == pytest.approx(125, rel=1e-6)
+    assert h.snapshot()[1234] == pytest.approx(125, rel=1e-6)
+
+
+def test_histogram_class_view_aggregates_ports():
+    clk = FakeClock()
+    vt = D.VarTable()
+    h = D.PortMixHistogram(vt, half_life_s=1e9, clock=clk)
+    h.observe(80, 100)
+    h.observe(8080, 50)
+    h.observe(22, 30)
+    by_cls = h.snapshot_by_class()
+    assert by_cls["$HTTP_PORTS"] == pytest.approx(150)
+    assert by_cls["$SSH_PORTS"] == pytest.approx(30)
+    assert h.snapshot()[80] == pytest.approx(100)
+
+
+def test_histogram_bounds_tracked_ports():
+    clk = FakeClock()
+    h = D.PortMixHistogram(D.VarTable(), half_life_s=1e9, clock=clk,
+                           max_ports=4)
+    for p in range(1000, 1010):
+        h.observe(p, 10 * (p - 999))        # later ports are hotter
+    snap = h.snapshot()
+    assert len(snap) <= 4
+    assert 1009 in snap                     # the hottest survives eviction
 
 
 # --------------------------------------------------------------------------
@@ -302,7 +329,14 @@ def test_scheduler_hysteresis_demands_sustained_decisive_lead():
     assert dm.stats.snapshot()["swaps"] == 2
 
 
-def test_scheduler_rotates_within_the_dominant_class():
+def test_scheduler_does_not_rotate_pointlessly_within_a_class():
+    """Rotation was removed deliberately (2026-07-29 working-set study).
+
+    At single-tenant residency, swapping 256 resident rules for a
+    *different* 256 leaves instantaneous coverage unchanged while paying a
+    ~16 s blind window — pure loss.  A swap must now be justified by the
+    value function or it does not happen.
+    """
     clk = FakeClock()
     dm = D.FilterDaemon(clock=clk)
     a = make_group(*[smtp_rule(400 + i, 'content:"AA%03d";' % i)
@@ -311,13 +345,78 @@ def test_scheduler_rotates_within_the_dominant_class():
     sch, made = _scheduler(dm, a, clk)
     dm.feed(FLOW25, b"x" * 1000)
     first = sch.tick()
-    assert first == a[0].name
-    clk.advance(301)
-    dm.feed(FLOW25, b"x" * 1000)
-    assert sch.tick() == a[1].name                  # round-robin at dwell
-    clk.advance(301)
-    dm.feed(FLOW25, b"x" * 1000)
-    assert sch.tick() == a[0].name
+    assert first in (a[0].name, a[1].name)
+    for _ in range(3):
+        clk.advance(301)
+        dm.feed(FLOW25, b"x" * 1000)
+        assert sch.tick() is None                   # no churn
+    assert dm.stats.snapshot()["swaps"] == 1
+
+
+def _universal_and_specific():
+    """A universal ('any' dst_port) group and a port-25-only group, where
+    the universal one holds MORE rules — the exact shape the old
+    class-scored scheduler got wrong."""
+    universal = ['alert tcp any any -> any any (msg:"u%d"; '
+                 'content:"UNIV%03d"; sid:%d;)' % (i, i, 700 + i)
+                 for i in range(40)]
+    specific = ['alert tcp any any -> any 25 (msg:"s%d"; '
+                'content:"SPEC%03d"; sid:%d;)' % (i, i, 800 + i)
+                for i in range(5)]
+    gs = make_group(*(universal + specific))
+    uni = next(g for g in gs if g.port_class == "any")
+    spec = next(g for g in gs if g.port_class == "literal")
+    assert uni.rule_count == 40 and spec.rule_count == 5
+    return uni, spec
+
+
+def test_scheduler_prefers_the_higher_value_group_over_the_port_match():
+    """THE FIX. Traffic is entirely port 25, so the old scheduler elected
+    the port-25 class and loaded a 5-rule group.  Value-aware scoring sees
+    that the 'any'-token rules also fire on port 25 — 40 of them — and
+    picks the universal group instead."""
+    clk = FakeClock()
+    dm = D.FilterDaemon(clock=clk)
+    uni, spec = _universal_and_specific()
+    sch, made = _scheduler(dm, [uni, spec], clk)
+    dm.feed(FLOW25, b"x" * 5000)                    # 100% port-25 traffic
+    assert sch.tick() == uni.name
+    s = sch.scores()
+    assert s[uni.name] > s[spec.name]               # 40 rules vs 5
+    # and it stays put: no later tick finds a better candidate
+    for _ in range(3):
+        clk.advance(301)
+        dm.feed(FLOW25, b"x" * 5000)
+        assert sch.tick() is None
+
+
+def test_scheduler_swaps_when_the_resident_stops_being_relevant():
+    """Value-aware does not mean inert: a resident whose rules cannot fire
+    on the observed traffic loses to one whose rules can."""
+    clk = FakeClock()
+    dm = D.FilterDaemon(clock=clk)
+    uni, spec = _universal_and_specific()
+    sch, made = _scheduler(dm, [uni, spec], clk, min_dwell_s=10.0,
+                           challenge_s=5.0)
+    # Force the low-value group resident, then show HTTP traffic.
+    dm.set_pipeline(model_pipeline(spec, dm.stats))
+    for _ in range(4):
+        dm.feed(FLOW80, b"y" * 5000)                # port 80: spec fires on 0
+        clk.advance(6)
+        r = sch.tick()
+        if r:
+            break
+    assert dm.stats.snapshot()["resident"]["group"] == uni.name
+
+
+def test_scores_count_each_rules_own_port_predicate():
+    dm = D.FilterDaemon()
+    uni, spec = _universal_and_specific()
+    sch, _ = _scheduler(dm, [uni, spec], FakeClock())
+    assert sch.rules_that_could_fire(uni, 25) == 40   # 'any' fires anywhere
+    assert sch.rules_that_could_fire(uni, 80) == 40
+    assert sch.rules_that_could_fire(spec, 25) == 5   # port-25 rules
+    assert sch.rules_that_could_fire(spec, 80) == 0   # ...and nowhere else
 
 
 def test_scheduler_failed_load_stays_unfiltered_and_retries():

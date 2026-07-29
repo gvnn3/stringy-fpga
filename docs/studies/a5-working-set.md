@@ -131,3 +131,60 @@ correctness — which is what makes aggressive paging safe to consider.
    residency question disappears.
 4. **Do not open A5 on coverage grounds.** If it is opened, open it for the
    build-time argument, with that stated plainly.
+
+---
+
+## Follow-up: recommendation 1 implemented and re-measured (2026-07-29)
+
+The value-aware scoring landed the same day. `ResidencyScheduler.scores()`
+now returns, per **group**:
+
+```
+V(g) = Σ_ports  decayed_bytes[port] × rules_of_g_whose_own_predicate_fires_on(port)
+```
+
+Three changes make that computable: `RuleRef` carries the rule's own
+destination-port **token** (rule text, resolved against the site's SR13
+variable table at runtime — never hashed, never compiled in);
+`PortMixHistogram` counts bytes **per port** rather than per class, with
+`snapshot_by_class()` retained for the stats surface; and within-class
+round-robin rotation is **removed** — at single-tenant residency it swapped
+256 resident rules for a different 256, leaving instantaneous coverage
+unchanged while paying a blind window.
+
+Re-measured against the same yardstick, same traces:
+
+| skew | phase | static pin | OLD (class-scored) | NEW (value-aware) |
+|---|---|---|---|---|
+| 0.0 | stationary | 28.1% | 1.6% | **27.4%** |
+| 0.0 | 300 s | 27.7% | 1.6% | **27.0%** |
+| 1.2 | stationary | 22.8% | 5.0% | **22.2%** |
+| 1.2 | 300 s | 27.0% | 3.0% | **26.4%** |
+| 2.0 | stationary | 17.1% | 6.6% | **16.7%** |
+| 2.0 | 300 s | 26.4% | 2.0% | **26.0%** |
+
+A **4–17× improvement**, now tracking the static-pin ceiling to within
+0.4–0.6 points (the residual is the initial warm-up load, which a pin does
+not pay). The scheduler no longer needs to be beaten by a static pin.
+
+Verified on silicon the same day, with a deliberate A/B of the decision:
+
+```
+phase 1  HTTP burst      V(HTTP/0)=295828  V(SSH/0)=0       -> no swap
+phase 2  SSH-only traffic, HTTP's value decaying out:
+  t+ 2s  V(HTTP)=257587  V(SSH)= 7037  ratio=0.03  holding
+  t+20s  V(HTTP)= 73924  V(SSH)=40763  ratio=0.55  holding
+  t+32s  V(HTTP)= 32164  V(SSH)=48433  ratio=1.51  holding
+  t+38s  V(HTTP)= 21216  V(SSH)=50443  ratio=2.38  SWAPPED to $SSH_PORTS/0
+  post-swap nomination 1:1324 — an $SSH_PORTS rule
+```
+
+Note what changed behaviourally: the **old** scheduler made this swap after
+~5 s on raw byte counts. The new one refuses for 38 s and swaps only once
+the challenger is genuinely worth twice the resident — because trading a
+256-rule group for a 4-rule one is a bad deal until the 256 rules stop
+being able to fire at all. Same swap, earned rather than reflexive.
+
+Recommendations 2–4 (GROUP_MAX / `any`-class packing, capacity as the real
+lever, and not opening A5 on coverage grounds) are unchanged and remain
+owner decisions.

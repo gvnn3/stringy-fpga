@@ -175,19 +175,31 @@ class VarTable:
 # The port-mix histogram (feeds SR10 scheduling)
 # --------------------------------------------------------------------------
 class PortMixHistogram:
-    """Exponentially-decayed byte counts per SR6 port class.
+    """Exponentially-decayed byte counts **per destination port**.
 
-    ``half_life_s`` sets rotation inertia: SF20's ~14–45 s swap cost means
-    the mix must be measured over minutes, not packets (the scheduler adds
-    hysteresis on top — this is just the measurement).
+    Per-port, not per-class, and that distinction is load-bearing: the SR10
+    scheduler scores a candidate group by how many of its rules could fire
+    on the observed traffic, which needs each rule's own port predicate
+    evaluated against the actual ports seen.  Aggregating to a port class
+    first destroys exactly the information that decision needs — measured
+    2026-07-29 (docs/studies/a5-working-set.md): a class-scored scheduler
+    elects groups worth ~1% coverage over universal groups worth ~28%.
+    :meth:`snapshot_by_class` keeps the coarse view for the stats surface.
+
+    ``half_life_s`` sets rotation inertia: a ~16 s swap cost means the mix
+    must be measured over minutes, not packets (the scheduler adds
+    hysteresis on top — this is just the measurement).  ``max_ports``
+    bounds memory on a scan-heavy link by evicting the smallest counter.
     """
 
     def __init__(self, var_table: VarTable, half_life_s: float = 60.0,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 max_ports: int = 256):
         self._vt = var_table
         self._clock = clock
         self._half_life = float(half_life_s)
-        self._counts: Dict[str, float] = {}
+        self._max_ports = int(max_ports)
+        self._counts: Dict[int, float] = {}
         self._stamp = clock()
         self._lock = threading.Lock()
 
@@ -204,13 +216,26 @@ class PortMixHistogram:
         now = self._clock()
         with self._lock:
             self._decay(now)
-            cls = self._vt.most_specific_class(dst_port)
-            self._counts[cls] = self._counts.get(cls, 0.0) + n_bytes
+            port = int(dst_port)
+            self._counts[port] = self._counts.get(port, 0.0) + n_bytes
+            if len(self._counts) > self._max_ports:
+                # Evict the coldest port; it contributes least to scoring.
+                victim = min(self._counts, key=lambda p: self._counts[p])
+                del self._counts[victim]
 
-    def snapshot(self) -> Dict[str, float]:
+    def snapshot(self) -> Dict[int, float]:
+        """``{dst_port: decayed_bytes}`` — the scheduler's scoring input."""
         with self._lock:
             self._decay(self._clock())
             return dict(self._counts)
+
+    def snapshot_by_class(self) -> Dict[str, float]:
+        """The coarse per-class view, for the SR19 stats surface only."""
+        out: Dict[str, float] = {}
+        for port, v in self.snapshot().items():
+            cls = self._vt.most_specific_class(port)
+            out[cls] = out.get(cls, 0.0) + v
+        return out
 
 
 # --------------------------------------------------------------------------
