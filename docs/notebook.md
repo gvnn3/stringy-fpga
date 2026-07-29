@@ -2444,3 +2444,71 @@ artifacts. Updated identity, paths, and post-route numbers (10,323 LUTs,
 253.29 MHz — the S2 build's 10,147/250.44 were the same RTL, different
 P&R roll), and added §9.5 with today's hot-swap and SR12 transcripts.
 Board left on `$HTTP_PORTS/0`, answering.
+
+## 2026-07-29 — Working-set study, and the scheduler it condemned
+
+Ran the measurement the overlay discussion called for, on branch
+`a5-working-set-study`, before writing any RTL. Question: does making rule
+swaps *faster* (A5's loadable-table overlay) buy coverage, or is the
+binding constraint how many rules fit resident at once (capacity, what
+S4's trie buys)?
+
+**Answer, 27/27 scenarios: capacity.** k = 1/2/4/8/21 resident groups give
+28/56/76/84/100% byte-weighted coverage, while dropping fill latency from
+16 s to 1 ms at fixed k moves coverage by less than a point — a banked
+engine keeps serving while the next set loads, so slow fills delay
+improvement rather than costing coverage. **A5 is not justified on coverage
+grounds.** Its honest remaining case is build-time (weekly diffs without
+Vivado), which this study did not measure and says so explicitly.
+
+Discipline that made the result worth anything: the ruleset structure is
+real (21-group packing; each rule's OWN header predicate through the SR13
+VarTable, not the coarse port class, which would have inflated every
+denominator), and every traffic assumption is *swept* rather than fixed —
+skew 0/1.2/2.0, stationary/60 s/300 s phases, and a specificity weight
+1/3/10 modelling "HTTP traffic trips HTTP rules." That last sweep is the
+one that could have overturned the verdict. It didn't.
+
+**And then the study condemned my own scheduler.** The SR10 residency
+manager shipped two days ago measures at **1.6–10.3%** coverage where
+simply pinning `any/0` gives **27.9%** — it is *worse than not scheduling
+at all*. Confirmed analytically, no simulator: its byte-per-class signal
+elects the `literal` class under a mixed load and rotates among groups
+worth 0.7–1.6%. Root cause: matching the traffic's port class says nothing
+about how many of a group's rules can fire, and `any`-token rules fire on
+**every** port, so the three universal groups dominate at k=1. Every swap
+it made was a loss plus a 16 s blind window.
+
+Worth being precise about what this does and doesn't invalidate. AC-S3-1
+requires the manager to hot-swap by observed port mix; it does, verified on
+silicon, and the spec never claimed the heuristic was coverage-optimal. The
+acceptance criterion stands. What was never measured until today was
+whether the heuristic was any *good* — and it wasn't. Building the thing
+and asserting it functions is not the same as asserting it helps.
+
+**Fixed the same day.** `scores()` now ranks groups by
+`V(g) = Σ_ports bytes[port] × rules_of_g_that_fire_on(port)`. Three
+supporting changes: `RuleRef` carries the rule's own dst-port token (rule
+text — resolved against the site's variable table at runtime, never hashed,
+never compiled in, so SR13/SF16 are untouched); `PortMixHistogram` counts
+per port instead of per class (aggregating first destroys exactly the
+information the decision needs); and within-class rotation is **removed** —
+swapping 256 resident rules for a different 256 leaves instantaneous
+coverage unchanged and pays a blind window for it.
+
+Re-measured on the same traces: **1.6–6.6% → 16.7–27.4%**, within 0.4–0.6
+points of the static-pin ceiling (the residual is the warm-up load a pin
+doesn't pay). 4–17×.
+
+Verified on silicon, and the behavioural change is the nice part: with an
+HTTP burst then SSH-only traffic, the new scheduler *refuses* to swap for
+38 s, holding while V(HTTP) decays 295828 → 21216 and V(SSH) climbs to
+50443, and swaps only when the challenger clears the 2× bar at ratio 2.38.
+The old one made the same swap after ~5 s on raw bytes. Same destination,
+earned instead of reflexive — trading a 256-rule group for a 4-rule one is
+a bad deal right up until those 256 rules genuinely cannot fire.
+
+849 unit + 64 S2/S3 acceptance green, AC-S2-3 still 33/33 with the silicon
+clause. The remaining study recommendations — revisit GROUP_MAX/`any`-class
+packing, treat capacity as the real lever, don't open A5 on coverage
+grounds — are owner decisions, recorded in docs/studies/a5-working-set.md.

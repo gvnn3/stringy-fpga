@@ -393,26 +393,35 @@ env PYRO_VIVADO=/usr/local/cad/2025.2/Vivado \
 
 ### 9.5 Live hot-swap demo (verified on silicon 2026-07-29)
 
-The headline S3 behaviour, end to end on hardware — the scheduler holds
-through hysteresis, then swaps the circuit when the traffic mix shifts
-decisively:
+The headline S3 behaviour, end to end on hardware. The scheduler scores
+each candidate group by **rules that could actually fire** on the observed
+traffic — `V(g) = Σ_ports bytes[port] × rules_of_g_that_fire_on(port)` —
+not by which port class has the most bytes (see
+`docs/studies/a5-working-set.md` for why that distinction is worth 4–17×
+coverage):
 
 ```
-start: resident = $HTTP_PORTS/0                     (child 0xba45e1e1)
-phase 1  HTTP traffic     mix {$HTTP_PORTS: 1159}   -> no swap
-phase 2  shift to SSH     mix {HTTP 1143, SSH 1993} -> holding (hysteresis)
-                          mix {HTTP 1128, SSH 3959} -> holding
-                          mix {HTTP 1112, SSH 5897} -> holding
-                          mix {HTTP  910, SSH 6480} -> SWAPPED to $SSH_PORTS/0
-  [scheduler] JTAG-loaded in 16.1s (incl. in-band wedge recovery)
-  SR19: swaps=1, unfiltered_seconds=16.2  (the blind window, accounted)
+phase 1  HTTP burst        V(HTTP/0)=295828  V(SSH/0)=0      -> no swap
+phase 2  SSH-only traffic; HTTP's value decays out of the mix:
+  t+ 2s  V(HTTP)=257587  V(SSH)= 7037  ratio=0.03  holding
+  t+20s  V(HTTP)= 73924  V(SSH)=40763  ratio=0.55  holding
+  t+32s  V(HTTP)= 32164  V(SSH)=48433  ratio=1.51  holding
+  t+38s  V(HTTP)= 21216  V(SSH)=50443  ratio=2.38  SWAPPED to $SSH_PORTS/0
+  [scheduler] JTAG-loaded in 16.2s (incl. in-band wedge recovery)
+  SR19: swaps=1, unfiltered_seconds=16.2   (the blind window, accounted)
   post-swap nomination 1:1324 — an $SSH_PORTS rule: the circuit really changed
 ```
 
-Two things this shows that a screenshot cannot: the swap is *earned*
-(three ticks of a growing SSH lead were refused before the fourth
-crossed both the 2x margin and the sustain window), and the blind
-window during reconfiguration is **counted, not hidden** — SR19's
+(Demo compression: a 10 s mix half-life instead of the 60 s default, so the
+decay plays out in ~40 s rather than ~4 min. Nothing else differs.)
+
+Two things this shows that a screenshot cannot. The swap is **earned**: it
+is refused for 38 seconds and fires only once the challenger is worth
+**twice** the resident — because trading a 256-rule group for a 4-rule one
+is a bad deal until those 256 rules genuinely stop being able to fire. (The
+pre-fix scheduler made this same swap after ~5 s on raw byte counts, which
+the working-set study measured as *worse than not swapping at all*.) And
+the blind window during reconfiguration is **counted, not hidden** — SR19's
 `unfiltered_seconds` is the honest cost of every rotation.
 
 SR12 across a real TCP segment split, same run:
