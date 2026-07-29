@@ -113,3 +113,20 @@ admission conditions and a daemon obligation; no AC renumbering; the S2
 acceptance surface is untouched — `$HTTP_PORTS/0` is automaton-identical
 before and after AC-S3-2, its 6 offset/depth rules being tcp/service and
 therefore A2-inadmissible).
+
+---
+
+## Open finding OF-1 — the two marginal static boundary flops (evidence, no text proposed)
+
+Six of 21 group links (2026-07-29 sweep) missed R73a.1 by −0.005…−0.120
+ns; **every** violating path ends (or starts) at one of two flops in the
+locked static — `qdma…c2h_slice…axis_tlast_reg[0]/D` or
+`qdma…h2c_slice…axis_tdata_reg[1][71]/CE` — with 79–92% of the path in
+routing (one case inter-SLR, +0.200 ns compensation). All six closed
+with implementation-strategy escalation (phys_opt → directives →
+`SSI_SpreadLogic_high`), now driver flags; but the margin is structural:
+every future partial (weekly diffs, S4) rolls the same dice. If the
+lottery tax grows, the fix is a static rebuild that registers the slice
+boundary (an R80-adjacent change: +1 cycle on the AXIS path, all
+identities roll via shell_version). Recorded for the owner; no amendment
+proposed while the strategy flags suffice.

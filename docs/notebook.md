@@ -2327,3 +2327,49 @@ once artifacts exist; SR18 SKIP discipline until then.
 max floating span − 1; A2 the SR3 admission conditions (raw-only chains,
 PDU-aligned prefixes with the sid-509 evidence, 255/384 bounds); A3 the
 measured 21-group count; A4 the `\A`-overflow daemon obligation.
+
+## 2026-07-29 — S3 day 2: all 21 groups on silicon-ready bitstreams; chain slot verified on hardware; AC-S3-1 green
+
+**The build: 21/21 verified** (`pr_verified`, `met_timing`, fmax
+250.69–258.80, median 253.61 MHz; 22.6 h of Vivado over ~17 h wall at
+2-way concurrency). It took four passes, and the story is worth its
+ink:
+
+1. The plain sweep built 15/21. Six groups missed the R73a.1 RP-scoped
+   gate by −0.005…−0.120 ns — every one a route-dominated (79–92%)
+   boundary path from the shared `rp_wrapper` into ONE OF THE SAME TWO
+   locked static flops (`c2h_slice…axis_tlast_reg[0]/D`,
+   `h2c_slice…axis_tdata_reg[1][71]/CE`). The locked static's endpoint
+   placement leaves those routes ~zero margin; each partial rolls dice.
+2. **Vivado P&R is deterministic** — a failed job re-runs to the
+   identical miss, so "just retry" is a no-op. The toolchain grew
+   additive closure knobs (`pr_place_directive`/`pr_route_directive`/
+   `pr_phys_opt`; default = byte-identical flow — the stock PR flow ran
+   no `phys_opt_design` at all). Strategy knobs stay OUT of the SR9 key.
+3. `--phys-opt` closed 4/6. `ExtraTimingOpt`+`AggressiveExplore` closed
+   $FTP_PORTS/0. `any/2` sat pinned at −5 ps across four strategies and
+   finally closed with `SSI_SpreadLogic_high` (251.89 MHz) — consistent
+   with the failing route being inter-SLR.
+
+**On silicon**: loaded the built `literal/0` child (14.8 s, in-band
+recovery). SR14 identity 0x12d39e4c confirmed over the wire. The RPC
+portmapper CHAIN slot (`(?s:\x00\x01\x86\xa0.{4,8}\x00\x00\x00\x03)`,
+35 rules on one slot) nominates on hardware at both gap extremes with
+exact end offsets, stays silent on an over-wide gap and on benign
+traffic — AC-S3-2's lowered constructs verified on silicon, precision
+included. Board left with `literal/0` resident.
+
+**Wire transport bug found and fixed** before it could bite: the
+daemon's `WireTransport` was written against a `probe_device` API that
+returns `(bool, reason)` — `child_id()` could never read a real id, so
+wire mode would have sat permanently "unfiltered" while looking healthy.
+Rebuilt on the AC-S2-3 silicon gate's proven round-trip; verified live.
+
+**AC-S3-1: 5/5** with the device (build evidence from the operational
+cache; mix-driven hot-swap; SR14 gating SR19-visible; stats surface;
+resident-child identity on the wire). AC-S3-2 and AC-S3-3 were already
+green. **Phase S3's acceptance criteria all pass.** Remaining for the
+owner: the docs/spec-amendments-s3.md slate (A1–A4), plus one new
+finding recorded there — the two static boundary flops that made six
+groups marginal are a static-rebuild question (register the slice
+boundary?) if group churn keeps paying lottery tickets.
