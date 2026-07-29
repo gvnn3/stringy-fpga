@@ -2373,3 +2373,74 @@ owner: the docs/spec-amendments-s3.md slate (A1–A4), plus one new
 finding recorded there — the two static boundary flops that made six
 groups marginal are a static-rebuild question (register the slice
 boundary?) if group churn keeps paying lottery tickets.
+
+## 2026-07-29 — Demo run on silicon: S2 nominations, S3 pipeline, live hot-swap
+
+Ran the demo doc end to end against the card after the S3 build, partly
+to show the system and partly because a demo is the cheapest way to find
+out which of your documentation has quietly gone stale. Both purposes
+paid off.
+
+**§8, the SNORT-PF surface.** Loaded the rebuilt `$HTTP_PORTS/0` child
+(`e1e145ba…`, 14.0 s incl. in-band recovery); SR14 read back
+`0xba45e1e1` matching the host computation. The three canonical
+round-trips reproduced the S2 results *exactly* on the v2-format
+rebuild — `/view-source` → slot 40 end 16, `/webspirs.cgi` → slot 85
+end 17, `/index.html` → count 0 — which is the invariant worth having:
+AC-S3-2 changed the group format, the identity, and the bitstream, and
+did not change what this group recognizes. R45a counters read 0.923
+B/cyc (dpb=1 group, as expected). Sidecar resolved slot 40 → sids
+848/849, slot 85 → 900/901; one slot, several rules, because anchors
+dedup.
+
+**§9, the daemon through silicon.** A 7-session synthetic capture
+replayed through `WireTransport` (real R78 frames, not the model):
+5 nominations attributed to named rules, 1 gzip flow tripwired to
+forward-regardless (SR15), benign flows silent. SR19 reported the whole
+surface live — nominations by tier, tripwire hits per class, zero
+identity mismatches, unfiltered seconds.
+
+**The hot-swap, which is the S3 headline.** Scheduler with two real
+groups (`$HTTP_PORTS/0`, `$SSH_PORTS/0`), both from the batch build,
+availability gated on the artifacts existing:
+
+```
+HTTP traffic      mix {HTTP 1159}            -> no swap
+shift to SSH      mix {HTTP 1143, SSH 1993}  -> holding (hysteresis)
+                  mix {HTTP 1128, SSH 3959}  -> holding
+                  mix {HTTP 1112, SSH 5897}  -> holding
+                  mix {HTTP  910, SSH 6480}  -> SWAPPED to $SSH_PORTS/0
+JTAG load 16.1 s (incl. wedge recovery); SR19 unfiltered_seconds=16.2
+post-swap: nomination 1:1324 — an $SSH_PORTS rule
+```
+
+Three ticks of a growing SSH lead were **refused** before the fourth
+crossed both the 2× margin and the sustain window: the swap is earned,
+not reflexive, which is the whole point of SF20 hysteresis against a
+~16 s blind window. And the blind window is *counted* — SR19's
+`unfiltered_seconds` is the honest price of every rotation, visible
+rather than swept up. The post-swap nomination on an SSH rule is the
+proof the circuit actually changed, not just the bookkeeping.
+
+**A demo case I got wrong, and the discipline that caught it.** My first
+capture's "anchor split across segments" case produced *no* nomination.
+Rather than assume a bug (or, worse, assume it was fine), I checked the
+reassembled stream: `_get(b"/view-so")[:-2]` + `b"urce HTTP/1.1..."`
+never contains `/view-source` at all — I had chopped the tail off the
+whole request line, not split the anchor. **Silence was the correct
+answer to a badly-posed question.** Rebuilt the case as a genuine
+mid-anchor split (seg1 ends `GET /view-so`, seg2 starts `urce?f=x`):
+neither segment contains the anchor alone, and the nomination fires off
+the 64 B overlap tail. That is SR12 demonstrated; the first version
+demonstrated nothing. Worth recording because a chunk-boundary test that
+doesn't actually straddle the boundary is exactly the kind of green
+light that means nothing — the same failure mode as a completeness test
+that never exercises its constraint.
+
+**Doc rot found and fixed.** `demo.md` §8 still cited the pre-AC-S3-2
+identity (`b1a418fc…`/`0xfc18a4b1`) and the old `_full_` artifact stem;
+the v2 group format rolled the hash and the batch driver renamed the
+artifacts. Updated identity, paths, and post-route numbers (10,323 LUTs,
+253.29 MHz — the S2 build's 10,147/250.44 were the same RTL, different
+P&R roll), and added §9.5 with today's hot-swap and SR12 transcripts.
+Board left on `$HTTP_PORTS/0`, answering.
