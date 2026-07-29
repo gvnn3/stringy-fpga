@@ -204,6 +204,20 @@ class ToolchainConfig:
     # R77) above and pr_job_timeout_s (PR, 3600 s) here; the adapter selects the PR
     # field when pr_bitstream == True (R88), else the OOC field.
     pr_job_timeout_s: float = VIVADO_PR_JOB_TIMEOUT  # per-job PR timeout (R84)
+    # -- PR timing-closure strategy (additive; None/False = the exact
+    #    pre-knob flow, byte-identical TCL).  Vivado P&R is deterministic
+    #    for identical inputs, so a link that misses timing by a hair
+    #    re-runs to the identical miss; a RETRY must vary the strategy.
+    #    These knobs do not enter any SR9/R47a identity or cache key — any
+    #    met-timing artifact is equally valid for its key; the strategy is
+    #    how the tool got there, not what was built.  (S3 evidence,
+    #    2026-07-29: 3/7 group links missed at -0.046..-0.120 ns on
+    #    route-dominated RM<->static boundary paths; default flow has no
+    #    phys_opt_design step at all.)
+    pr_place_directive: Optional[str] = None   # place_design -directive X
+    pr_route_directive: Optional[str] = None   # route_design -directive X
+    pr_phys_opt: bool = False                  # phys_opt_design post-place
+                                               # + post-route
 
 
 class MockToolchain:
@@ -404,8 +418,17 @@ class VivadoToolchain:
         "}\n"
         "read_checkpoint -cell [_rp_cell] rm_synth.dcp\n"
         "opt_design\n"
-        "place_design\n"
-        "route_design\n"
+        # Timing-closure knobs (additive; all three sentinels substitute to
+        # "" by default, keeping this flow byte-identical to the pre-knob
+        # text).  Needed because Vivado P&R is DETERMINISTIC for identical
+        # inputs: a job that misses timing by -0.05 ns re-runs to the exact
+        # same -0.05 ns, so a retry MUST vary the strategy (measured
+        # 2026-07-29: 3 of the first 7 S3 group links missed by
+        # -0.046..-0.120 ns on route-dominated RM<->static boundary paths).
+        "place_design@PLACE_DIRECTIVE@\n"
+        "@POST_PLACE_PHYS_OPT@"
+        "route_design@ROUTE_DIRECTIVE@\n"
+        "@POST_ROUTE_PHYS_OPT@"
         # W3: scope utilization to the RM cell so PR manifests report the PATTERN's
         # resources (consistent with the OOC path / R74), not static+RM whole-device.
         "report_utilization -cells [_rp_cell] -file util.rpt\n"
@@ -791,11 +814,20 @@ class VivadoToolchain:
                 raise ConfigurationError(str(exc)) from exc
             with open(os.path.join(workdir, "pyro_rp.sv"), "w") as f:
                 f.write(wrapper)
+            phys_opt = "phys_opt_design\n" if cfg.pr_phys_opt else ""
             flow = (self._PR_FLOW_TCL
                     .replace("@RPCELL@", cfg.rp_cell)
                     .replace("@PART@", cfg.part)
                     .replace("@STATIC_DCP@", os.path.abspath(cfg.static_dcp))
-                    .replace("@REFERENCE_DCP@", os.path.abspath(cfg.reference_dcp)))
+                    .replace("@REFERENCE_DCP@", os.path.abspath(cfg.reference_dcp))
+                    .replace("@PLACE_DIRECTIVE@",
+                             " -directive %s" % cfg.pr_place_directive
+                             if cfg.pr_place_directive else "")
+                    .replace("@ROUTE_DIRECTIVE@",
+                             " -directive %s" % cfg.pr_route_directive
+                             if cfg.pr_route_directive else "")
+                    .replace("@POST_PLACE_PHYS_OPT@", phys_opt)
+                    .replace("@POST_ROUTE_PHYS_OPT@", phys_opt))
             with open(os.path.join(workdir, "flow.tcl"), "w") as f:
                 f.write(flow)
 

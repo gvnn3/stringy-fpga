@@ -69,12 +69,41 @@ def test_pr_tcl_still_records_whole_design_wns_r73a6():
         "set _p [get_timing_paths -quiet -max_paths 1 -nworst 1 -setup]\n")
 
 
-def test_pr_tcl_substitution_leaves_no_sentinels():
-    flow = (TCL.replace("@RPCELL@", "pyro_rp")
+def _substitute(place=None, route=None, phys_opt=False):
+    phys = "phys_opt_design\n" if phys_opt else ""
+    return (TCL.replace("@RPCELL@", "pyro_rp")
                .replace("@PART@", "xcu250-figd2104-2L-e")
                .replace("@STATIC_DCP@", "/x/static.dcp")
-               .replace("@REFERENCE_DCP@", "/x/ref.dcp"))
-    assert "@" not in flow
+               .replace("@REFERENCE_DCP@", "/x/ref.dcp")
+               .replace("@PLACE_DIRECTIVE@",
+                        " -directive %s" % place if place else "")
+               .replace("@ROUTE_DIRECTIVE@",
+                        " -directive %s" % route if route else "")
+               .replace("@POST_PLACE_PHYS_OPT@", phys)
+               .replace("@POST_ROUTE_PHYS_OPT@", phys))
+
+
+def test_pr_tcl_substitution_leaves_no_sentinels():
+    assert "@" not in _substitute()
+    assert "@" not in _substitute("ExtraTimingOpt", "AggressiveExplore", True)
+
+
+def test_pr_tcl_default_strategy_is_the_preknob_flow():
+    """The closure knobs are additive: with defaults the implementation
+    steps are byte-identical to the pre-knob flow (no directive, no
+    phys_opt anywhere)."""
+    flow = _substitute()
+    assert "opt_design\nplace_design\nroute_design\n" in flow
+    assert "phys_opt_design" not in flow
+    assert "-directive" not in flow.split("get_timing_paths")[0]
+
+
+def test_pr_tcl_strategy_substitutes_the_closure_steps():
+    flow = _substitute("ExtraTimingOpt", "AggressiveExplore", True)
+    assert ("place_design -directive ExtraTimingOpt\n"
+            "phys_opt_design\n"
+            "route_design -directive AggressiveExplore\n"
+            "phys_opt_design\n") in flow
 
 
 # ---------------------------------------------------------------------------
