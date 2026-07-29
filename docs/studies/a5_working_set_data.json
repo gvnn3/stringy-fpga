@@ -1,0 +1,3021 @@
+{
+  "ports": [
+    80,
+    8080,
+    443,
+    22,
+    21,
+    25,
+    53,
+    110,
+    143,
+    139,
+    445,
+    111,
+    1521,
+    5060,
+    3306,
+    8000,
+    44444,
+    33333
+  ],
+  "scenarios": [
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2809830805359275,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2809830805359275,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2809830805359275,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5601342013547236,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5618832755532617,
+          "fill_seconds": 0.001,
+          "fills": 1
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5618710135434678,
+          "fill_seconds": 1.0,
+          "fills": 1
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.763852183230191,
+          "fill_seconds": 2880.0,
+          "fills": 180
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7644936788428046,
+          "fill_seconds": 0.9620000000000007,
+          "fills": 962
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7639373747916295,
+          "fill_seconds": 724.0,
+          "fills": 724
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8198412791265144,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8426720217794015,
+          "fill_seconds": 3.8169999999996906,
+          "fills": 3817
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8349632216144846,
+          "fill_seconds": 1828.0,
+          "fills": 1828
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2809830805359275,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2809830805359275,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.15863804163216036,
+          "coverage": 0.016356663116429974,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2809830805359275,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.28070105462133704,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.28070105462133704,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.28070105462133704,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5596157665443521,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5613212876287753,
+          "fill_seconds": 0.001,
+          "fills": 1
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5613093309512036,
+          "fill_seconds": 1.0,
+          "fills": 1
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7613191585120705,
+          "fill_seconds": 2832.0,
+          "fills": 177
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7626591874371607,
+          "fill_seconds": 0.9830000000000008,
+          "fills": 983
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7644971148769585,
+          "fill_seconds": 784.0,
+          "fills": 784
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8204715061676915,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.836993430311946,
+          "fill_seconds": 3.814999999999691,
+          "fills": 3815
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8266269993506034,
+          "fill_seconds": 1813.0,
+          "fills": 1813
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.28070105462133704,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.28070105462133704,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.28660242845757183,
+          "coverage": 0.03847992391421551,
+          "fill_seconds": 64.0,
+          "fills": 4
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.28070105462133704,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27712441243129904,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27712441243129904,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27712441243129904,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5523921966154806,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5541648232365481,
+          "fill_seconds": 0.001,
+          "fills": 1
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5541523961108111,
+          "fill_seconds": 1.0,
+          "fills": 1
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7507450732377968,
+          "fill_seconds": 2880.0,
+          "fills": 180
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7541204259230224,
+          "fill_seconds": 0.9280000000000007,
+          "fills": 928
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7569048695403158,
+          "fill_seconds": 731.0,
+          "fills": 731
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8141825020913394,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8299540239039557,
+          "fill_seconds": 3.795999999999693,
+          "fills": 3796
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8259978856316151,
+          "fill_seconds": 1769.0,
+          "fills": 1769
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27712441243129904,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27712441243129904,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.17723249531873572,
+          "coverage": 0.015827609015960135,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27712441243129904,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22813895369771747,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22813895369771747,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22813895369771747,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.4517232262803932,
+          "fill_seconds": 48.0,
+          "fills": 3
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.4561729267785236,
+          "fill_seconds": 0.002,
+          "fills": 2
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.45597254895619876,
+          "fill_seconds": 2.0,
+          "fills": 2
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6189717759218774,
+          "fill_seconds": 2688.0,
+          "fills": 168
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.623474627166544,
+          "fill_seconds": 0.6320000000000005,
+          "fills": 632
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6241904564115686,
+          "fill_seconds": 538.0,
+          "fills": 538
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6774675290292802,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7005061654291619,
+          "fill_seconds": 4.129999999999714,
+          "fills": 4130
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6883046758968966,
+          "fill_seconds": 1927.0,
+          "fills": 1927
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22813895369771747,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22813895369771747,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5357281630720089,
+          "coverage": 0.04997630262162532,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22813895369771747,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 1.2,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27795574907013726,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27795574907013726,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27795574907013726,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5514702316228106,
+          "fill_seconds": 48.0,
+          "fills": 3
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5558091316107429,
+          "fill_seconds": 0.002,
+          "fills": 2
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5556137433298388,
+          "fill_seconds": 2.0,
+          "fills": 2
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.757167158118365,
+          "fill_seconds": 2736.0,
+          "fills": 171
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7585625087290815,
+          "fill_seconds": 0.7420000000000005,
+          "fills": 742
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7583438790594794,
+          "fill_seconds": 556.0,
+          "fills": 556
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8125577240061078,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8492377777686632,
+          "fill_seconds": 3.2709999999997508,
+          "fills": 3271
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8385328492217666,
+          "fill_seconds": 1680.0,
+          "fills": 1680
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27795574907013726,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27795574907013726,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.29241523121809865,
+          "coverage": 0.024074425994242216,
+          "fill_seconds": 96.0,
+          "fills": 6
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27795574907013726,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 1.2,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27028447492466495,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27028447492466495,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27028447492466495,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5359529369884994,
+          "fill_seconds": 48.0,
+          "fills": 3
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5404625556000815,
+          "fill_seconds": 0.002,
+          "fills": 2
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5402594795599561,
+          "fill_seconds": 2.0,
+          "fills": 2
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7327112736883583,
+          "fill_seconds": 2736.0,
+          "fills": 171
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7378375982613298,
+          "fill_seconds": 0.9900000000000008,
+          "fills": 990
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7371111268511851,
+          "fill_seconds": 702.0,
+          "fills": 702
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.794893041579701,
+          "fill_seconds": 3312.0,
+          "fills": 207
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8281054723966399,
+          "fill_seconds": 3.4639999999997295,
+          "fills": 3464
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8201250563678,
+          "fill_seconds": 1708.0,
+          "fills": 1708
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27028447492466495,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27028447492466495,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.4981913852367382,
+          "coverage": 0.02989585047868422,
+          "fill_seconds": 80.0,
+          "fills": 5
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.27028447492466495,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 1.2,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1713238321585061,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1713238321585061,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1713238321585061,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.34160069589975967,
+          "fill_seconds": 32.0,
+          "fills": 2
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.34255104506869677,
+          "fill_seconds": 0.002,
+          "fills": 2
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.3425043585106493,
+          "fill_seconds": 2.0,
+          "fills": 2
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.46910543315270875,
+          "fill_seconds": 1552.0,
+          "fills": 97
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.4680474834860797,
+          "fill_seconds": 0.16200000000000012,
+          "fills": 162
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.46835762565909145,
+          "fill_seconds": 148.0,
+          "fills": 148
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5625936401825407,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5955632605987053,
+          "fill_seconds": 3.1089999999997686,
+          "fills": 3109
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5778829056394503,
+          "fill_seconds": 1716.0,
+          "fills": 1716
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1713238321585061,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1713238321585061,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.310560930776418,
+          "coverage": 0.06619164032793964,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1713238321585061,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 2.0,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2690993788715715,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2690993788715715,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2690993788715715,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5371778595377712,
+          "fill_seconds": 32.0,
+          "fills": 2
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5381045443785522,
+          "fill_seconds": 0.002,
+          "fills": 2
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5380590203469384,
+          "fill_seconds": 2.0,
+          "fills": 2
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7361345517223209,
+          "fill_seconds": 1936.0,
+          "fills": 121
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7335424355062697,
+          "fill_seconds": 0.3710000000000003,
+          "fills": 371
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7357367129803773,
+          "fill_seconds": 268.0,
+          "fills": 268
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8099081195378579,
+          "fill_seconds": 3104.0,
+          "fills": 194
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8659950890616477,
+          "fill_seconds": 1.895999999999902,
+          "fills": 1896
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8502432512494784,
+          "fill_seconds": 1195.0,
+          "fills": 1195
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2690993788715715,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2690993788715715,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.49243476189974617,
+          "coverage": 0.03581177967881873,
+          "fill_seconds": 128.0,
+          "fills": 8
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2690993788715715,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 2.0,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2635903203493929,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2635903203493929,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2635903203493929,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.526119574170339,
+          "fill_seconds": 32.0,
+          "fills": 2
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5270827204094036,
+          "fill_seconds": 0.002,
+          "fills": 2
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5270354051864644,
+          "fill_seconds": 2.0,
+          "fills": 2
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7191631612475363,
+          "fill_seconds": 2176.0,
+          "fills": 136
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7195641563721715,
+          "fill_seconds": 0.6650000000000005,
+          "fills": 665
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7198439611634463,
+          "fill_seconds": 475.0,
+          "fills": 475
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7947473880480228,
+          "fill_seconds": 3120.0,
+          "fills": 195
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8322467983369575,
+          "fill_seconds": 2.0499999999998852,
+          "fills": 2050
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.8196996154391479,
+          "fill_seconds": 1249.0,
+          "fills": 1249
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2635903203493929,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2635903203493929,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5201024543586398,
+          "coverage": 0.01966376919069709,
+          "fill_seconds": 160.0,
+          "fills": 10
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2635903203493929,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 2.0,
+      "w": 1.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.36422278557954435,
+          "coverage": 0.16244055062482868,
+          "fill_seconds": 3376.0,
+          "fills": 211
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.30407718164835723,
+          "coverage": 0.17053129008113488,
+          "fill_seconds": 3.304999999999747,
+          "fills": 3305
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.3921981961309395,
+          "coverage": 0.14826942826904285,
+          "fill_seconds": 1733.0,
+          "fills": 1733
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.36660105560992284,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.04072061389402712,
+          "coverage": 0.3729689353714905,
+          "fill_seconds": 3.7159999999997018,
+          "fills": 3716
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.03213317982727822,
+          "coverage": 0.34953280193422015,
+          "fill_seconds": 1855.0,
+          "fills": 1855
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.62957141997461,
+          "fill_seconds": 3424.0,
+          "fills": 214
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0002785170655972913,
+          "coverage": 0.5845564413706787,
+          "fill_seconds": 4.3869999999998,
+          "fills": 4387
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.589806758566815,
+          "fill_seconds": 1988.0,
+          "fills": 1988
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7456478732028597,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7807492729449604,
+          "fill_seconds": 3.840999999999688,
+          "fills": 3841
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.768094581482477,
+          "fill_seconds": 1828.0,
+          "fills": 1828
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2214094458731027,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2214094458731027,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.15863804163216036,
+          "coverage": 0.029665451928035,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2214094458731027,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.3771427588688605,
+          "coverage": 0.15515453760859838,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.3249732554034142,
+          "coverage": 0.16359001962267866,
+          "fill_seconds": 3.305999999999747,
+          "fills": 3306
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.33770844108086673,
+          "coverage": 0.16195948854669975,
+          "fill_seconds": 1660.0,
+          "fills": 1660
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.37974039822860606,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.03494715558116007,
+          "coverage": 0.370433504706151,
+          "fill_seconds": 3.713999999999702,
+          "fills": 3714
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.020772251602548367,
+          "coverage": 0.37296592271554063,
+          "fill_seconds": 1765.0,
+          "fills": 1765
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6443382296965905,
+          "fill_seconds": 3376.0,
+          "fills": 211
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0004359442141367263,
+          "coverage": 0.5911148757596234,
+          "fill_seconds": 4.247999999999753,
+          "fills": 4248
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6007390898498317,
+          "fill_seconds": 1922.0,
+          "fills": 1922
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7532258190097851,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.773574541029605,
+          "fill_seconds": 3.8439999999996877,
+          "fills": 3844
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7579230603688298,
+          "fill_seconds": 1813.0,
+          "fills": 1813
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22409332963854042,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22409332963854042,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.28660242845757183,
+          "coverage": 0.056512595124031,
+          "fill_seconds": 64.0,
+          "fills": 4
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.22409332963854042,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.34380024337935483,
+          "coverage": 0.15719056504239104,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.3039587028220563,
+          "coverage": 0.1624510074605871,
+          "fill_seconds": 3.2109999999997574,
+          "fills": 3211
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.32732180657371657,
+          "coverage": 0.16356823226331507,
+          "fill_seconds": 1686.0,
+          "fills": 1686
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.35989081375956494,
+          "fill_seconds": 3312.0,
+          "fills": 207
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.03439963075609956,
+          "coverage": 0.3652291617010234,
+          "fill_seconds": 3.5999999999997145,
+          "fills": 3600
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.009907905499538445,
+          "coverage": 0.3778217688807687,
+          "fill_seconds": 1760.0,
+          "fills": 1760
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6265952411320725,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.00016537116897856436,
+          "coverage": 0.5827258442831516,
+          "fill_seconds": 4.235999999999749,
+          "fills": 4236
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6064386849920888,
+          "fill_seconds": 1905.0,
+          "fills": 1905
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7472864819805507,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7680429443596798,
+          "fill_seconds": 3.8249999999996898,
+          "fills": 3825
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7621847113160514,
+          "fill_seconds": 1769.0,
+          "fills": 1769
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21965642143281947,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21965642143281947,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.17723249531873572,
+          "coverage": 0.028136344774108795,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21965642143281947,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.4249189546616021,
+          "coverage": 0.09781771493832217,
+          "fill_seconds": 3392.0,
+          "fills": 212
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.3462042800238498,
+          "coverage": 0.10440278924275928,
+          "fill_seconds": 3.4259999999997337,
+          "fills": 3426
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.3406547798136079,
+          "coverage": 0.10911007100125097,
+          "fill_seconds": 1773.0,
+          "fills": 1773
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.2695754324631961,
+          "fill_seconds": 3440.0,
+          "fills": 215
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.11650514558562275,
+          "coverage": 0.2438015313382174,
+          "fill_seconds": 3.9979999999996707,
+          "fills": 3998
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.04419679065342194,
+          "coverage": 0.26217305166497995,
+          "fill_seconds": 1976.0,
+          "fills": 1976
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.4904534743733122,
+          "fill_seconds": 3424.0,
+          "fills": 214
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.012351449936500246,
+          "coverage": 0.43314837162202013,
+          "fill_seconds": 4.47699999999983,
+          "fills": 4477
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.00042449631969944873,
+          "coverage": 0.45218216997659755,
+          "fill_seconds": 2048.0,
+          "fills": 2048
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.595966088685786,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00024476851730360693,
+          "coverage": 0.6202513049671796,
+          "fill_seconds": 4.173999999999729,
+          "fills": 4174
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6083770909173191,
+          "fill_seconds": 1927.0,
+          "fills": 1927
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.17572407533943254,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.17572407533943254,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5357281630720089,
+          "coverage": 0.055060595082308476,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.17572407533943254,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 1.2,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.3968750849855415,
+          "coverage": 0.15210942917356435,
+          "fill_seconds": 3280.0,
+          "fills": 205
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.24866873589537553,
+          "coverage": 0.19795321384317233,
+          "fill_seconds": 2.9559999999997855,
+          "fills": 2956
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.3191368277781279,
+          "coverage": 0.17505442989404124,
+          "fill_seconds": 1592.0,
+          "fills": 1592
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.3461922977381053,
+          "fill_seconds": 3312.0,
+          "fills": 207
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.04301840912541048,
+          "coverage": 0.4003566236050203,
+          "fill_seconds": 3.36799999999974,
+          "fills": 3368
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.020095417079729873,
+          "coverage": 0.38450137422989117,
+          "fill_seconds": 1708.0,
+          "fills": 1708
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6170368650243594,
+          "fill_seconds": 3376.0,
+          "fills": 211
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.007330596181495851,
+          "coverage": 0.6175139835719187,
+          "fill_seconds": 3.91299999999968,
+          "fills": 3913
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0007067672859773216,
+          "coverage": 0.6049244955404356,
+          "fill_seconds": 1847.0,
+          "fills": 1847
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7395268829882465,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7944607319085488,
+          "fill_seconds": 3.3539999999997416,
+          "fills": 3354
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7763710124627516,
+          "fill_seconds": 1682.0,
+          "fills": 1682
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21913634802297607,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21913634802297607,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.29241523121809865,
+          "coverage": 0.04113879203168131,
+          "fill_seconds": 96.0,
+          "fills": 6
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21913634802297607,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 1.2,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.33941268881614656,
+          "coverage": 0.16115704456736543,
+          "fill_seconds": 3248.0,
+          "fills": 203
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.29192305253994344,
+          "coverage": 0.18524584322516802,
+          "fill_seconds": 2.796999999999803,
+          "fills": 2797
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.3174453208231603,
+          "coverage": 0.16708116974257228,
+          "fill_seconds": 1579.0,
+          "fills": 1579
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.36231728115596007,
+          "fill_seconds": 3280.0,
+          "fills": 205
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.04612974253433056,
+          "coverage": 0.37702691945432837,
+          "fill_seconds": 3.2569999999997523,
+          "fills": 3257
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.022792399265841694,
+          "coverage": 0.36809404681455554,
+          "fill_seconds": 1715.0,
+          "fills": 1715
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6115806944276203,
+          "fill_seconds": 3328.0,
+          "fills": 208
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.007379048655769745,
+          "coverage": 0.5891371993476623,
+          "fill_seconds": 4.031999999999681,
+          "fills": 4032
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.00011805599580657681,
+          "coverage": 0.590539900682863,
+          "fill_seconds": 1879.0,
+          "fills": 1879
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7165585819559143,
+          "fill_seconds": 3312.0,
+          "fills": 207
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7593574003414978,
+          "fill_seconds": 3.64199999999971,
+          "fills": 3642
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7548451555589167,
+          "fill_seconds": 1713.0,
+          "fills": 1713
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21116396847546298,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.21116396847546298,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.4981913852367382,
+          "coverage": 0.040784194321034174,
+          "fill_seconds": 80.0,
+          "fills": 5
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.07598489006953475,
+          "coverage": 0.21069740329804837,
+          "fill_seconds": 16.0,
+          "fills": 1
+        }
+      },
+      "skew": 1.2,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.1994925359562404,
+          "coverage": 0.09325834574550164,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.225410032656145,
+          "coverage": 0.09198114535983279,
+          "fill_seconds": 2.769999999999806,
+          "fills": 2770
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.2265810706650661,
+          "coverage": 0.08891833912754724,
+          "fill_seconds": 1578.0,
+          "fills": 1578
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.20714059223244166,
+          "fill_seconds": 3472.0,
+          "fills": 217
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.09777152782058222,
+          "coverage": 0.1917335902176958,
+          "fill_seconds": 3.205999999999758,
+          "fills": 3206
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.08311632752325324,
+          "coverage": 0.1857277900642923,
+          "fill_seconds": 1787.0,
+          "fills": 1787
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.3542091995061549,
+          "fill_seconds": 3472.0,
+          "fills": 217
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.028239189326914802,
+          "coverage": 0.3318971552937758,
+          "fill_seconds": 3.4729999999997285,
+          "fills": 3473
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.015724901119194626,
+          "coverage": 0.33325693079770025,
+          "fill_seconds": 1864.0,
+          "fills": 1864
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.4694761799157721,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.006691031124949576,
+          "coverage": 0.517667065717932,
+          "fill_seconds": 3.1899999999997597,
+          "fills": 3190
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.4863893221075097,
+          "fill_seconds": 1713.0,
+          "fills": 1713
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.11835751085119202,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.11835751085119202,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.310560930776418,
+          "coverage": 0.0776106394381848,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.3079969412708129,
+          "coverage": 0.07754996143223954,
+          "fill_seconds": 16.0,
+          "fills": 1
+        }
+      },
+      "skew": 2.0,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.2990424669738375,
+          "coverage": 0.17469092004457631,
+          "fill_seconds": 3168.0,
+          "fills": 198
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.16173217924976355,
+          "coverage": 0.23684112291437184,
+          "fill_seconds": 2.070999999999883,
+          "fills": 2071
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.19954123131009874,
+          "coverage": 0.22093260328765202,
+          "fill_seconds": 1279.0,
+          "fills": 1279
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 2.4562123248122553e-05,
+          "coverage": 0.3760320540955563,
+          "fill_seconds": 3232.0,
+          "fills": 202
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.028501361167113545,
+          "coverage": 0.43374387805459574,
+          "fill_seconds": 2.334999999999854,
+          "fills": 2335
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.014825019195946473,
+          "coverage": 0.42199249062099836,
+          "fill_seconds": 1371.0,
+          "fills": 1371
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.6033005872033188,
+          "fill_seconds": 3264.0,
+          "fills": 204
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.008475569003677564,
+          "coverage": 0.65046682490605,
+          "fill_seconds": 2.7719999999998057,
+          "fills": 2772
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.001610730782526336,
+          "coverage": 0.6299062765493255,
+          "fill_seconds": 1528.0,
+          "fills": 1528
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7335313309719268,
+          "fill_seconds": 3104.0,
+          "fills": 194
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00020057331655432359,
+          "coverage": 0.8217880094592802,
+          "fill_seconds": 2.0039999999998903,
+          "fills": 2004
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7962950315979477,
+          "fill_seconds": 1211.0,
+          "fills": 1211
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.20631940322971237,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.20631940322971237,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.49243476189974617,
+          "coverage": 0.06045509908383929,
+          "fill_seconds": 128.0,
+          "fills": 8
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.4775941514832279,
+          "coverage": 0.1819896514527254,
+          "fill_seconds": 16.0,
+          "fills": 1
+        }
+      },
+      "skew": 2.0,
+      "w": 3.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.29535227383424534,
+          "coverage": 0.17313885839534973,
+          "fill_seconds": 3152.0,
+          "fills": 197
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.2022838230041424,
+          "coverage": 0.22535558567756578,
+          "fill_seconds": 1.8929999999999023,
+          "fills": 1893
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.2216522582171457,
+          "coverage": 0.2109891264685657,
+          "fill_seconds": 1186.0,
+          "fills": 1186
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.36666935440037335,
+          "fill_seconds": 3216.0,
+          "fills": 201
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.025491853595102726,
+          "coverage": 0.4261068395722905,
+          "fill_seconds": 2.2179999999998667,
+          "fills": 2218
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.024047720290014177,
+          "coverage": 0.40846461278410817,
+          "fill_seconds": 1315.0,
+          "fills": 1315
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.592916881999774,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.005311468363003245,
+          "coverage": 0.6419641631752574,
+          "fill_seconds": 2.9299999999997883,
+          "fills": 2930
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.000842333782260521,
+          "coverage": 0.6153623801192202,
+          "fill_seconds": 1587.0,
+          "fills": 1587
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7249478723847453,
+          "fill_seconds": 3120.0,
+          "fills": 195
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.001145336440259955,
+          "coverage": 0.7843235864228251,
+          "fill_seconds": 2.2469999999998636,
+          "fills": 2247
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.7647965608058217,
+          "fill_seconds": 1289.0,
+          "fills": 1289
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.20566827185849898,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.20566827185849898,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5201024543586398,
+          "coverage": 0.028484598950951172,
+          "fill_seconds": 160.0,
+          "fills": 10
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.310232818484461,
+          "coverage": 0.19214071301656363,
+          "fill_seconds": 96.0,
+          "fills": 6
+        }
+      },
+      "skew": 2.0,
+      "w": 3.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.38172468813106886,
+          "coverage": 0.099930901373942,
+          "fill_seconds": 3424.0,
+          "fills": 214
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.3372526454162697,
+          "coverage": 0.12543948977545993,
+          "fill_seconds": 4.4699999999998274,
+          "fills": 4470
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.35736028070492354,
+          "coverage": 0.11122293503677569,
+          "fill_seconds": 1981.0,
+          "fills": 1981
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.005208673437939593,
+          "coverage": 0.2376193543828373,
+          "fill_seconds": 3440.0,
+          "fills": 215
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.12747279824287847,
+          "coverage": 0.21967028013088777,
+          "fill_seconds": 5.0630000000000255,
+          "fills": 5063
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.08488852299142738,
+          "coverage": 0.2173817416816034,
+          "fill_seconds": 2141.0,
+          "fills": 2141
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.004627716285169741,
+          "coverage": 0.45156844512821925,
+          "fill_seconds": 3456.0,
+          "fills": 216
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0033224621915562717,
+          "coverage": 0.4218551189412559,
+          "fill_seconds": 5.252000000000089,
+          "fills": 5252
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.00043090427190711035,
+          "coverage": 0.4208683453813694,
+          "fill_seconds": 2159.0,
+          "fills": 2159
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.004627716285169741,
+          "coverage": 0.6817319316920135,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00023279174948690612,
+          "coverage": 0.7269394662501454,
+          "fill_seconds": 3.8539999999996866,
+          "fills": 3854
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0002667996672747101,
+          "coverage": 0.7112123872953925,
+          "fill_seconds": 1832.0,
+          "fills": 1832
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.14600691672983293,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.619712005267947,
+          "coverage": 0.19630318220104997,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.25276361247390283,
+          "coverage": 0.07948583618870725,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.619712005267947,
+          "coverage": 0.19630318220104997,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.29160957572301754,
+          "coverage": 0.11068615224654177,
+          "fill_seconds": 3392.0,
+          "fills": 212
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.35022357929316905,
+          "coverage": 0.12581406977902163,
+          "fill_seconds": 4.4849999999998325,
+          "fills": 4485
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.3557541036003282,
+          "coverage": 0.10799671129703413,
+          "fill_seconds": 1981.0,
+          "fills": 1981
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.005883870757350681,
+          "coverage": 0.25048403237724487,
+          "fill_seconds": 3376.0,
+          "fills": 211
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.14380730405837686,
+          "coverage": 0.22306139299147026,
+          "fill_seconds": 5.035000000000016,
+          "fills": 5035
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.08470672943858693,
+          "coverage": 0.210046811574723,
+          "fill_seconds": 2078.0,
+          "fills": 2078
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.004512483063144027,
+          "coverage": 0.47974600924642935,
+          "fill_seconds": 3392.0,
+          "fills": 212
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0012584257306554757,
+          "coverage": 0.4265737008372087,
+          "fill_seconds": 5.1350000000000495,
+          "fills": 5135
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0002601561776135185,
+          "coverage": 0.4406194640321257,
+          "fill_seconds": 2108.0,
+          "fills": 2108
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.004512483063144027,
+          "coverage": 0.6962635102684955,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00022699507966072313,
+          "coverage": 0.7181296868641028,
+          "fill_seconds": 3.851999999999687,
+          "fills": 3852
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0002601561776135185,
+          "coverage": 0.6995589543723911,
+          "fill_seconds": 1817.0,
+          "fills": 1817
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.15266642831285224,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.607669592162829,
+          "coverage": 0.19380112415025974,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.31665153068593216,
+          "coverage": 0.08678137093423553,
+          "fill_seconds": 48.0,
+          "fills": 3
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.607669592162829,
+          "coverage": 0.19380112415025974,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.29037542889039736,
+          "coverage": 0.12069453874246507,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.33969115252649107,
+          "coverage": 0.11782777473941368,
+          "fill_seconds": 4.420999999999811,
+          "fills": 4421
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.30802084960114545,
+          "coverage": 0.12017005670651194,
+          "fill_seconds": 1974.0,
+          "fills": 1974
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.007549043104741258,
+          "coverage": 0.2453757286460833,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.1273082459832356,
+          "coverage": 0.20914919201432633,
+          "fill_seconds": 5.0330000000000155,
+          "fills": 5033
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.053888905210390164,
+          "coverage": 0.23033231167030577,
+          "fill_seconds": 2080.0,
+          "fills": 2080
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.004690031497061356,
+          "coverage": 0.4696852419720699,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.0017177263358418623,
+          "coverage": 0.4203230955470962,
+          "fill_seconds": 5.1590000000000575,
+          "fills": 5159
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0003305722507333079,
+          "coverage": 0.44457656445421945,
+          "fill_seconds": 2081.0,
+          "fills": 2081
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.004690031497061356,
+          "coverage": 0.6897287895700156,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00023592644191443995,
+          "coverage": 0.715342115782282,
+          "fill_seconds": 3.832999999999689,
+          "fills": 3833
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0002703922984505054,
+          "coverage": 0.7091752438898478,
+          "fill_seconds": 1773.0,
+          "fills": 1773
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.14765961846983874,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.6172017868435986,
+          "coverage": 0.18216486081122615,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.3674424911902549,
+          "coverage": 0.10329517526866996,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.6172017868435986,
+          "coverage": 0.18216486081122615,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 0.0,
+      "w": 10.0
+    },
+    {
+      "best_pin": "any/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.30511743640412575,
+          "coverage": 0.08749590506185628,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.3574014746834014,
+          "coverage": 0.07161974084274285,
+          "fill_seconds": 4.132999999999715,
+          "fills": 4133
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.30749966892246927,
+          "coverage": 0.07962458903841645,
+          "fill_seconds": 1937.0,
+          "fills": 1937
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.003780600260345944,
+          "coverage": 0.17753189586113075,
+          "fill_seconds": 3456.0,
+          "fills": 216
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.1314304715825628,
+          "coverage": 0.15568677229821645,
+          "fill_seconds": 4.618999999999877,
+          "fills": 4619
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.056010643913757506,
+          "coverage": 0.1661486418768069,
+          "fill_seconds": 2089.0,
+          "fills": 2089
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.3604303105804279,
+          "fill_seconds": 3456.0,
+          "fills": 216
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.013045141277037745,
+          "coverage": 0.3134383326400616,
+          "fill_seconds": 4.862999999999959,
+          "fills": 4863
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0017772608018240084,
+          "coverage": 0.3420794689520239,
+          "fill_seconds": 2119.0,
+          "fills": 2119
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5387344609522693,
+          "fill_seconds": 3408.0,
+          "fills": 213
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00024476851730360693,
+          "coverage": 0.5623288150911173,
+          "fill_seconds": 4.17699999999973,
+          "fills": 4177
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.5544523704702791,
+          "fill_seconds": 1928.0,
+          "fills": 1928
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.11846756415128322,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.11846756415128322,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5357281630720089,
+          "coverage": 0.05566853657826858,
+          "fill_seconds": 16.0,
+          "fills": 1
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.5487140765622129,
+          "coverage": 0.054846069841928635,
+          "fill_seconds": 16.0,
+          "fills": 1
+        }
+      },
+      "skew": 1.2,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.3009764775493267,
+          "coverage": 0.13431888186352028,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.27167016011171885,
+          "coverage": 0.1731159739609008,
+          "fill_seconds": 3.82299999999969,
+          "fills": 3823
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.2908304014995184,
+          "coverage": 0.15338726196201313,
+          "fill_seconds": 1815.0,
+          "fills": 1815
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.014766001665404194,
+          "coverage": 0.2470012402654623,
+          "fill_seconds": 3392.0,
+          "fills": 212
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.10847820820456443,
+          "coverage": 0.27860192923953375,
+          "fill_seconds": 4.47699999999983,
+          "fills": 4477
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.05501159849941048,
+          "coverage": 0.26528043797326323,
+          "fill_seconds": 1973.0,
+          "fills": 1973
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.01240815685053536,
+          "coverage": 0.46898253548460495,
+          "fill_seconds": 3424.0,
+          "fills": 214
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.009240728981204784,
+          "coverage": 0.48995339583929925,
+          "fill_seconds": 4.722999999999912,
+          "fills": 4723
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0018634930320633452,
+          "coverage": 0.4735783415999517,
+          "fill_seconds": 2010.0,
+          "fills": 2010
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.01240815685053536,
+          "coverage": 0.674811759732161,
+          "fill_seconds": 3296.0,
+          "fills": 206
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00046068486281124345,
+          "coverage": 0.7482381547240787,
+          "fill_seconds": 3.415999999999735,
+          "fills": 3416
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0010959824697552637,
+          "coverage": 0.7243739735318763,
+          "fill_seconds": 1683.0,
+          "fills": 1683
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.14684827740435172,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.5903025196662122,
+          "coverage": 0.21025111312620826,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.3180513931856488,
+          "coverage": 0.06716500149766935,
+          "fill_seconds": 96.0,
+          "fills": 6
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.5903025196662122,
+          "coverage": 0.21025111312620826,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 1.2,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.3413215468041384,
+          "coverage": 0.13422861335330138,
+          "fill_seconds": 3328.0,
+          "fills": 208
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.33699033749943946,
+          "coverage": 0.1622797659061407,
+          "fill_seconds": 3.758999999999697,
+          "fills": 3759
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.3226158951149403,
+          "coverage": 0.13934004291605862,
+          "fill_seconds": 1812.0,
+          "fills": 1812
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.01655987766089865,
+          "coverage": 0.26262145314917595,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.12372645644916634,
+          "coverage": 0.26643881849605133,
+          "fill_seconds": 4.377999999999797,
+          "fills": 4378
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.07544642484386765,
+          "coverage": 0.25435256285067204,
+          "fill_seconds": 1982.0,
+          "fills": 1982
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.012896368947020922,
+          "coverage": 0.45686275442783536,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.010111546293876705,
+          "coverage": 0.4605233090095894,
+          "fill_seconds": 4.703999999999906,
+          "fills": 4704
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0012855037751632451,
+          "coverage": 0.45800352801424,
+          "fill_seconds": 2024.0,
+          "fills": 2024
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.012896368947020922,
+          "coverage": 0.6463853683413475,
+          "fill_seconds": 3312.0,
+          "fills": 207
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00047881099753064276,
+          "coverage": 0.7054916537807162,
+          "fill_seconds": 3.712999999999702,
+          "fills": 3713
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0011391050628781541,
+          "coverage": 0.7006274242786578,
+          "fill_seconds": 1714.0,
+          "fills": 1714
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.14156482059212547,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.6010826515670445,
+          "coverage": 0.20810715888618037,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5451569518513995,
+          "coverage": 0.049622667523162835,
+          "fill_seconds": 80.0,
+          "fills": 5
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.6122274313582083,
+          "coverage": 0.19201451041041068,
+          "fill_seconds": 32.0,
+          "fills": 2
+        }
+      },
+      "skew": 1.2,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$HTTP_PORTS/0",
+      "phase_s": 0.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.21488315556860202,
+          "coverage": 0.07156539918226287,
+          "fill_seconds": 3312.0,
+          "fills": 207
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.22792880032759893,
+          "coverage": 0.07914319776549213,
+          "fill_seconds": 3.0209999999997783,
+          "fills": 3021
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.2191128312224725,
+          "coverage": 0.0731813459930104,
+          "fill_seconds": 1659.0,
+          "fills": 1659
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.0027973305081384044,
+          "coverage": 0.14318511485294322,
+          "fill_seconds": 3472.0,
+          "fills": 217
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.10031978732922045,
+          "coverage": 0.15319827356779178,
+          "fill_seconds": 3.357999999999741,
+          "fills": 3358
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.09107082373920489,
+          "coverage": 0.14210163455667355,
+          "fill_seconds": 1825.0,
+          "fills": 1825
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.0020181082626576892,
+          "coverage": 0.2652681047336637,
+          "fill_seconds": 3472.0,
+          "fills": 217
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.027633714128436113,
+          "coverage": 0.27119556192818317,
+          "fill_seconds": 3.5799999999997167,
+          "fills": 3580
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.01608943731466524,
+          "coverage": 0.26446954889340907,
+          "fill_seconds": 1870.0,
+          "fills": 1870
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.0020181082626576892,
+          "coverage": 0.42156873056439825,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.00697562048811508,
+          "coverage": 0.46836567796132017,
+          "fill_seconds": 3.1849999999997602,
+          "fills": 3185
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.00037938128475169795,
+          "coverage": 0.43575219205236015,
+          "fill_seconds": 1713.0,
+          "fills": 1713
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.07573538919355943,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.3122720523572415,
+          "coverage": 0.0840418086338682,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.3122720523572415,
+          "coverage": 0.0840418086338682,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.3122720523572415,
+          "coverage": 0.0840418086338682,
+          "fill_seconds": 0.0,
+          "fills": 0
+        }
+      },
+      "skew": 2.0,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 60.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.2741823699119435,
+          "coverage": 0.16531564077651528,
+          "fill_seconds": 3216.0,
+          "fills": 201
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.1816551258904774,
+          "coverage": 0.23777121213009347,
+          "fill_seconds": 2.561999999999829,
+          "fills": 2562
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.19813398975942448,
+          "coverage": 0.21881290441818232,
+          "fill_seconds": 1460.0,
+          "fills": 1460
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.01672164357172488,
+          "coverage": 0.2803489014781626,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.08127402766275285,
+          "coverage": 0.3604133300317002,
+          "fill_seconds": 3.133999999999766,
+          "fills": 3134
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.06305790311532225,
+          "coverage": 0.33529237655199917,
+          "fill_seconds": 1651.0,
+          "fills": 1651
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.005843390116915707,
+          "coverage": 0.4668174283764936,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.009380871440924537,
+          "coverage": 0.5540580591710533,
+          "fill_seconds": 3.4369999999997325,
+          "fills": 3437
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0019022776809475702,
+          "coverage": 0.5262896363492725,
+          "fill_seconds": 1727.0,
+          "fills": 1727
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.005843390116915707,
+          "coverage": 0.6698689702105585,
+          "fill_seconds": 3104.0,
+          "fills": 194
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0006612581793655671,
+          "coverage": 0.771055885849405,
+          "fill_seconds": 2.143999999999875,
+          "fills": 2144
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0006300906153408446,
+          "coverage": 0.7497073242350794,
+          "fill_seconds": 1231.0,
+          "fills": 1231
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.13477112206907205,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.5058024036544393,
+          "coverage": 0.26002890624529496,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5138592859018649,
+          "coverage": 0.08628400898669275,
+          "fill_seconds": 128.0,
+          "fills": 8
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.5663297832362125,
+          "coverage": 0.22065876191057784,
+          "fill_seconds": 32.0,
+          "fills": 2
+        }
+      },
+      "skew": 2.0,
+      "w": 10.0
+    },
+    {
+      "best_pin": "$ORACLE_PORTS/0",
+      "phase_s": 300.0,
+      "pin_any": "any/0",
+      "results": {
+        "all": {
+          "blind_byte_frac": 0.0,
+          "coverage": 1.0,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "lru_k1_L16s": {
+          "blind_byte_frac": 0.2710901972547922,
+          "coverage": 0.16344144875308905,
+          "fill_seconds": 3264.0,
+          "fills": 204
+        },
+        "lru_k1_L1ms": {
+          "blind_byte_frac": 0.23502187167073588,
+          "coverage": 0.22907921134922782,
+          "fill_seconds": 2.576999999999827,
+          "fills": 2577
+        },
+        "lru_k1_L1s": {
+          "blind_byte_frac": 0.24541382994679362,
+          "coverage": 0.20358613522769628,
+          "fill_seconds": 1478.0,
+          "fills": 1478
+        },
+        "lru_k2_L16s": {
+          "blind_byte_frac": 0.006660878546898459,
+          "coverage": 0.2965980686133081,
+          "fill_seconds": 3360.0,
+          "fills": 210
+        },
+        "lru_k2_L1ms": {
+          "blind_byte_frac": 0.10185245087958289,
+          "coverage": 0.35075274953736474,
+          "fill_seconds": 3.0369999999997765,
+          "fills": 3037
+        },
+        "lru_k2_L1s": {
+          "blind_byte_frac": 0.0690832298636055,
+          "coverage": 0.324078761403705,
+          "fill_seconds": 1648.0,
+          "fills": 1648
+        },
+        "lru_k4_L16s": {
+          "blind_byte_frac": 0.006073304500971817,
+          "coverage": 0.49342760857056067,
+          "fill_seconds": 3344.0,
+          "fills": 209
+        },
+        "lru_k4_L1ms": {
+          "blind_byte_frac": 0.006402268654316272,
+          "coverage": 0.5539775353135977,
+          "fill_seconds": 3.385999999999738,
+          "fills": 3386
+        },
+        "lru_k4_L1s": {
+          "blind_byte_frac": 0.0015412840348400484,
+          "coverage": 0.5208475174411595,
+          "fill_seconds": 1730.0,
+          "fills": 1730
+        },
+        "lru_k8_L16s": {
+          "blind_byte_frac": 0.006073304500971817,
+          "coverage": 0.6707306632371383,
+          "fill_seconds": 3120.0,
+          "fills": 195
+        },
+        "lru_k8_L1ms": {
+          "blind_byte_frac": 0.0016241474377905979,
+          "coverage": 0.7517686316531378,
+          "fill_seconds": 2.4189999999998446,
+          "fills": 2419
+        },
+        "lru_k8_L1s": {
+          "blind_byte_frac": 0.0006548821991350292,
+          "coverage": 0.7233093590446458,
+          "fill_seconds": 1313.0,
+          "fills": 1313
+        },
+        "pin_any": {
+          "blind_byte_frac": 0.0,
+          "coverage": 0.1401261405019157,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "pin_best": {
+          "blind_byte_frac": 0.5778716521809047,
+          "coverage": 0.2119067091396149,
+          "fill_seconds": 0.0,
+          "fills": 0
+        },
+        "s3_shipped": {
+          "blind_byte_frac": 0.5424537401407394,
+          "coverage": 0.038626814537666546,
+          "fill_seconds": 160.0,
+          "fills": 10
+        },
+        "s3_valueaware": {
+          "blind_byte_frac": 0.6120132296935182,
+          "coverage": 0.1587436800299616,
+          "fill_seconds": 64.0,
+          "fills": 4
+        }
+      },
+      "skew": 2.0,
+      "w": 10.0
+    }
+  ]
+}
