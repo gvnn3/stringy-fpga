@@ -322,3 +322,78 @@ def test_nocase_build_is_linear_not_exponential():
     pat = b"abcdefghijklmnopqrst"        # 20 letters
     tbl = T.CaseSplitTable([pat], [True])
     assert tbl.n_states < 4 * len(pat)
+
+
+# --------------------------------------------------------------------------
+# Full-corpus scale — the sizes the engine is actually meant to hold
+# --------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def full_corpus_table():
+    from pyro.snort import groups as G
+    from pyro.snort import triage as Tr
+    path = os.path.join(os.path.dirname(__file__), "..", "..",
+                        "third_party", "snort3-community-rules",
+                        "snort3-community.rules")
+    if not os.path.exists(path):
+        pytest.skip("community ruleset not vendored")
+    pats, nc = [], []
+    for g in G.pack_groups(Tr.triage_file(path)):
+        for s in g.slots:
+            pats.append(None if s.tombstone else s.anchor)
+            nc.append(bool(s.nocase))
+    return T.CaseSplitTable(pats, nc), pats, nc
+
+
+def test_full_corpus_fits_the_rp_budget(full_corpus_table):
+    """SF2's RP envelope is 160 BRAM36 + 64 URAM.  The placement decision
+    (bitmap and out_idx to URAM, the rest to BRAM) is arithmetic, so pin
+    it here rather than rediscovering it at synthesis time."""
+    tbl, _pats, _nc = full_corpus_table
+    n = tbl.n_states
+    tr = sum(len(g) for g in tbl.ci.goto) + sum(len(g) for g in tbl.cs.goto)
+    outs = sum(len(o) for o in tbl.ci.out) + sum(len(o) for o in tbl.cs.out)
+
+    def uram(w, d):     # URAM288 = 4096 deep x 72 wide
+        return ((w + 71) // 72) * ((d + 4095) // 4096)
+
+    def bram(w, d):
+        return ((w * d) + (36 * 1024) - 1) // (36 * 1024)
+
+    u = uram(256, n) + uram(64, n)                      # bitmap + oidx
+    b = bram(32, n) * 2 + bram(32, tr) + bram(32, outs)  # base/fail/dense/oflat
+    assert u <= 64, "URAM %d over the 64 budget" % u
+    assert b <= 160, "BRAM36 %d over the 160 budget" % b
+    # ...and the reason both had to move: bitmap alone in BRAM blows it.
+    assert bram(256, n) > 160
+
+
+def test_full_corpus_loads_and_matches_at_scale(full_corpus_table):
+    """Build -> serialize -> load through the A5 protocol in jumbo-sized
+    chunks -> scan, all at the real 39,647-state scale, checked against an
+    independent oracle rather than against the engine itself."""
+    tbl, pats, nc = full_corpus_table
+    img = T.serialize(tbl.ci, engine_id=0x0A5E0001)
+    assert len(img) > 1_000_000, "expected a corpus-scale image"
+
+    eng = M.OverlayEngineModel(engine_id=0x0A5E0001,
+                               capacity_states=40960,
+                               capacity_patterns=1 << 16)
+    eng.table_begin(len(img), T.table_id(img), 0x0A5E0001,
+                    T.TABLE_FORMAT_VERSION, tbl.ci.n_states,
+                    len(tbl.ci.patterns))
+    for o in range(0, len(img), 9568):        # R78.9a jumbo payload
+        eng.table_data(o, img[o:o + 9568])
+    assert eng.table_commit(T.table_id(img)) == 1
+
+    subj = T.ascii_fold(b"GET /view-source?f=/etc/passwd HTTP/1.1\r\n\r\n")
+    hits, _ = eng.scan(subj, out_cap=1 << 16)
+    got = {(h.pattern_id, h.end) for h in hits}
+    exp = set()
+    for pid, p in enumerate(tbl.ci.patterns):
+        if not p:
+            continue
+        k = subj.find(p)
+        while k >= 0:
+            exp.add((pid, k + len(p)))
+            k = subj.find(p, k + 1)
+    assert got == exp and got, "scale scan diverged from the oracle"
