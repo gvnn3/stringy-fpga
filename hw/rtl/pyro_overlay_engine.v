@@ -211,6 +211,12 @@ module pyro_overlay_engine #(
     reg [31:0] state_q;
     reg [63:0] pos;
     reg [7:0]  cur_byte;
+    // A MATCH_REQUEST is a FRESH buffer: offsets are relative to its first
+    // byte and matching restarts at the root.  Without this the second
+    // request's ends are biased by the first request's length -- the RTL
+    // reports the right NUMBER of matches at the WRONG offsets, which a
+    // single-subject testbench cannot see and the wide one caught at once.
+    reg        req_done;
 
     // Registered BRAM ports: address regs in, data regs out.
     reg [31:0]  a_state, a_dense, a_oidx, a_oflat;
@@ -300,6 +306,7 @@ module pyro_overlay_engine #(
             off_bm <= 0; off_base <= 0; off_dense <= 0;
             off_fail <= 0; off_oidx <= 0; off_oflat <= 0;
             st <= S_IDLE; state_q <= 0; pos <= 0; cur_byte <= 0;
+            req_done <= 1'b0;
             a_state <= 0; a_dense <= 0; a_oidx <= 0; a_oflat <= 0;
             emit_off <= 0; emit_left <= 0; emit_end <= 0;
             res_wr <= 0; res_start <= 0; res_end <= 0;
@@ -323,6 +330,8 @@ module pyro_overlay_engine #(
                         epoch        <= epoch + 1;
                         state_q      <= 0;
                         a_state      <= 0;
+                        pos          <= 0;
+                        req_done     <= 1'b0;
                         st           <= S_IDLE;
                     end else status <= status | 32'h4;
                 end
@@ -372,8 +381,18 @@ module pyro_overlay_engine #(
                 case (st)
                     S_IDLE: if (in_valid) begin
                         cur_byte <= in_data;
-                        a_state  <= state_q;     // issue the fetch
-                        st       <= S_FETCH;
+                        if (req_done) begin
+                            // First byte of a NEW request: fresh offsets,
+                            // matching restarts at the root.
+                            pos      <= 64'd0;
+                            state_q  <= 32'd0;
+                            a_state  <= 32'd0;
+                            req_done <= 1'b0;
+                        end else begin
+                            a_state <= state_q;
+                        end
+                        if (in_last) req_done <= 1'b1;
+                        st <= S_FETCH;
                     end
                     S_FETCH: st <= S_RANK;       // BRAM read latency
                     S_RANK: begin
