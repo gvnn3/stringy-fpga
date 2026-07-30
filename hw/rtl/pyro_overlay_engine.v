@@ -29,14 +29,21 @@
 //  * FUNCTIONAL: agrees with pyro/overlay/model.py on identical vectors --
 //    same CRC (0xf2edc7f8), same match set ((0,4),(1,4),(3,6)), same epoch,
 //    and TABLE_ID=0 after reset.  See tests/hw/tb_overlay_engine.v.
-//  * SYNTHESIS: 0 errors, and the table arrays DO infer Block RAM.  That
-//    took a real fix: memory writes must live in a block with NO reset, or
-//    Vivado refuses inference outright ("RAM is sensitive to asynchronous
-//    reset signal" -- 7 errors, synth failed).  Memory contents are not
-//    resettable; validity is tracked by `active_valid` instead.
-//  * TIMING: NOT YET KNOWN.  P&R was still running when this was written.
-//    Vivado already warns that no output register could be merged into the
-//    RAM blocks, which is the third pipeline stage this design still owes.
+//  * SYNTHESIS: 0 errors, but only PARTIAL BRAM inference (measured):
+//        BRAM:   base_mem, oflat_mem
+//        LUTRAM: bitmap_mem, dense_mem, fail_mem, oidx_mem
+//    Getting this far took a real fix -- memory writes must live in a block
+//    with NO reset, or Vivado refuses inference outright ("RAM is sensitive
+//    to asynchronous reset signal": 7 errors, synth failed).  Contents are
+//    not resettable; validity is tracked by `active_valid` instead.
+//    The four that fall back to LUTRAM are EXACTLY the four still read
+//    combinationally in the scan path, which is the diagnosis stated
+//    precisely rather than guessed: BRAM needs a registered read, so the
+//    dense->oidx->oflat chain must each get its own pipeline stage.  At the
+//    default MAX_STATES=4096 those four as LUTRAM would be ruinous, so this
+//    is the blocking item before any silicon claim.
+//  * TIMING: NOT YET KNOWN, and the number P&R eventually reports for THIS
+//    netlist would be unrepresentative anyway, with four arrays in LUTRAM.
 //
 // COVERAGE IS THIN, and pretending otherwise would be worse than the gap:
 // the differential runs ONE small vector (4 patterns, 6 bytes).  A
