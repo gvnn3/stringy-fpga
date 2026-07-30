@@ -1633,3 +1633,7 @@ Add the deadline tenant and the same-kind control tenant
 
 Run a policy across the control and treatment sets
 
+## 2026-07-30 02:36:29
+
+Sweep the switch cost to find the frontier and abandon using JTAG, the only right way to do this kind of work is with overlays.
+

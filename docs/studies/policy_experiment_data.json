@@ -13,6 +13,15 @@
     "capture_mean": 0.0,
     "capture_min": 0.0,
     "degenerate": true,
+    "policy": "static-set",
+    "set": "control (same-kind)",
+    "switches": 0
+  },
+  {
+    "budget_frac": 0.25,
+    "capture_mean": 0.0,
+    "capture_min": 0.0,
+    "degenerate": true,
     "policy": "greedy-value",
     "set": "control (same-kind)",
     "switches": 0
@@ -37,7 +46,7 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.33331254158349966,
+    "capture_mean": 0.3111490708491396,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -46,8 +55,17 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.8728200936435586,
-    "capture_min": 0.8717661691542289,
+    "capture_mean": 0.33329573298741016,
+    "capture_min": 0.0,
+    "degenerate": false,
+    "policy": "static-set",
+    "set": "control (same-kind)",
+    "switches": 1
+  },
+  {
+    "budget_frac": 0.5,
+    "capture_mean": 0.8550486225084281,
+    "capture_min": 0.828260419995864,
     "degenerate": false,
     "policy": "greedy-value",
     "set": "control (same-kind)",
@@ -55,7 +73,7 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.3125829187396352,
+    "capture_mean": 0.33329573298741016,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -64,16 +82,16 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.37481312251119653,
-    "capture_min": 0.37475124378109453,
+    "capture_mean": 0.32251234798776524,
+    "capture_min": 0.25022823470827454,
     "degenerate": false,
     "policy": "round-robin",
     "set": "control (same-kind)",
-    "switches": 24
+    "switches": 21
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.33331254158349966,
+    "capture_mean": 0.3111490708491396,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -82,16 +100,25 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.9366888734967875,
-    "capture_min": 0.8733158682634731,
+    "capture_mean": 0.6444448038365498,
+    "capture_min": 0.0,
     "degenerate": false,
-    "policy": "greedy-value",
+    "policy": "static-set",
     "set": "control (same-kind)",
-    "switches": 4
+    "switches": 1
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.6458954603231348,
+    "capture_mean": 0.9347893647603297,
+    "capture_min": 0.8715661050709602,
+    "degenerate": false,
+    "policy": "greedy-value",
+    "set": "control (same-kind)",
+    "switches": 3
+  },
+  {
+    "budget_frac": 0.75,
+    "capture_mean": 0.6444448038365498,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -100,16 +127,16 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.7288966221785285,
-    "capture_min": 0.6872512437810945,
+    "capture_mean": 0.6292951885972417,
+    "capture_min": 0.5421196779815752,
     "degenerate": false,
     "policy": "round-robin",
     "set": "control (same-kind)",
-    "switches": 24
+    "switches": 21
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.33331254158349966,
+    "capture_mean": 0.3111490708491396,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -118,16 +145,25 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.9366888734967875,
-    "capture_min": 0.8733158682634731,
+    "capture_mean": 0.6444448038365498,
+    "capture_min": 0.0,
     "degenerate": false,
-    "policy": "greedy-value",
+    "policy": "static-set",
     "set": "control (same-kind)",
-    "switches": 4
+    "switches": 1
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.6458954603231348,
+    "capture_mean": 0.9347893647603297,
+    "capture_min": 0.8715661050709602,
+    "degenerate": false,
+    "policy": "greedy-value",
+    "set": "control (same-kind)",
+    "switches": 3
+  },
+  {
+    "budget_frac": 0.95,
+    "capture_mean": 0.6444448038365498,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -136,12 +172,12 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.7288966221785285,
-    "capture_min": 0.6872512437810945,
+    "capture_mean": 0.6292951885972417,
+    "capture_min": 0.5421196779815752,
     "degenerate": false,
     "policy": "round-robin",
     "set": "control (same-kind)",
-    "switches": 24
+    "switches": 21
   },
   {
     "budget_frac": 0.25,
@@ -149,6 +185,15 @@
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "static-pin",
+    "set": "treatment (matched)",
+    "switches": 0
+  },
+  {
+    "budget_frac": 0.25,
+    "capture_mean": 0.0,
+    "capture_min": 0.0,
+    "degenerate": true,
+    "policy": "static-set",
     "set": "treatment (matched)",
     "switches": 0
   },
@@ -181,7 +226,7 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.33312908496732024,
+    "capture_mean": 0.33293301307712836,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -190,16 +235,25 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.5985166117921431,
+    "capture_mean": 0.32313175004760736,
+    "capture_min": 0.0,
+    "degenerate": false,
+    "policy": "static-set",
+    "set": "treatment (matched)",
+    "switches": 1
+  },
+  {
+    "budget_frac": 0.5,
+    "capture_mean": 0.593483255278561,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "greedy-value",
     "set": "treatment (matched)",
-    "switches": 4
+    "switches": 3
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.32292187239713477,
+    "capture_mean": 0.32313175004760736,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -208,16 +262,16 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.3535435101076912,
-    "capture_min": 0.3125312343828086,
+    "capture_mean": 0.30516276782681895,
+    "capture_min": 0.2522017614091273,
     "degenerate": false,
     "policy": "round-robin",
     "set": "treatment (matched)",
-    "switches": 24
+    "switches": 21
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.33312908496732024,
+    "capture_mean": 0.33293301307712836,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -226,16 +280,25 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.9214384841892779,
-    "capture_min": 0.8584558823529411,
+    "capture_mean": 0.6462635000952147,
+    "capture_min": 0.0,
     "degenerate": false,
-    "policy": "greedy-value",
+    "policy": "static-set",
     "set": "treatment (matched)",
-    "switches": 4
+    "switches": 1
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.6458437447942695,
+    "capture_mean": 0.9166150053261685,
+    "capture_min": 0.8418734987990393,
+    "degenerate": false,
+    "policy": "greedy-value",
+    "set": "treatment (matched)",
+    "switches": 3
+  },
+  {
+    "budget_frac": 0.75,
+    "capture_mean": 0.6462635000952147,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -244,16 +307,16 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.696879807645197,
-    "capture_min": 0.6562343828085957,
+    "capture_mean": 0.6105977929600135,
+    "capture_min": 0.5460368294635709,
     "degenerate": false,
     "policy": "round-robin",
     "set": "treatment (matched)",
-    "switches": 24
+    "switches": 21
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.33312908496732024,
+    "capture_mean": 0.33293301307712836,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -262,16 +325,25 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.9214384841892779,
-    "capture_min": 0.8584558823529411,
+    "capture_mean": 0.6462635000952147,
+    "capture_min": 0.0,
     "degenerate": false,
-    "policy": "greedy-value",
+    "policy": "static-set",
     "set": "treatment (matched)",
-    "switches": 4
+    "switches": 1
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.6458437447942695,
+    "capture_mean": 0.9166150053261685,
+    "capture_min": 0.8418734987990393,
+    "degenerate": false,
+    "policy": "greedy-value",
+    "set": "treatment (matched)",
+    "switches": 3
+  },
+  {
+    "budget_frac": 0.95,
+    "capture_mean": 0.6462635000952147,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -280,16 +352,16 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.696879807645197,
-    "capture_min": 0.6562343828085957,
+    "capture_mean": 0.6105977929600135,
+    "capture_min": 0.5460368294635709,
     "degenerate": false,
     "policy": "round-robin",
     "set": "treatment (matched)",
-    "switches": 24
+    "switches": 21
   },
   {
     "budget_frac": 0.25,
-    "capture_mean": 0.24998959373959373,
+    "capture_mean": 0.23959316201365377,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "static-pin",
@@ -298,7 +370,16 @@
   },
   {
     "budget_frac": 0.25,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
+    "capture_min": 0.0,
+    "degenerate": true,
+    "policy": "static-set",
+    "set": "treatment (skewed)",
+    "switches": 1
+  },
+  {
+    "budget_frac": 0.25,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "greedy-value",
@@ -307,7 +388,7 @@
   },
   {
     "budget_frac": 0.25,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "lru",
@@ -316,7 +397,7 @@
   },
   {
     "budget_frac": 0.25,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "round-robin",
@@ -325,7 +406,7 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.24998959373959373,
+    "capture_mean": 0.23959316201365377,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "static-pin",
@@ -334,7 +415,16 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
+    "capture_min": 0.0,
+    "degenerate": true,
+    "policy": "static-set",
+    "set": "treatment (skewed)",
+    "switches": 1
+  },
+  {
+    "budget_frac": 0.5,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "greedy-value",
@@ -343,7 +433,7 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "lru",
@@ -352,7 +442,7 @@
   },
   {
     "budget_frac": 0.5,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "round-robin",
@@ -361,7 +451,7 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.24998959373959373,
+    "capture_mean": 0.23959316201365377,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "static-pin",
@@ -370,7 +460,16 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
+    "capture_min": 0.0,
+    "degenerate": true,
+    "policy": "static-set",
+    "set": "treatment (skewed)",
+    "switches": 1
+  },
+  {
+    "budget_frac": 0.75,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "greedy-value",
@@ -379,7 +478,7 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "lru",
@@ -388,7 +487,7 @@
   },
   {
     "budget_frac": 0.75,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": true,
     "policy": "round-robin",
@@ -397,7 +496,7 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.24998959373959373,
+    "capture_mean": 0.23959316201365377,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "static-pin",
@@ -406,7 +505,16 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
+    "capture_min": 0.0,
+    "degenerate": false,
+    "policy": "static-set",
+    "set": "treatment (skewed)",
+    "switches": 1
+  },
+  {
+    "budget_frac": 0.95,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "greedy-value",
@@ -415,7 +523,7 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.7340702605310109,
+    "capture_mean": 0.7393093935005226,
     "capture_min": 0.0,
     "degenerate": false,
     "policy": "lru",
@@ -424,8 +532,8 @@
   },
   {
     "budget_frac": 0.95,
-    "capture_mean": 0.7340702605310109,
-    "capture_min": 0.25,
+    "capture_mean": 0.7393093935005226,
+    "capture_min": 0.2361380918021868,
     "degenerate": false,
     "policy": "round-robin",
     "set": "treatment (skewed)",

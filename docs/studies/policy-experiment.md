@@ -6,6 +6,16 @@
   was ambiguous between *"scheduling does not help here"* and *"that
   workload could not distinguish schedulers."* A control set discriminates.
 
+> **CORRECTION (2026-07-30, same day).** The headline figures below were
+> measured against a `static-pin` baseline that holds exactly ONE tenant,
+> which conflates *packing more* with *scheduling better* and inflated the
+> gains by roughly 4x. Corrected against the best-fixed-set baseline:
+> control **+156%** (50% budget) / **+45%** (75%); treatment-matched
+> **+84%** / **+42%**; treatment-skewed **+0%, no separation** — it was
+> measuring packing all along. The qualitative verdict is unchanged:
+> scheduling separates, and it separates on the CONTROL set. See
+> `switch-cost-frontier.md` §"Corrections".
+
 ## Verdict
 
 **Scheduling separates from a static pin — decisively, and on every set.**

@@ -54,7 +54,7 @@ PHASE_TICKS = 24        # ticks per demand phase (2 min at 5 s)
 # --------------------------------------------------------------------------
 # Demand: identical phase STRUCTURE for both sets, different content
 # --------------------------------------------------------------------------
-def phase_trace(tenants, n_phases=6, seed=7):
+def phase_trace(tenants, n_phases=6, seed=7, phase_ticks=None):
     """One demand sample per tick, rotating which tenant is favoured.
 
     Each phase picks a 'star' tenant and shapes demand so that tenant is
@@ -64,10 +64,21 @@ def phase_trace(tenants, n_phases=6, seed=7):
     """
     import random
     rng = random.Random(seed)
-    stars = [tenants[i % len(tenants)] for i in range(n_phases)]
+    pt = PHASE_TICKS if phase_ticks is None else int(phase_ticks)
+    # Randomised star order and jittered phase lengths.  A deterministic
+    # rotation with uniform phases lets switch cost align with phase
+    # boundaries, which produced strongly non-monotonic (aliased) frontier
+    # curves - gain at s/P=3 exceeding s/P=2.  Real phases are not uniform
+    # and a frontier must not be an artifact of synchronisation.
+    stars, prev = [], None
+    for _ in range(n_phases):
+        choices = [t for t in tenants if t is not prev] or list(tenants)
+        prev = rng.choice(choices)
+        stars.append(prev)
     trace = []
     for ph, star in enumerate(stars):
-        for _ in range(PHASE_TICKS):
+        n = max(1, int(round(pt * rng.uniform(0.7, 1.3))))
+        for _ in range(n):
             trace.append((ph, _demand_favouring(star, rng)))
     return trace
 
@@ -99,6 +110,33 @@ def pol_static_pin(tenants, demand, resident, state, budget):
         state["pin"] = state["hindsight_best"]
     pick = state["pin"]
     return {pick} if _fits([pick], tenants, budget) else set()
+
+
+def pol_static_set(tenants, demand, resident, state, budget):
+    """Best FIXED set that fits, chosen in hindsight, never changed.
+
+    The honest baseline for "is scheduling worth it".  `static-pin` holds
+    exactly one tenant while every other policy may hold several, so a
+    comparison against it conflates *packing more* with *changing what is
+    resident over time*.  Measured consequence: against static-pin the
+    apparent gain stays above +100% even at switch costs so large that
+    nothing ever switches — pure packing, mislabelled as scheduling.
+    Anything this baseline is beaten by is genuinely dynamic.
+    """
+    if state.get("static_set") is None:
+        import itertools
+        best, best_v = frozenset(), -1.0
+        names = [t.name for t in tenants]
+        for r in range(1, len(names) + 1):
+            for combo in itertools.combinations(names, r):
+                if not _fits(combo, tenants, budget):
+                    continue
+                v = sum(state["totals"][n] / state["peak_total"][n]
+                        for n in combo if state["peak_total"][n] > 0)
+                if v > best_v:
+                    best, best_v = frozenset(combo), v
+        state["static_set"] = best
+    return set(state["static_set"])
 
 
 def pol_greedy_value(tenants, demand, resident, state, budget):
@@ -155,6 +193,7 @@ def pol_oracle(tenants, demand, resident, state, budget):
 
 POLICIES = OrderedDict([
     ("static-pin", pol_static_pin),
+    ("static-set", pol_static_set),
     ("greedy-value", pol_greedy_value),
     ("lru", pol_lru),
     ("round-robin", pol_round_robin),
@@ -184,13 +223,17 @@ def _norm_value(t, demand, state):
     return t.value(demand) / peak
 
 
-def simulate(tenants, trace, policy_fn, budget, switch_cost_s):
+def simulate(tenants, trace, policy_fn, budget, switch_cost_s,
+             tick_s=None):
     """Tick the policy; charge switch cost with serialized fills."""
+    dt = TICK_S if tick_s is None else float(tick_s)
     state = {"peak": {}, "tick": 0}
     for t in tenants:
         state["peak"][t.name] = max(
             (t.value(d) for _ph, d in trace), default=0.0)
     totals = {t.name: sum(t.value(d) for _ph, d in trace) for t in tenants}
+    state["totals"] = totals
+    state["peak_total"] = dict(totals)
     state["hindsight_best"] = max(totals, key=lambda n: totals[n])
 
     resident, pending, busy_until = set(), None, -1.0
@@ -199,7 +242,7 @@ def simulate(tenants, trace, policy_fn, budget, switch_cost_s):
     switches = 0
 
     for i, (_ph, demand) in enumerate(trace):
-        now = i * TICK_S
+        now = i * dt
         state["tick"] = i
         if pending is not None and now >= busy_until:
             resident = pending[1]
@@ -274,12 +317,14 @@ def main():
             base = None
             for pname, pfn in POLICIES.items():
                 r = simulate(ts, trace, pfn, budget, args.switch_cost)
-                if pname == "static-pin":
+                if pname == "static-set":
                     base = r["capture_mean"]
                 delta = ("" if base in (None, 0) else
                          "%+.1f%%" % (100 * (r["capture_mean"] / base - 1)))
-                if pname == "static-pin":
+                if pname == "static-set":
                     delta = "(baseline)"
+                elif pname == "static-pin":
+                    delta = "(one tenant only)"
                 print("  %-14s %11.1f%% %11.1f%% %9d  %s"
                       % (pname, 100 * r["capture_mean"],
                          100 * r["capture_min"], r["switches"], delta))
@@ -296,10 +341,10 @@ def main():
     for label, _ts in sets:
         rows = [r for r in results if r["set"] == label]
         base = {r["budget_frac"]: r["capture_mean"] for r in rows
-                if r["policy"] == "static-pin"}
+                if r["policy"] == "static-set"}
         best = {}
         for r in rows:
-            if r["policy"] == "static-pin":
+            if r["policy"].startswith("static"):
                 continue
             f = r["budget_frac"]
             if r["capture_mean"] > best.get(f, (0, ""))[0]:
@@ -309,7 +354,7 @@ def main():
                  for f in sorted(best) if base.get(f) and f not in degen]
         top = max(gains) if gains else (0, 0, "-")
         sep = "SEPARATES" if top[0] > 5 else "no separation"
-        print("  %-22s best gain over static pin: %+.1f%% (%s at %.0f%% budget)"
+        print("  %-22s best gain over best-fixed-set: %+.1f%% (%s at %.0f%% budget)"
               "  -> %s%s" % (label, top[0], top[2], top[1] * 100, sep,
                              "   [%d degenerate budget(s) excluded]" % len(degen)
                              if degen else ""))
