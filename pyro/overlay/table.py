@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import hashlib
 import struct
-import zlib
 from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
 #: Table format version.  Bump ⇒ every TABLE_ID rolls and the device
@@ -287,6 +286,28 @@ def stats(ac: AhoCorasick, image: bytes) -> TableStats:
 # --------------------------------------------------------------------------
 # Identity (A5 §2)
 # --------------------------------------------------------------------------
+_CRC32C_POLY = 0x82F63B78
+_CRC32C_TABLE = []
+for _i in range(256):
+    _c = _i
+    for _ in range(8):
+        _c = (_c >> 1) ^ (_CRC32C_POLY if _c & 1 else 0)
+    _CRC32C_TABLE.append(_c)
+
+
+def crc32c(data: bytes, crc: int = 0xFFFFFFFF) -> int:
+    """CRC-32C (Castagnoli), byte-reflected — bit-identical to the fabric's
+    per-byte loop in ``hw/rtl/pyro_overlay_engine.v``.
+
+    Python's ``zlib.crc32`` is the IEEE polynomial, NOT Castagnoli; using it
+    here silently disagreed with the RTL and the xsim differential caught
+    it on the first run (device 0xf2edc7f8 vs host 0xe4924a78).
+    """
+    for b in data:
+        crc = (crc >> 8) ^ _CRC32C_TABLE[(crc ^ b) & 0xFF]
+    return crc & 0xFFFFFFFF
+
+
 def table_id(image: bytes) -> int:
     """Device-computable TABLE_ID: CRC-32C over the image.
 
@@ -295,7 +316,7 @@ def table_id(image: bytes) -> int:
     non-zero, because zero is reserved for "no valid table" — the same
     convention ``rp_child_id`` already uses.
     """
-    v = zlib.crc32(image) & 0xFFFFFFFF
+    v = (~crc32c(image)) & 0xFFFFFFFF     # final inversion, as the RTL does
     return v if v else 1
 
 
