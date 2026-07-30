@@ -1,0 +1,34 @@
+#-----------------------------------------------------------
+# xsim v2025.2 (64-bit)
+# SW Build 6299465 on Fri Nov 14 12:34:56 MST 2025
+# IP Build 6300035 on Fri Nov 14 10:48:45 MST 2025
+# SharedData Build 6298862 on Thu Nov 13 04:50:51 MST 2025
+# Start of session at: Thu Jul 30 11:09:56 2026
+# Process ID         : 1058150
+# Current directory  : /home/gnn/Repos/Yale/stringy-fpga
+# Command line       : xsim -mode tcl -source {xsim.dir/tb/xsim_script.tcl}
+# Log file           : /home/gnn/Repos/Yale/stringy-fpga/xsim.log
+# Journal file       : /home/gnn/Repos/Yale/stringy-fpga/xsim.jou
+# Running On         : nf-server06
+# Platform           : Ubuntu
+# Operating System   : Ubuntu 24.04.3 LTS
+# Processor Detail   : Intel(R) Xeon(R) CPU E5-2637 v4 @ 3.50GHz
+# CPU Frequency      : 3499.842 MHz
+# CPU Physical cores : 4
+# CPU Logical cores  : 4
+# Host memory        : 67300 MB
+# Swap memory        : 8589 MB
+# Total Virtual      : 75889 MB
+# Available Virtual  : 73689 MB
+#-----------------------------------------------------------
+source xsim.dir/tb/xsim_script.tcl
+# xsim {tb} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+WARNING: File table.hex referenced from process on /home/gnn/Repos/Yale/stringy-fpga/tests/hw/tb_overlay_engine.v at line 75 cannot be opened for reading. Please ensure that this file is available in the current working directory or parent directory of xsim.dir location specified via -xsimdir switch.
+WARNING: File subject.hex referenced from process on /home/gnn/Repos/Yale/stringy-fpga/tests/hw/tb_overlay_engine.v at line 75 cannot be opened for reading. Please ensure that this file is available in the current working directory or parent directory of xsim.dir location specified via -xsimdir switch.
+  after reset TABLE_ID=0 (nothing valid) OK
+  bytes received = 592 (expected 592)
+  shadow CRC = xxxxxxxx (model 0xf2edc7f8)
+FAIL: CRC mismatch
+  epoch after commit = 0

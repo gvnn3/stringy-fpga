@@ -1653,3 +1653,7 @@ Approve A5 and start building the overlay engine
 
 Build the RTL engine
 
+## 2026-07-30 11:06:19
+
+Fix the pipeline so all the memories infer BRAM
+
