@@ -41,6 +41,16 @@ module tb_overlay_engine;
 
     reg [7:0] img  [0:IMG_BYTES-1];
     reg [7:0] subj [0:SUBJ_BYTES-1];
+    // Expected set, from pyro/overlay/model.py on the same vectors.
+    localparam integer EXP_N = 3;
+    integer exp_pid [0:EXP_N-1];
+    integer exp_end [0:EXP_N-1];
+    initial begin
+        exp_pid[0] = 0; exp_end[0] = 4;
+        exp_pid[1] = 1; exp_end[1] = 4;
+        exp_pid[2] = 3; exp_end[2] = 6;
+    end
+
     integer i, got = 0, errors = 0;
     reg [31:0] got_pid [0:63];
     reg [63:0] got_end [0:63];
@@ -113,11 +123,31 @@ module tb_overlay_engine;
         end
         repeat (40) @(posedge clk);
 
-        $display("  RTL produced %0d matches", got);
-        if (errors == 0 && got > 0)
-            $display("TB_RESULT: matches=%0d errors=%0d", got, errors);
-        else
-            $display("TB_RESULT: matches=%0d errors=%0d", got, errors);
+        // A differential that cannot FAIL on a wrong match set is not a
+        // differential.  The first version of this TB only checked CRC,
+        // bytes and epoch, and happily reported errors=0 while producing
+        // ZERO matches.  Compare the full set, both directions.
+        $display("  RTL produced %0d matches (model expects %0d)",
+                 got, EXP_N);
+        if (got !== EXP_N) begin
+            $display("FAIL: match COUNT %0d != expected %0d", got, EXP_N);
+            errors = errors + 1;
+        end
+        for (i = 0; i < EXP_N; i = i + 1) begin : chk
+            reg found;
+            integer j;
+            found = 0;
+            for (j = 0; j < got; j = j + 1)
+                if (got_pid[j] === exp_pid[i] && got_end[j] === exp_end[i])
+                    found = 1;
+            if (!found) begin
+                $display("FAIL: model match (pid=%0d,end=%0d) MISSING from RTL",
+                         exp_pid[i], exp_end[i]);
+                errors = errors + 1;
+            end
+        end
+        if (errors == 0) $display("TB_RESULT: PASS matches=%0d", got);
+        else             $display("TB_RESULT: FAIL errors=%0d", errors);
         $finish;
     end
 endmodule

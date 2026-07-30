@@ -23,24 +23,34 @@
 //   header 56 B, then bitmap[state][256b], base[state], dense[], fail[state],
 //   out_idx[state]={off,cnt}, out_flat[].
 //
-// VERIFIED (xsim, 2026-07-30): drives identical vectors to
-// pyro/overlay/model.py and produces an identical CRC and match set --
-// see tests/hw/tb_overlay_engine.v.  The differential found two real bugs
-// on its first run: a CRC polynomial mismatch (the host used zlib's IEEE
-// where the fabric uses Castagnoli) and a dropped-byte handshake
-// (`in_ready` omitted `!s1_valid`, silently losing a match -- the false
-// negative SR3 forbids).
+// STATUS (2026-07-30) -- stated precisely, because "verified" is a strong
+// word and only part of this earns it:
 //
-// KNOWN LIMITS, not yet addressed:
-//  * TIMING IS UNVERIFIED.  The 256-bit rank (popcount below the byte) is
-//    split into eight lanes and pipelined, but OF-1 already found this
-//    shell marginal at ~10K LUTs on RM<->static boundary paths, and this is
-//    a memory-heavy design.  Synthesis is the open question.
-//  * S2 chains two memory reads in one cycle (dense_mem then oidx_mem).
-//    That simulates correctly but will not infer BRAM well; a third
-//    pipeline stage is needed before this is synthesis-quality.
-//  * Single-region, no shadow bank: A5 section 2.2 recommends quiesce for
-//    now, so a commit while scanning is not yet safe.
+//  * FUNCTIONAL: agrees with pyro/overlay/model.py on identical vectors --
+//    same CRC (0xf2edc7f8), same match set ((0,4),(1,4),(3,6)), same epoch,
+//    and TABLE_ID=0 after reset.  See tests/hw/tb_overlay_engine.v.
+//  * SYNTHESIS: 0 errors, and the table arrays DO infer Block RAM.  That
+//    took a real fix: memory writes must live in a block with NO reset, or
+//    Vivado refuses inference outright ("RAM is sensitive to asynchronous
+//    reset signal" -- 7 errors, synth failed).  Memory contents are not
+//    resettable; validity is tracked by `active_valid` instead.
+//  * TIMING: NOT YET KNOWN.  P&R was still running when this was written.
+//    Vivado already warns that no output register could be merged into the
+//    RAM blocks, which is the third pipeline stage this design still owes.
+//
+// COVERAGE IS THIN, and pretending otherwise would be worse than the gap:
+// the differential runs ONE small vector (4 patterns, 6 bytes).  A
+// deliberate sabotage of the input handshake was NOT caught by it, because
+// that vector does not excite the case.  This RTL is a first cut that
+// agrees with the model where it has been asked; it is not broadly
+// verified, and it should not be trusted on silicon until the vector set
+// is as wide as the group circuits' (xsim_diff over real corpora).
+//
+// ALSO OUTSTANDING:
+//  * no shadow bank -- A5 section 2.2's quiesce discipline applies, so a
+//    commit while scanning is not yet safe;
+//  * the S2 dense->oidx read chain needs its own stage (see the Vivado
+//    output-register warning above).
 
 `timescale 1ns/1ps
 `default_nettype none
@@ -281,32 +291,6 @@ module pyro_overlay_engine #(
                     endcase
                 end
 
-                // Section writes, on each completed 32-bit word.
-                if (wr_bcnt == 2'd3) begin
-                    if (wr_addr >= off_base && wr_addr < off_dense)
-                        base_mem[(wr_addr - off_base) >> 2]
-                            <= {in_data, wr_word[31:8]};
-                    else if (wr_addr >= off_dense && wr_addr < off_fail)
-                        dense_mem[(wr_addr - off_dense) >> 2]
-                            <= {in_data, wr_word[31:8]};
-                    else if (wr_addr >= off_fail && wr_addr < off_oidx)
-                        fail_mem[(wr_addr - off_fail) >> 2]
-                            <= {in_data, wr_word[31:8]};
-                    else if (wr_addr >= off_oflat)
-                        oflat_mem[(wr_addr - off_oflat) >> 2]
-                            <= {in_data, wr_word[31:8]};
-                end
-
-                // Bitmaps are 32 bytes each; shift bytes in little-endian.
-                if (wr_addr >= off_bm && wr_addr < off_base) begin
-                    bitmap_mem[(wr_addr - off_bm) >> 5]
-                        <= {in_data, bitmap_mem[(wr_addr - off_bm) >> 5][255:8]};
-                end
-                // out_idx is 8 bytes per state: {count, offset}
-                if (wr_addr >= off_oidx && wr_addr < off_oflat) begin
-                    oidx_mem[(wr_addr - off_oidx) >> 3]
-                        <= {in_data, oidx_mem[(wr_addr - off_oidx) >> 3][63:8]};
-                end
                 wr_addr <= wr_addr + 1;
             end
 
@@ -366,6 +350,46 @@ module pyro_overlay_engine #(
                         s1_valid  <= 1'b1;
                     end
                 end
+            end
+        end
+    end
+
+    // ---------------------------------------------------------------
+    // Memory writes live HERE, in a block with NO RESET.
+    //
+    // BRAM contents are not resettable, and an async reset on the array is
+    // exactly what makes Vivado refuse block-RAM inference -- measured on
+    // the first synthesis attempt: "RAM is sensitive to asynchronous reset
+    // signal", seven errors, synth failed outright.  Validity is tracked by
+    // `active_valid`, which IS a reset register, never by contents.
+    // ---------------------------------------------------------------
+    always @(posedge clk) begin
+        if (load_mode && in_valid) begin
+                // Section writes, on each completed 32-bit word.
+            if (wr_bcnt == 2'd3) begin
+                if (wr_addr >= off_base && wr_addr < off_dense)
+                    base_mem[(wr_addr - off_base) >> 2]
+                        <= {in_data, wr_word[31:8]};
+                else if (wr_addr >= off_dense && wr_addr < off_fail)
+                    dense_mem[(wr_addr - off_dense) >> 2]
+                        <= {in_data, wr_word[31:8]};
+                else if (wr_addr >= off_fail && wr_addr < off_oidx)
+                    fail_mem[(wr_addr - off_fail) >> 2]
+                        <= {in_data, wr_word[31:8]};
+                else if (wr_addr >= off_oflat)
+                    oflat_mem[(wr_addr - off_oflat) >> 2]
+                        <= {in_data, wr_word[31:8]};
+            end
+
+            // Bitmaps are 32 bytes each; shift bytes in little-endian.
+            if (wr_addr >= off_bm && wr_addr < off_base) begin
+                bitmap_mem[(wr_addr - off_bm) >> 5]
+                    <= {in_data, bitmap_mem[(wr_addr - off_bm) >> 5][255:8]};
+            end
+            // out_idx is 8 bytes per state: {count, offset}
+            if (wr_addr >= off_oidx && wr_addr < off_oflat) begin
+                oidx_mem[(wr_addr - off_oidx) >> 3]
+                    <= {in_data, oidx_mem[(wr_addr - off_oidx) >> 3][63:8]};
             end
         end
     end
