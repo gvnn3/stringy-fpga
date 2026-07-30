@@ -334,7 +334,15 @@ module pyro_overlay_engine #(
             res_wr <= 0; res_start <= 0; res_end <= 0;
             res_pattern_id <= 0; res_flags <= 0;
             csr_rdata <= 0;
-            d_bitmap_q <= 0; d_oidx_q <= 0;
+            // d_bitmap_q/d_oidx_q are deliberately NOT reset here.  They are
+            // driven by the memory-read block above, and a second driver in
+            // this block makes them multi-driven: synthesis keeps the
+            // constant 0 and discards the real one, so the bitmap read path
+            // goes dead and the URAMs are optimized away entirely.
+            // Simulation does not catch it -- the reset branch only fires
+            // during reset, so xsim sees one driver and passes.  They need no
+            // reset in any case: nothing consumes them until the FSM has
+            // walked S_FETCH -> S_RANK, which loads them first.
         end else begin
             res_wr <= 1'b0;
 
