@@ -1,2 +1,4 @@
 INFO: [VRFC 10-2263] Analyzing Verilog file "/home/gnn/Repos/Yale/stringy-fpga/hw/rtl/pyro_overlay_engine.v" into library work
 INFO: [VRFC 10-311] analyzing module pyro_overlay_engine
+INFO: [VRFC 10-2263] Analyzing Verilog file "/home/gnn/Repos/Yale/stringy-fpga/hw/rtl/pyro_circuit_overlay_top.v" into library work
+INFO: [VRFC 10-311] analyzing module pyro_circuit
