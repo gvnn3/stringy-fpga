@@ -180,6 +180,82 @@ A gang mixing host buffers with frame bytes raises at construction — a
 fixed-offset matcher fed a payload buffer is silently wrong, and silent is
 the one thing it must not be.
 
+## 2b. Tenant 6 — the deadline tenant, and the result it forces
+
+`pyro/sched/deadline.py` adds work with a **hard latency budget** rather
+than a best-effort value. Every other tenant is best-effort: missing it
+costs coverage, and SR5 keeps correctness. A deadline tenant's work is
+worthless late.
+
+Standard periodic parameters, from **measured** engine rates:
+
+| scenario | period | WCET | U | schedulable? |
+|---|---|---|---|---|
+| inline 1 GbE, dpb=1 *(modelled)* | 12.00 µs | 5.99 µs | 0.499 | yes |
+| inline 10 GbE, dpb=1 *(modelled)* | 1.20 µs | 5.99 µs | **4.99** | **no — engine cannot keep up** |
+| inline 10 GbE, dpb=8 *(modelled)* | 1.20 µs | 0.72 µs | 0.599 | yes |
+| host-path R78 *(measured)* | 100 ms | 43.8 ms | 0.438 | yes |
+
+The 10 GbE row is an admission result that follows from silicon fmax, not
+from policy: **line rate needs the 8 B/cycle datapath**, and no scheduler
+can rescue U = 4.99.
+
+### The sharp result: deadline tenants are not preemptible under PR
+
+A tenant can be absent for at most its slack. Packet-scale slack is
+**microseconds**; evicting and restoring costs **2 × 13.6 s**. So:
+
+| scenario | max absence | needed to preempt | preemptible? |
+|---|---|---|---|
+| inline 1 GbE | 6.01 µs | 27.2 s | **no — pinned** |
+| inline 10 GbE dpb=8 | 0.48 µs | 27.2 s | **no — pinned** |
+| host-path R78 | 56.2 ms | 27.2 s | **no — pinned** |
+
+**Under partial reconfiguration, admitting a deadline tenant converts the
+region from scheduled to statically partitioned.** Its area leaves the
+schedulable pool permanently — in the four-scenario set above, 31,592 LUTs
+pinned and 61% left to timeshare. This is the strongest statement yet that
+PR is not a scheduling mechanism, and unlike the quantum argument in §1 it
+is *functional* rather than economic: it is not that preemption is
+expensive, it is that preemption is impossible. An overlay switch of
+sub-millisecond order would sit inside a packet-scale budget and make these
+tenants schedulable at all.
+
+The predicate is about numbers, not about deadline tenants as a class: a
+minute-scale budget (`period=120 s, wcet=1 s`) *is* preemptible under PR,
+and the test suite pins that so the result cannot be read as a tautology.
+
+**Honesty about the workload.** The inline scenarios are **modelled** — the
+CMAC datapath is tied off (SF3) and no line-rate path exists (Risk 2). The
+parameters are real (engine rates from silicon fmax, standard line rates)
+and the arithmetic is exactly what decides whether building that path is
+worth it. The host-path scenario is real and its 43.8 ms round trip was
+measured. Its deadline defaults to the *period*, not to the service time —
+setting deadline equal to WCET would drive slack to zero by construction
+and assume the non-preemptibility conclusion instead of measuring it.
+
+## 2c. Tenant 7 — the same-kind control set
+
+`same_kind_control(n)` returns N tenants of one kind with closely matched
+footprints, and `homogeneity()` measures the result instead of asserting it:
+
+| set | kinds | input views | LUT spread | is_control |
+|---|---|---|---|---|
+| control (3 × pattern-set) | 1 | 1 | **1.17×** | **True** |
+| treatment (mixed) | 3 | 3 | 658× | False |
+
+This is the null hypothesis the A5 study lacked. That study's flat result
+was ambiguous between two very different conclusions — *"scheduling does
+not help"* and *"this workload cannot distinguish schedulers"* — and
+without a control there was no way to tell them apart. With one: if a
+policy still separates from a static pin on the control set, the effect is
+**capacity-driven**; if it separates only on the mixed workload, the effect
+is **heterogeneity-driven**.
+
+Footprints are matched by taking the tightest window of consecutive
+footprints in the pool, so 2D packing is not silently reintroduced as a
+confound in the very set built to eliminate confounds.
+
 ## 3. Other tenants that could use the Snort data
 
 Ordered by how much new machinery they need. Everything in the first group

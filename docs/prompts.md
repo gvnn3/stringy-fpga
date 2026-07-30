@@ -1625,3 +1625,7 @@ Characterize the switch-cost curve and set up the two tenants, and add the third
 
 Add the gang-scheduled pipeline tenant
 
+## 2026-07-30 01:26:08
+
+Add the deadline tenant and the same-kind control tenant
+

@@ -43,6 +43,12 @@ from .gang import (  # noqa: F401
     header_prefilter_pipeline,
     view_meet,
 )
+from .deadline import (  # noqa: F401
+    DeadlineTenant,
+    host_path_tenant,
+    inline_filter_tenant,
+    partition_report,
+)
 from .tenants import (  # noqa: F401
     FRAME_OFFSETS,
     Tenant,
@@ -62,7 +68,13 @@ __all__ = [
     "view_meet",
     "Tenant",
     "TenantDemand",
+    "DeadlineTenant",
     "build_all_tenants",
+    "homogeneity",
+    "host_path_tenant",
+    "inline_filter_tenant",
+    "partition_report",
+    "same_kind_control",
     "header_match_tenant",
     "ip_match_tenant",
     "pyro_regex_tenant",

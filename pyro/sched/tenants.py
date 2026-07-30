@@ -381,3 +381,66 @@ def build_all_tenants(include_snortpf: int = 3) -> List[Tenant]:
            header_match_tenant()]
     out.extend(snortpf_tenants()[:include_snortpf])
     return out
+
+
+# --------------------------------------------------------------------------
+# The control condition — same-kind tenants
+# --------------------------------------------------------------------------
+def same_kind_control(n: int = 2, kind: str = "pattern-set",
+                      groups=None) -> List[Tenant]:
+    """N tenants of ONE kind with closely matched footprints.
+
+    The control condition for every heterogeneity claim in this package.
+    The mixed workload varies four things at once — footprint, input view,
+    value currency and latency tolerance — so a scheduler result over it
+    cannot be attributed to any one of them.  This set holds all four
+    fixed, leaving only *capacity and demand*.
+
+    Read it as the null hypothesis: if a policy still separates from a
+    static pin here, the effect is capacity-driven; if it only separates on
+    the mixed workload, the effect is heterogeneity-driven.  The A5 study
+    lacked this control, which is why its flat result was ambiguous between
+    "scheduling does not help" and "this workload cannot distinguish
+    schedulers" — two very different conclusions.
+
+    Footprints are matched by picking the ``n`` tenants whose estimated
+    LUTs are closest together, so 2D packing is not silently reintroduced
+    as a confound.
+    """
+    if kind != "pattern-set":
+        raise ValueError("only the pattern-set kind has enough same-kind "
+                         "members to form a control set today")
+    pool = snortpf_tenants(groups)
+    if len(pool) < n:
+        raise ValueError("need >= %d same-kind tenants, have %d"
+                         % (n, len(pool)))
+    sized = sorted(((t.footprint()["est_luts"], t) for t in pool),
+                   key=lambda x: x[0])
+    # tightest window of n consecutive footprints
+    best_i, best_spread = 0, float("inf")
+    for i in range(len(sized) - n + 1):
+        spread = sized[i + n - 1][0] - sized[i][0]
+        if spread < best_spread:
+            best_i, best_spread = i, spread
+    return [t for _luts, t in sized[best_i:best_i + n]]
+
+
+def homogeneity(tenants: Sequence) -> Dict[str, object]:
+    """Measure how alike a tenant set is, so 'control' is a fact not a label.
+
+    ``footprint_spread`` is max/min estimated LUTs (1.0 = identical); the
+    other fields count distinct values of the dimensions that would
+    otherwise confound a scheduling comparison.
+    """
+    luts = [t.footprint()["est_luts"] for t in tenants] or [0]
+    lo, hi = min(luts), max(luts)
+    return {
+        "n": len(tenants),
+        "kinds": sorted({t.kind for t in tenants}),
+        "input_views": sorted({t.input_view for t in tenants}),
+        "footprint_luts": (lo, hi),
+        "footprint_spread": (hi / lo) if lo else float("inf"),
+        "is_control": (len({t.kind for t in tenants}) == 1
+                       and len({t.input_view for t in tenants}) == 1
+                       and lo > 0 and hi / lo <= 1.5),
+    }
