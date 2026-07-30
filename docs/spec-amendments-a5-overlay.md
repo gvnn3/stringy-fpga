@@ -338,13 +338,57 @@ agree bit for bit.  This is exactly the class of silent divergence the
 two-level identity exists to prevent, and it is mildly reassuring that it
 was caught by construction rather than by luck.
 
+### Timing — closed out of context, and a caught false pass
+
+The full-corpus configuration meets 250 MHz.  Getting there took two
+fixes and produced one result worth recording as a method note.
+
+An unbounded URAM cascade chained seven URAM288s combinationally and cost
+**−1.297 ns**.  Capping it with `cascade_height=2` and re-registering the
+outputs into `d_bitmap_q` / `d_oidx_q` fixed it — but the first run of
+that fix reported **+0.383 ns and the number was worthless**.  The new
+pipeline registers had picked up a second driver, because they were also
+being zeroed in the async-reset block.  Synthesis kept the constant and
+discarded the real driver, the bitmap read path became dead code, and
+`opt_design` deleted all 50 URAMs.  What got timed was a 768-LUT stub.
+
+Two things about that are worth carrying forward.  First, **simulation
+cannot catch it**: the reset branch only executes during reset, so xsim
+sees one driver, and the differential passed identically before and
+after the fix.  Second, the run looked entirely healthy — it exited 0 and
+printed a comfortable positive slack.  Only the utilization report gave
+it away.  `scripts/overlay_ooc_timing.tcl` now refuses to report a
+verdict unless synthesis raised zero critical warnings *and* the routed
+netlist still contains its memories, on the principle that a timing
+number means nothing without evidence that the thing timed is the thing
+intended.
+
+With one driver restored, measured OOC at 250 MHz on `xcu250-figd2104-2L-e`:
+
+| | |
+|---|---|
+| WNS | **+0.089 to +0.212 ns** (MET) |
+| URAM | 50 of 64 |
+| BRAM36 | 108 of 160 |
+| LUT / FF | 2,364 / 2,209 |
+| critical warnings | 0 |
+
+The slack is quoted as a range deliberately.  Every worst-case path in
+this design has **0–1 logic levels and 91–98% route delay**, so the
+figure moves by more than 0.1 ns between runs that differ only in which
+high-fanout register was replicated.  Out of context there is no pblock,
+so placement is free to scatter 50 URAMs and 108 BRAMs across three
+SLRs; the spread is routing luck, not design quality.  With zero logic
+levels on the worst path, **there is nothing left to optimize in the
+RTL** — what remains is placement.
+
 ### Still open
 
-Timing at full corpus scale is **not yet closed**.  URAM inference works
-(no fallbacks), but an unbounded cascade chained seven URAM288s
-combinationally and cost 1.297 ns; `cascade_height=2` plus an extra output
-register is under measurement.  Nothing here should be read as
-silicon-ready until that lands and a PR link follows.
+The **in-context PR link** is the number that decides, and it is not in
+yet.  Only there is the engine confined to the `pyro_rp` pblock on SLR2
+with the RM↔static boundary paths included (OF-1 measured those costing
+5–120 ps on six of 21 group builds).  Nothing here should be read as
+silicon-ready until that lands.
 
 ## 9. Decision requested
 
