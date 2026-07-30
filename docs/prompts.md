@@ -1601,3 +1601,7 @@ Do the working-set measurement, but first make sure eerything is committed and m
 
 Fix the scheduler scoring to be value-aware
 
+## 2026-07-30 00:15:45
+
+Merge this back to phase2-snort and then update the working doc.
+
