@@ -1637,3 +1637,7 @@ Run a policy across the control and treatment sets
 
 Sweep the switch cost to find the frontier and abandon using JTAG, the only right way to do this kind of work is with overlays.
 
+## 2026-07-30 02:50:28
+
+Design the overlay table-write protocol and TABLE_ID identity layer
+
