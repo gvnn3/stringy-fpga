@@ -1605,3 +1605,7 @@ Fix the scheduler scoring to be value-aware
 
 Merge this back to phase2-snort and then update the working doc.
 
+## 2026-07-30 00:21:28
+
+Do the rule-packing experiment in a branch.
+

@@ -121,11 +121,17 @@ correctness — which is what makes aggressive paging safe to consider.
    correctly declines pointless swaps. Until then, **pinning `any/0` beats
    the scheduler** on every traffic mix tested — that is a one-line
    operational mitigation available today.
-2. **Revisit GROUP_MAX / the `any`-class split** (SR6, spec amendment).
-   Uniform 256-rule groups plus a universally-relevant `any` class is what
-   makes k=1 residency a dead end. Packing that co-locates universally-
-   relevant rules with traffic-specific ones would raise the value of a
-   single resident group without any hardware change.
+2. ~~**Revisit GROUP_MAX / the `any`-class split**: packing that
+   co-locates universally-relevant rules with traffic-specific ones would
+   raise the value of a single resident group.~~ **SUPERSEDED AND PARTLY
+   WRONG — see `docs/studies/rule-packing.md` (2026-07-30).** The
+   co-location premise is refuted: at 256 rules/group every port already
+   has a group where all 256 rules fire, so re-packing changes which rules
+   are resident, never how many (blending measured at 30.3%, identical to
+   not blending). Testing it did find two real levers the reasoning here
+   missed: bounding groups by **slots** rather than **rules** is worth
+   +14% relative for free, and widening groups to 1024 slots is worth
+   2.7×.
 3. **Treat capacity as the real lever.** k=4 already reaches 76%; k=8
    reaches 84%. If the trie proves out, k=21 is 100% and the entire
    residency question disappears.
