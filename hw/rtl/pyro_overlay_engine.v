@@ -29,15 +29,16 @@
 //                    the patterns now live in BRAM instead of fabric.
 //   Functional     : agrees with pyro/overlay/model.py on identical
 //                    vectors (same CRC, same match set, same epoch).
-//   TIMING         : **FAILS at 250 MHz.  WNS = -1.297 ns, Fmax ~189 MHz.**
-//                    Not marginal like OF-1's picoseconds -- a real gap.
-//                    Prime suspect is the 256-bit rank (popcount below the
-//                    byte) feeding the dense address in S_RANK; that is a
-//                    HYPOTHESIS, not a measurement, because the path report
-//                    did not complete.  Confirm before optimising: the fix
-//                    would be to pipeline the rank into its own stage (the
-//                    FSM already tolerates extra latency) or precompute
-//                    per-word cumulative counts in the table image.
+//   TIMING (pre-fix): FAILED at 250 MHz, WNS = -1.297 ns (Fmax ~189 MHz).
+//                    Critical path CONFIRMED by report_timing, not guessed:
+//                      bitmap_mem_reg_bram_16 -> a_dense_reg[12]/D
+//                      5.230 ns data path, 19 LOGIC LEVELS
+//                      (CARRY8 x4, LUT6 x4, LUT5 x4, LUT4, LUT3 x2, LUT2)
+//                    i.e. exactly bitmap-read -> rank -> dense-address, with
+//                    the four CARRY8 chains being the popcount adder tree.
+//                    Fixed by splitting that path across S_RANK/S_RANK2 and
+//                    removing the 256-bit barrel shifter; post-fix number
+//                    pending re-measurement.
 //
 // ---------------------------------------------------------------------
 // EVERY memory read is REGISTERED, and that shapes the whole datapath.
