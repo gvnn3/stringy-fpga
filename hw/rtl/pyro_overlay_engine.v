@@ -29,16 +29,24 @@
 //                    the patterns now live in BRAM instead of fabric.
 //   Functional     : agrees with pyro/overlay/model.py on identical
 //                    vectors (same CRC, same match set, same epoch).
-//   TIMING (pre-fix): FAILED at 250 MHz, WNS = -1.297 ns (Fmax ~189 MHz).
-//                    Critical path CONFIRMED by report_timing, not guessed:
-//                      bitmap_mem_reg_bram_16 -> a_dense_reg[12]/D
-//                      5.230 ns data path, 19 LOGIC LEVELS
-//                      (CARRY8 x4, LUT6 x4, LUT5 x4, LUT4, LUT3 x2, LUT2)
-//                    i.e. exactly bitmap-read -> rank -> dense-address, with
-//                    the four CARRY8 chains being the popcount adder tree.
-//                    Fixed by splitting that path across S_RANK/S_RANK2 and
-//                    removing the 256-bit barrel shifter; post-fix number
-//                    pending re-measurement.
+//   TIMING         : **MEETS 250 MHz.  WNS = +0.046 ns.**
+//
+//                    before: -1.297 ns, 19 logic levels
+//                            bitmap_mem_reg_bram_16 -> a_dense_reg[12]/D
+//                            (CARRY8 x4 = the popcount adder tree, plus the
+//                             LUT levels of the 256-bit mask and shift)
+//                    after : +0.046 ns, 12 logic levels
+//                            bitmap_mem_reg_bram_24 -> state_q_reg[0]/CE
+//                    1.343 ns recovered; LUTs went DOWN, 1,609 -> 1,225,
+//                    because the barrel shifter was pure cost.
+//
+//                    CAVEAT, and it matters: 46 ps is THIN, and this is an
+//                    out-of-context number.  OF-1 showed RM<->static
+//                    boundary paths eating far more than that in-context --
+//                    six of 21 group builds missed by 5-120 ps.  Expect the
+//                    PR link to need implementation-strategy escalation, or
+//                    better, another pipeline stage for real margin before
+//                    anything is claimed on silicon.
 //
 // ---------------------------------------------------------------------
 // EVERY memory read is REGISTERED, and that shapes the whole datapath.
