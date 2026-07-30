@@ -260,7 +260,7 @@ module pyro_overlay_engine #(
     reg [5:0] r_pc0, r_pc1, r_pc2, r_pc3, r_pc4, r_pc5, r_pc6, r_pc7;
     reg [5:0] r_partial;
     reg [2:0] r_lane;
-    reg [31:0] r_base;
+    reg [31:0] r_base, r_fail;
     reg        r_hit;
 
     // Prefix sum over the registered lane counts: shallow, and every term
@@ -369,8 +369,17 @@ module pyro_overlay_engine #(
                     end
                     S_FETCH: st <= S_RANK;       // BRAM read latency
                     S_RANK: begin
-                        // Latch the nine independent counts; the prefix sum
-                        // and the add to base happen next cycle.
+                        // CAPTURE ONLY -- deliberately no branch here.
+                        //
+                        // `hit` is d_bitmap[cur_byte], a 256:1 multiplexer
+                        // over the BRAM output.  Branching on it in this
+                        // state put that mux (MUXF7/MUXF8 pairs) in front of
+                        // the FSM logic and hence state_q's clock enable,
+                        // which measured as the critical path at +0.046 ns:
+                        //   bitmap_mem_reg_bram_24 -> state_q_reg[0]/CE
+                        // Registering it here cuts the path at the earliest
+                        // possible point -- right at the BRAM output -- and
+                        // every consumer downstream sees a plain flop.
                         r_pc0 <= pc32(lane0); r_pc1 <= pc32(lane1);
                         r_pc2 <= pc32(lane2); r_pc3 <= pc32(lane3);
                         r_pc4 <= pc32(lane4); r_pc5 <= pc32(lane5);
@@ -378,23 +387,22 @@ module pyro_overlay_engine #(
                         r_partial <= pc32(sel_lane_bits & sub_mask);
                         r_lane    <= sel_lane;
                         r_base    <= d_base;
+                        r_fail    <= d_fail;
                         r_hit     <= hit;
-                        if (hit) begin
-                            st <= S_RANK2;
+                        st        <= S_RANK2;
+                    end
+                    S_RANK2: begin
+                        if (r_hit) begin
+                            a_dense <= r_base + {23'd0, rank2};
+                            st      <= S_DWAIT;
                         end else if (state_q != 0) begin
-                            // Failure fallback: retry the SAME byte.  d_fail
-                            // is a registered read, so no async port here.
-                            state_q <= d_fail;
-                            a_state <= d_fail;
-                            st      <= S_FETCH;
+                            state_q <= r_fail;   // registered, not the mux
+                            a_state <= r_fail;
+                            st      <= S_FETCH;  // retry the SAME byte
                         end else begin
                             pos <= pos + 1;      // miss at the root
                             st  <= S_IDLE;
                         end
-                    end
-                    S_RANK2: begin
-                        a_dense <= r_base + {23'd0, rank2};
-                        st      <= S_DWAIT;
                     end
                     S_DWAIT: st <= S_DENSE;
                     S_DENSE: begin
