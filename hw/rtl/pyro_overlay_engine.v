@@ -29,24 +29,32 @@
 //                    the patterns now live in BRAM instead of fabric.
 //   Functional     : agrees with pyro/overlay/model.py on identical
 //                    vectors (same CRC, same match set, same epoch).
-//   TIMING         : **MEETS 250 MHz.  WNS = +0.046 ns.**
+//   TIMING         : **MEETS 250 MHz.  WNS = +0.176 ns.**
 //
-//                    before: -1.297 ns, 19 logic levels
-//                            bitmap_mem_reg_bram_16 -> a_dense_reg[12]/D
-//                            (CARRY8 x4 = the popcount adder tree, plus the
-//                             LUT levels of the 256-bit mask and shift)
-//                    after : +0.046 ns, 12 logic levels
-//                            bitmap_mem_reg_bram_24 -> state_q_reg[0]/CE
-//                    1.343 ns recovered; LUTs went DOWN, 1,609 -> 1,225,
-//                    because the barrel shifter was pure cost.
+//                    v1  -1.297 ns, 19 levels: bram -> a_dense_reg[12]/D
+//                        (CARRY8 x4 popcount tree + the 256-bit mask/shift)
+//                    v2  +0.046 ns, 12 levels: bram -> state_q_reg[0]/CE
+//                        after splitting rank across S_RANK/S_RANK2 and
+//                        dropping the 256-bit barrel shifter for eight
+//                        fixed 32-bit popcounts + a lane-selected prefix sum
+//                    v3  +0.176 ns, 10 levels: bram -> r_partial_reg[2]/D
+//                        after registering hit/fail so the 256:1 bitmap mux
+//                        no longer reaches the FSM or state_q's clock enable
 //
-//                    CAVEAT, and it matters: 46 ps is THIN, and this is an
-//                    out-of-context number.  OF-1 showed RM<->static
-//                    boundary paths eating far more than that in-context --
-//                    six of 21 group builds missed by 5-120 ps.  Expect the
-//                    PR link to need implementation-strategy escalation, or
-//                    better, another pipeline stage for real margin before
-//                    anything is claimed on silicon.
+//                    1.473 ns recovered in total, and LUTs went DOWN over
+//                    the same span (1,609 -> 1,225): the barrel shifter was
+//                    pure cost.  Registers rose only 1,068 -> 1,121.
+//
+//                    The remaining path is bram -> lane mux -> 32-bit mask
+//                    -> popcount -> r_partial.  If more margin is ever
+//                    wanted, register the lane select next; that is another
+//                    FSM state, and 176 ps did not seem worth it.
+//
+//                    STILL OUT-OF-CONTEXT.  OF-1 measured RM<->static
+//                    boundary paths costing 5-120 ps in-context on six of
+//                    21 group builds; 176 ps now covers that envelope with
+//                    room, but the PR link is the only real test and has
+//                    not been run.
 //
 // ---------------------------------------------------------------------
 // EVERY memory read is REGISTERED, and that shapes the whole datapath.
