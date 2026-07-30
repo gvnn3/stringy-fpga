@@ -136,6 +136,25 @@ def main(argv=None):
         "bad-offset")
     add(pdev.KIND_TABLE_STATUS_REQUEST, b"", "status-after-bad")
 
+    # A5 §5, the property that matters most: a transfer corrupted IN FLIGHT
+    # must be refused and must leave the working table alone.  Declare the
+    # good image's CRC at BEGIN, then send bytes that differ.  Corrupting the
+    # image before the host sees it proves nothing -- both ends would simply
+    # agree on the corrupted content, which is how this was first mis-tested.
+    corrupt = bytearray(image)
+    corrupt[len(corrupt) // 2] ^= 0xFF
+    add(pdev.KIND_TABLE_BEGIN,
+        struct.pack(">IIQIHH", otable.TABLE_FORMAT_VERSION, ENGINE_ID,
+                    len(image), want_id, 0, 0), "begin-corrupt")
+    off = 0
+    while off < len(corrupt):
+        n = min(cap, len(corrupt) - off)
+        add(pdev.KIND_TABLE_DATA,
+            struct.pack(">QI", off, n) + bytes(corrupt[off:off + n]),
+            "data-corrupt@%d" % off)
+        off += n
+    add(pdev.KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0), "commit-corrupt")
+
     beats = [b for f in frames for b in frame_to_beats(f)]
     print("driving %d frames / %d beats" % (len(frames), len(beats)))
 
@@ -275,6 +294,21 @@ def main(argv=None):
     else:
         print("active table survived the refused chunk (0x%08x)"
               % sta.active_table_id)
+
+    s_cc = [s for s, k, t in plan if t == "commit-corrupt"][0]
+    stcc = status_of(s_cc)
+    if stcc is None:
+        errors.append("corrupted commit produced no status reply")
+    elif stcc.active_table_id != want_id:
+        errors.append(
+            "A5 §5 VIOLATION: a transfer whose CRC differs from the declared "
+            "0x%08x was COMMITTED (active now 0x%08x) — the working table was "
+            "destroyed by a bad load" % (want_id, stcc.active_table_id))
+    else:
+        print("corrupted transfer refused; working table intact (0x%08x, "
+              "epoch %d, commit_err=%s)"
+              % (stcc.active_table_id, stcc.epoch,
+                 bool(stcc.status_flags & 0x8)))
 
     if errors:
         print("\nTBL_DIFF: FAIL")

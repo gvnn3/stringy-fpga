@@ -126,6 +126,12 @@ module pyro_overlay_engine #(
     localparam [15:0] A_TBL_BYTES  = 16'h0078;
     localparam [15:0] A_TBL_CTRL   = 16'h007C;
     localparam [15:0] A_TBL_CAPS   = 16'h0080;
+    // The CRC the HOST declared at TABLE_BEGIN.  Without it the engine can
+    // only report the CRC of whatever it happened to receive, which is
+    // self-consistent and therefore useless as a check -- measured on
+    // silicon: a transfer corrupted in flight committed cleanly and
+    // DESTROYED the working table, which is precisely what A5 §5 forbids.
+    localparam [15:0] A_TBL_EXPECT = 16'h0084;
 
     localparam integer B_LOAD   = 0;
     localparam integer B_COMMIT = 1;
@@ -133,6 +139,8 @@ module pyro_overlay_engine #(
 
     reg [31:0] status, out_count, tbl_ctrl;
     reg [31:0] out_cap;          // R45 OUT_CAP; 0 = uncapped
+    reg [31:0] expect_crc;       // host's declared TABLE_ID (A5 §5)
+    reg        commit_err;       // last commit was refused
     reg        busy, done_f, ovf_f;
     reg [31:0] active_id, shadow_crc, epoch, bytes_rcvd;
     reg        active_valid;
@@ -396,6 +404,7 @@ module pyro_overlay_engine #(
         if (!rst_n) begin
             status <= 0; out_count <= 0; tbl_ctrl <= 0;
             out_cap <= 0; busy <= 1'b0; done_f <= 1'b0; ovf_f <= 1'b0;
+            expect_crc <= 32'd0; commit_err <= 1'b0;
             sk_n <= 2'd0; sk0_d <= 8'd0; sk1_d <= 8'd0;
             sk0_l <= 1'b0; sk1_l <= 1'b0;
             active_id <= 0; shadow_crc <= 32'hFFFFFFFF; epoch <= 0;
@@ -448,6 +457,8 @@ module pyro_overlay_engine #(
             end
             if (csr_write && csr_addr == A_OUT_CAP)
                 out_cap <= csr_wdata;
+            if (csr_write && csr_addr == A_TBL_EXPECT)
+                expect_crc <= csr_wdata;
 
             if (csr_write && csr_addr == A_TBL_CTRL) begin
                 tbl_ctrl <= csr_wdata;
@@ -456,8 +467,13 @@ module pyro_overlay_engine #(
                     shadow_crc <= 32'hFFFFFFFF;
                 end
                 if (csr_wdata[B_COMMIT]) begin
+                    // The CRC gate is the whole of A5 §5.  Refusing must be
+                    // total: active_id, epoch and active_valid are all left
+                    // exactly as they were, so a bad load degrades to "no
+                    // change" rather than to a silently wrong resident table.
                     if (bytes_rcvd != 0 && hdr_engine_id == ENGINE_ID
-                        && hdr_n_states <= MAX_STATES) begin
+                        && hdr_n_states <= MAX_STATES
+                        && (~shadow_crc) == expect_crc) begin
                         active_id    <= ~shadow_crc;
                         active_valid <= 1'b1;
                         epoch        <= epoch + 1;
@@ -466,7 +482,11 @@ module pyro_overlay_engine #(
                         pos          <= 0;
                         req_done     <= 1'b0;
                         st           <= S_IDLE;
-                    end else status <= status | 32'h4;
+                        commit_err   <= 1'b0;
+                    end else begin
+                        status     <= status | 32'h4;
+                        commit_err <= 1'b1;
+                    end
                 end
             end
             case (csr_addr)
@@ -481,8 +501,8 @@ module pyro_overlay_engine #(
                 A_TBL_ACTIVE: csr_rdata <= active_id;
                 A_TBL_SHADOW: csr_rdata <= ~shadow_crc;
                 A_TBL_EPOCH:  csr_rdata <= epoch;
-                A_TBL_STATUS: csr_rdata <= {29'd0, active_valid, load_mode,
-                                            (bytes_rcvd != 0)};
+                A_TBL_STATUS: csr_rdata <= {28'd0, commit_err, active_valid,
+                                            load_mode, (bytes_rcvd != 0)};
                 A_TBL_BYTES:  csr_rdata <= bytes_rcvd;
                 A_TBL_CAPS:   csr_rdata <= MAX_STATES[31:0];
                 default:      csr_rdata <= HARNESS_VER;

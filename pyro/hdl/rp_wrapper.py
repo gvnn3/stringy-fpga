@@ -581,6 +581,7 @@ module pyro_rp #(
   localparam [15:0] CSR_TBL_BYTES  = 16'h0078;
   localparam [15:0] CSR_TBL_CTRL   = 16'h007C;
   localparam [15:0] CSR_TBL_CAPS   = 16'h0080;
+  localparam [15:0] CSR_TBL_EXPECT = 16'h0084;   // host CRC (A5 §5)
   // TBL_CTRL bits: 0 LOAD, 1 COMMIT, 2 ABORT.  BEGIN writes LOAD|ABORT in one
   // go: the engine applies the abort (clearing wr_addr/bytes_rcvd/CRC seed)
   // and latches load_mode in the same cycle, which is exactly "open a fresh
@@ -975,15 +976,30 @@ module pyro_rp #(
         // would never assert and every subsequent byte would be dropped.
         // ST_TBL_STAT issues its own first address instead.
         ST_TBL_OPEN: begin
-          if (tbl_kind != KIND_TBL_STAT_REQ) begin
+          // TABLE_BEGIN takes TWO cycles here: the host's declared CRC must
+          // reach the engine BEFORE the load opens, or the commit gate has
+          // nothing to compare against.  Staged on tbl_idx rather than a new
+          // FSM state because `state` is exactly 4 bits wide and full.
+          //
+          // TABLE_BEGIN payload (A5 §3) starts at frame offset 28:
+          //   version 28  engine_id 32  total_bytes 36  expected_crc 44
+          if (tbl_kind == KIND_TBL_BEGIN && tbl_idx == 4'd0) begin
             eng_csr_write <= 1'b1;
-            eng_csr_addr  <= CSR_TBL_CTRL;
-            eng_csr_wdata <= (tbl_kind == KIND_TBL_BEGIN)  ? TBL_OPEN
-                           : (tbl_kind == KIND_TBL_COMMIT) ? TBL_COMMIT
-                                                           : TBL_ABORT;
+            eng_csr_addr  <= CSR_TBL_EXPECT;
+            eng_csr_wdata <= {hdr[8*44 +: 8], hdr[8*45 +: 8],
+                              hdr[8*46 +: 8], hdr[8*47 +: 8]};
+            tbl_idx <= 4'd1;
+          end else begin
+            if (tbl_kind != KIND_TBL_STAT_REQ) begin
+              eng_csr_write <= 1'b1;
+              eng_csr_addr  <= CSR_TBL_CTRL;
+              eng_csr_wdata <= (tbl_kind == KIND_TBL_BEGIN)  ? TBL_OPEN
+                             : (tbl_kind == KIND_TBL_COMMIT) ? TBL_COMMIT
+                                                             : TBL_ABORT;
+            end
+            tbl_idx <= 4'd0;
+            state <= ST_TBL_STAT;
           end
-          tbl_idx <= 4'd0;
-          state <= ST_TBL_STAT;
         end
 
         // ---- A5 §3: sequential-delivery check --------------------------

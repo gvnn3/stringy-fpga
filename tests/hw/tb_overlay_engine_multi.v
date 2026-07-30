@@ -96,6 +96,10 @@ module tb_overlay_engine_multi;
             $display("FAIL: CRC %08x != model %08x", csr_rdata, EXP_CRC);
             errors = errors + 1;
         end else $display("  CRC %08x matches the model", csr_rdata);
+        // A5 §5: declare the expected CRC before committing.  Without it
+        // the engine now refuses (expect_crc resets to 0), which is the
+        // point -- a commit that cannot be checked must not happen.
+        csr_w(16'h0084, EXP_CRC);
         csr_w(16'h007C, 32'h2);
         repeat (4) @(posedge clk);
 
