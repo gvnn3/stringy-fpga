@@ -81,9 +81,9 @@
 `default_nettype none
 
 module pyro_overlay_engine #(
-    parameter integer MAX_STATES  = 4096,
-    parameter integer MAX_DENSE   = 8192,
-    parameter integer MAX_OUT     = 4096,
+    parameter integer MAX_STATES  = 40960,   // 10 URAM banks of 4096
+    parameter integer MAX_DENSE   = 40960,
+    parameter integer MAX_OUT     = 16384,
     parameter integer IMAGE_BYTES = 262144,
     parameter [31:0]  ENGINE_ID   = 32'h0A5E0001
 ) (
@@ -128,11 +128,21 @@ module pyro_overlay_engine #(
     wire       load_mode = tbl_ctrl[B_LOAD];
 
     // ---------------- table memories (no reset, registered reads) -------
-    (* ram_style = "block" *) reg [255:0] bitmap_mem [0:MAX_STATES-1];
+    // bitmap and out_idx live in URAM; the narrow arrays stay in BRAM.
+    // Measured sizing for the full 39,647-state corpus against SF2's RP
+    // budget (160 BRAM36 + 64 URAM):
+    //     bitmap 256b x 39,647 = 1.21 MB -> 40 URAM  (276 BRAM36 if block!)
+    //     oidx    64b x 39,647 = 0.30 MB -> 10 URAM  (69 BRAM36 if block)
+    //     base/fail/dense/oflat            -> 114 BRAM36
+    //   totals: 50 of 64 URAM, 114 of 160 BRAM36 -- both fit.
+    // Moving ONLY the bitmap is not enough: the remainder still needs 183
+    // BRAM36, over the 160 budget. oidx is the next largest and is 64 bits
+    // wide, so it costs a single URAM column.
+    (* ram_style = "ultra" *) reg [255:0] bitmap_mem [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  base_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  fail_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  dense_mem  [0:MAX_DENSE-1];
-    (* ram_style = "block" *) reg [63:0]  oidx_mem   [0:MAX_STATES-1];
+    (* ram_style = "ultra" *) reg [63:0]  oidx_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  oflat_mem  [0:MAX_OUT-1];
 
     reg [31:0] hdr_n_states, hdr_n_patterns, hdr_engine_id, hdr_version;
@@ -198,12 +208,14 @@ module pyro_overlay_engine #(
     // matches on the first run of the pipelined version -- caught only
     // because the testbench had been fixed to fail on a wrong match set.
     localparam [3:0] S_IDLE  = 4'd0,
-                     S_FETCH = 4'd1,   // wait: bitmap/base/fail in flight
+                     S_FETCH = 4'd1,   // wait 1: bitmap (URAM) in flight
+                     S_FETCH2= 4'd10,  // wait 2: URAM cascade output reg
                      S_RANK  = 4'd2,   // valid; latch per-lane popcounts
                      S_RANK2 = 4'd9,   // prefix-sum the rank; issue dense
                      S_DWAIT = 4'd3,   // wait: dense in flight
                      S_DENSE = 4'd4,   // valid; issue oidx read
-                     S_OWAIT = 4'd5,   // wait: oidx in flight
+                     S_OWAIT = 4'd5,   // wait 1: oidx (URAM) in flight
+                     S_OWAIT2= 4'd11,  // wait 2: URAM cascade output reg
                      S_OIDX  = 4'd6,   // valid; maybe start emitting
                      S_FWAIT = 4'd7,   // wait: oflat in flight
                      S_EMIT  = 4'd8;   // valid; emit one result
@@ -394,7 +406,13 @@ module pyro_overlay_engine #(
                         if (in_last) req_done <= 1'b1;
                         st <= S_FETCH;
                     end
-                    S_FETCH: st <= S_RANK;       // BRAM read latency
+                    // Two waits, not one: a URAM cascade this deep needs an
+                    // output register, and guessing one cycle would repeat
+                    // the off-by-one that produced zero matches earlier.
+                    // Harmless when the array falls back to BRAM (small
+                    // configs) -- just a cycle slower.
+                    S_FETCH:  st <= S_FETCH2;
+                    S_FETCH2: st <= S_RANK;
                     S_RANK: begin
                         // CAPTURE ONLY -- deliberately no branch here.
                         //
@@ -438,7 +456,8 @@ module pyro_overlay_engine #(
                         pos     <= pos + 1;
                         st      <= S_OWAIT;
                     end
-                    S_OWAIT: st <= S_OIDX;
+                    S_OWAIT:  st <= S_OWAIT2;
+                    S_OWAIT2: st <= S_OIDX;
                     S_OIDX: begin
                         if (d_oidx[63:32] != 32'd0) begin
                             emit_off  <= d_oidx[31:0];

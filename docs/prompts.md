@@ -1669,3 +1669,7 @@ Add another pipeline stage for margin
 
 Continue
 
+## 2026-07-30 12:06:50
+
+Move the bitmap to URAM for the full corpus table
+
