@@ -1,6 +1,9 @@
 # Amendment A5 (DRAFT) — overlay table-write protocol and the TABLE_ID identity layer
 
-- **Status:** DRAFT for owner review. **Not authorized.** PYRO's v2.0.0
+- **Status:** ☑ **APPROVED by the owner, 2026-07-30.** The loadable-table
+  slot is open, with the §2–§5 identity layer as its binding precondition:
+  no table-write path may ship without content-and-epoch attestation.
+  Implementation began the same day (`pyro/overlay/`). PYRO's v2.0.0
   ruling removed the programmable engine and `snort-rule-offload` §9 puts
   "a programmable rule engine or loadable rule/AC-table blob (runtime
   `TABLE_WRITE`-style frame kinds)" explicitly out of scope pending exactly
@@ -274,9 +277,9 @@ than it is:
 
 ## 9. Decision requested
 
-☐ **APPROVE A5** — open the loadable-table slot with the identity layer of
-§2–§5 as its precondition, so no implementation can ship a table-write path
-without content-and-epoch attestation.
+☑ **APPROVE A5** (owner, 2026-07-30) — open the loadable-table slot with
+the identity layer of §2–§5 as its precondition, so no implementation can
+ship a table-write path without content-and-epoch attestation.
 
 ☐ **REJECT A5** — the v2.0.0 no-loadable-data-engine ruling stands, and
 FPGA functionality scheduling stays confined to minute-scale PR rotation
