@@ -37,6 +37,12 @@ the classic results may not transfer unchanged:
 
 from __future__ import annotations
 
+from .gang import (  # noqa: F401
+    GangTenant,
+    build_pipeline,
+    header_prefilter_pipeline,
+    view_meet,
+)
 from .tenants import (  # noqa: F401
     FRAME_OFFSETS,
     Tenant,
@@ -50,6 +56,10 @@ from .tenants import (  # noqa: F401
 
 __all__ = [
     "FRAME_OFFSETS",
+    "GangTenant",
+    "build_pipeline",
+    "header_prefilter_pipeline",
+    "view_meet",
     "Tenant",
     "TenantDemand",
     "build_all_tenants",

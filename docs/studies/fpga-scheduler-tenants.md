@@ -127,6 +127,59 @@ be a false match, not an over-approximation the host re-checks.
    co-residency, and it is not optional — a fixed-offset matcher fed a
    payload buffer is silently wrong.
 
+## 2a. Tenant 5 — the gang-scheduled pipeline
+
+`pyro/sched/gang.py` adds `header-match -> snortpf/<group> -> host` as an
+**atomic** tenant: a set whose members must be co-resident to deliver their
+value (Ousterhout's coscheduling condition, on an FPGA region).
+
+**Why it is a genuine gang, not an optimisation.** A Snort rule is
+`header AND content`. The fabric evaluates content; the host evaluates the
+header half and *discards* every nomination whose header predicate fails.
+With both stages resident the conjunction is computable on-chip and those
+doomed nominations are never emitted. Neither stage alone can do it —
+and `header-match` alone is worth ~nothing as a prefilter, because headers
+match constantly. Its area is spent and buys nothing until its partner
+lands, which is exactly what makes partial residency *worse than useless*
+rather than merely partial.
+
+**The measured prize, and the non-obvious result.** "Waste" is the share of
+a group's rules whose header predicate cannot hold for a flow:
+
+| group | port 80 | port 22 | port 1521 |
+|---|---|---|---|
+| `$HTTP_PORTS/0` | 0% | 100% | 100% |
+| `literal/0` | 100% | 100% | 100% |
+| `any/0` | **0%** | **0%** | **0%** |
+
+So the gang bonus for `pipeline/any/0` is **exactly zero on every mix** —
+`any/0` is the highest-coverage group, the one a good scheduler picks, and
+the header stage buys it nothing while costing 7,898 LUTs. Conversely
+`pipeline/$HTTP_PORTS/0` on SSH/Oracle traffic has a *large* bonus while
+the group alone scores zero coverage.
+
+**The gang's marginal value is highest exactly when its partner is least
+useful.** That inverts the intuition: the pipeline is a mitigation for
+mismatched residency, not a general win, and a scheduler that gangs
+unconditionally spends area speeding up a configuration it should have
+fixed by swapping instead.
+
+**Starvation, measured.** With the pipeline at 13,361 LUTs against two
+small tenants totalling 609, a greedy value-density packer starves the gang
+in the window where it fits alone but not after the small ones are
+admitted — a **191× value loss** at that budget. Reported honestly: the
+window is *narrow* here (~12 LUTs wide) precisely because this gang's value
+density is high enough that greedy usually admits it anyway. The pathology
+is real and reproducible; its extent depends on the value distribution, and
+the fix is admission control that reserves area, not a better ranking.
+
+**Feasibility is checked, not assumed.** Members must agree on input view.
+`header-match` needs the frame from byte 0; `snortpf` needs reassembled L4
+payload; frame ⊇ payload, so the gang is feasible and its view is `frame`.
+A gang mixing host buffers with frame bytes raises at construction — a
+fixed-offset matcher fed a payload buffer is silently wrong, and silent is
+the one thing it must not be.
+
 ## 3. Other tenants that could use the Snort data
 
 Ordered by how much new machinery they need. Everything in the first group
