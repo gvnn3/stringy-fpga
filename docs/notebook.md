@@ -2744,3 +2744,57 @@ The missing skid is the one to remember: the table loaded, committed and
 attested **perfectly**, and matched nothing, because the wrapper commits
 a beat before it can observe `in_ready` and the engine dropped nearly
 every byte. Everything that reports success reported success.
+
+## 2026-07-30 (cont.) — How the overlay gets used, and where the programs come from
+
+The owner asked the right orienting question — *where do the programs
+come from?* — and the answer is worth recording because it is the whole
+architecture in one sentence: **a "program" here is a table, not a
+bitstream.** It is data written to a resident engine, not gates
+reconfigured. Nobody writes an FPGA program by hand, and after the
+engine ships nobody runs Vivado either.
+
+The chain, every stage already in the repo:
+
+1. **Source** — `third_party/snort3-community-rules/snort3-community.rules`.
+   Ordinary Snort text rules, maintained by the community, refreshed
+   weekly. This is the upstream "program source."
+2. **Triage** (`pyro/snort/triage.py`) — parse; decide expressibility.
+3. **Lowering** (`pyro/snort/lowering.py`) — collapse each content chain
+   to one literal anchor + admission conditions. Deliberately
+   over-approximate: SR3 makes a miss unacceptable, a spurious
+   nomination merely wasteful.
+4. **Packing** (`pyro/snort/groups.py`) — rules grouped by header
+   predicate into slot-budget-sized sets; the 21 groups.
+5. **Compile** (`pyro/overlay/table.py`) — a group's anchors become an
+   Aho-Corasick automaton serialized to an image whose CRC-32C *is* its
+   `TABLE_ID`. The only FPGA-specific step, and it is a compiler pass:
+   no Vivado, no 51-minute link.
+6. **Load** (`pyro.device.load_table`) — stream the image to the card.
+   Measured: 12.3 ms for a small group end-to-end; 0.66 ms of wire time
+   for the full 1.64 MB corpus table.
+
+At runtime the engine stays resident and *which rules it holds* is the
+thing that changes. The value-aware scheduler watches the observed port
+mix, scores each group by how many of its rules can actually fire on
+current traffic, and writes a new table when a challenger clears the 2×
+bar. The FPGA nominates; Snort re-verifies; every match carries the
+EPOCH so nominations in flight across a swap attribute to the exact
+table that produced them — all three properties now verified on the
+card.
+
+Why the millisecond matters: the frontier constant `s/P ≈ 0.3` says
+JTAG's 13.6 s confines scheduling to phases over ~45 s, which almost no
+real traffic honours. A ~1 ms table write needs phases over ~3 ms.
+Four orders of magnitude, and it moves functionality scheduling from
+"minutes-scale workloads only" into per-burst territory. The mechanism
+now exists in fabric rather than in arithmetic.
+
+And the standing caveat, so this entry cannot be misread: the Snort
+ruleset is the *workload*. The subject is whether OS scheduler
+techniques transfer to run-time FPGA functionality swapping; Snort earns
+its place by being large, naturally partitioned, and demand-driven. The
+limits that ship today: one table resident at a time (banking is what
+would let a swap overlap serving), ~8 cycles/byte scan rate, and
+anchor-only matching (costs precision, never completeness — 6 extra
+nominations on one group, zero misses anywhere, measured).
