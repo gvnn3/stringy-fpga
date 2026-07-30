@@ -1609,3 +1609,15 @@ Merge this back to phase2-snort and then update the working doc.
 
 Do the rule-packing experiment in a branch.
 
+## 2026-07-30 00:35:12
+
+Take a step back.  The goal of these experiments is to try to use OS scheduler techniques to swap functionality on the FPGA at run time, likley by using overlays.  Rethink the experiments from this point of view.
+
+## 2026-07-30 00:41:53
+
+Characterize the switch-cost curve and set up the two tenants, and add the third and fourth tennants, matching on IP and matching on a packet header.
+
+## 2026-07-30 00:42:20
+
+Characterize the switch-cost curve and set up the two tenants, and add the third and fourth tennants, matching on IP and matching on a packet header.  Suggest other tennants that can use the snort data.
+
