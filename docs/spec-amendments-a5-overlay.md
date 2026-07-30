@@ -478,11 +478,43 @@ implemented around:
    mis-writing the shadow. True restartability needs a commit-time CRC
    pass over the assembled image.
 
+### On silicon
+
+Full-corpus engine, PR-linked and resident on the U250 (2026-07-30):
+
+| | |
+|---|---|
+| fmax in context | **251.32 MHz** (+0.021 ns at the 250 MHz target) |
+| `met_timing` / `pr_verified` | **True / True** |
+| LUT / FF | 11,332 / 4,279 (engine + `rp_wrapper`) |
+| partial bitstream | 5,145,196 B |
+| `TABLE_CAPS` read back | **40960** — the full-corpus build, confirmed |
+| table load + commit | **12.3 ms** for 2,564 B over the §3 protocol |
+
+Verified on the card: the engine comes up claiming **nothing**
+(`active_table_id = 0`, `epoch = 0`, `active_valid` false), the committed
+`TABLE_ID` equals the host's own CRC-32C, the epoch advances and reaches
+`MATCH_REPLY`, nominations equal `pyro.overlay.model` exactly on three
+subjects, and a transfer corrupted **in flight** is refused with the
+working table and its epoch untouched.
+
+That last one is a defect this bring-up found and fixed.  Before it, the
+engine committed whatever arrived and reported the CRC of the bytes it
+received — self-consistent, and therefore no check at all.  A corrupted
+transfer replaced the working table and bumped the epoch.  `A_TBL_EXPECT`
+(0x0084) now carries the host's declared CRC, written by the wrapper out
+of the `TABLE_BEGIN` payload before the load opens, and the commit
+requires a match.
+
 ### Still open
 
-**On-hardware bring-up.** Load the partial, write a real table, confirm
-`TABLE_ID`/`EPOCH` and nomination against the model on live traffic.
-Everything above is simulation.
+- **§3 amendments** for the three divergences listed above (`0x007C`,
+  the 32 B status reply, sequential-only `TABLE_DATA`).
+- **Throughput.** ~8 cycles/byte; the loop-carried state dependency makes
+  overlapping independent bytes real work, not a tweak.
+- **One table resident at a time.** Banking is what would let a swap
+  overlap serving, which the working-set study said is what actually
+  protects coverage.
 
 ## 9. Decision requested
 

@@ -2700,3 +2700,47 @@ a slow run until it cost a 25-minute timeout.
 
 916 unit tests green; wide RTL differential passes (5 subjects, 85
 matches, CRC 0x9c8f7ce9).
+
+## 2026-07-30 (cont.) — Overlay engine on silicon; the road, and a defect it found
+
+The engine is resident on the U250 and matching. `TABLE_CAPS` reads
+40960, so this is genuinely the full-corpus build; a 2,564 B table loads
+and commits in **12.3 ms**; identity agrees end to end; nominations equal
+the model exactly. In context: **251.32 MHz**, `pr_verified`, 11,332 LUT
+/ 4,279 FF, 5.1 MB partial.
+
+Getting there took building the road. A5 §3's transport was specified and
+implemented on neither side — `rp_wrapper` could drive seven CSR
+addresses and none was in `0x0068`–`0x0080`, so `TBL_CTRL[LOAD]` was
+unreachable and no table could ever be written. I had spent a day making
+the destination faster without checking that anything could reach it.
+
+Then bring-up found the defect that mattered. The engine committed
+whatever it received and reported *that* CRC — self-consistent, and
+therefore not a check. On the card, a transfer corrupted in flight
+committed cleanly, replaced the working table, and advanced the epoch:
+exactly what A5 §5 forbids. `A_TBL_EXPECT` now carries the host's
+declared CRC and the commit gate compares against it; refusal leaves
+`active_id`, `epoch` and `active_valid` untouched.
+
+Two process notes worth more than the result.
+
+**My first version of that test was a tautology.** It corrupted the image
+before handing it to `load_table`, so the host computed its expected CRC
+from the corrupted bytes and both ends agreed. It reported a violation
+that wasn't one, and it would equally have reported *no* violation if the
+gate had existed. The corruption has to happen in transit for the
+question to mean anything.
+
+**Four of the five bugs were interface assumptions, not logic.** The
+double-driven `eng_csr_addr`; a registered `csr_rdata` where `ST_PERF`
+assumes combinational; a streaming engine that never asserted BUSY under
+a wrapper that waits for it; and a missing skid buffer whose necessity
+was written in the docstring of the very rewrite that required it. None
+was visible to the engine differential, because the engine was never what
+was broken. Two were documented hazards I had read and not applied.
+
+The missing skid is the one to remember: the table loaded, committed and
+attested **perfectly**, and matched nothing, because the wrapper commits
+a beat before it can observe `in_ready` and the engine dropped nearly
+every byte. Everything that reports success reported success.
