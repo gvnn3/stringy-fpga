@@ -18,20 +18,22 @@
 
 ## Verdict
 
-**Scheduling separates from a static pin — decisively, and on every set.**
+**Scheduling separates from the best fixed set — on both non-degenerate
+sets.**
 
-| tenant set | kinds | views | LUT spread | best policy | gain over static pin |
+| tenant set | kinds | views | LUT spread | gain at 50% budget | at 75% |
 |---|---|---|---|---|---|
-| control (same-kind) | 1 | 1 | 1.2× | greedy-value | **+181%** |
-| treatment (matched) | 3 | 2 | 1.0× | greedy-value | **+177%** |
-| treatment (skewed) | 4 | 3 | 658× | greedy-value | +194%\* |
+| control (same-kind) | 1 | 1 | 1.2× | **+156%** | +45% |
+| treatment (matched) | 3 | 2 | 1.0× | **+84%** | +42% |
+| treatment (skewed) | 4 | 3 | 658× | **+0%** — no separation | +0% |
 
-\* skewed set's number is not comparable — see §3.
+Gain is larger at tighter budgets, which is what one would expect:
+scheduling matters most under capacity pressure.
 
 **The A5 flat result was interpretation (b): that workload could not
 distinguish schedulers.** It was not a fact about the machine. Give the
-region tenants that actually differ in what they want *over time*, and a
-value-aware policy beats a static pin by ~3×.
+region tenants that differ in what they want *over time*, and a
+value-aware policy beats even the best fixed set by 1.4–2.6×.
 
 And the separation appears on the **control** set — homogeneous, one kind,
 one input view, 1.2× footprint spread. So the effect is **capacity- and
@@ -57,34 +59,39 @@ been — it means the result should generalise to any workload with phases.
 
 ## 2. Results
 
+Normalised capture; `static-set` (best fixed set) is the baseline and
+`static-pin` is shown only to expose the packing confound it carries.
+
 Control set (3 × pattern-set, 1.2× spread):
 
-| budget | static-pin | greedy-value | lru | round-robin |
-|---|---|---|---|---|
-| 50% | 33.3% | **87.3%** | 31.3% | 37.5% |
-| 75% | 33.3% | **93.7%** | 64.6% | 72.9% |
+| budget | static-pin | **static-set** | greedy-value | lru | round-robin |
+|---|---|---|---|---|---|
+| 50% | 31.1% | **33.3%** | **85.5%** | 33.3% | 32.3% |
+| 75% | 31.1% | **64.4%** | **93.5%** | 64.4% | 62.9% |
 
 Treatment, footprint-matched (3 kinds, 2 views, 1.0× spread):
 
-| budget | static-pin | greedy-value | lru | round-robin |
-|---|---|---|---|---|
-| 50% | 33.3% | **59.9%** | 32.3% | 35.4% |
-| 75% | 33.3% | **92.1%** | 64.6% | 69.7% |
+| budget | static-pin | **static-set** | greedy-value | lru | round-robin |
+|---|---|---|---|---|---|
+| 50% | 25.0% | **32.3%** | **59.3%** | 32.3% | 30.5% |
+| 75% | 25.0% | **64.6%** | **91.7%** | 64.6% | 61.1% |
 
 Three secondary results worth keeping:
 
-- **LRU is barely better than a static pin, and at 50% budget it is
-  *worse* (−3 to −6%).** Recency is a poor proxy for value when phases
-  rotate: LRU keeps what was recently useful precisely as it stops being
-  useful. This is the same failure mode as the shipped SR10 scheduler —
-  optimising a signal correlated with value rather than value itself.
-- **Round-robin pays 24 switches to greedy's 4–6** and still loses. At
-  13.6 s a switch, quantum-based fairness is unaffordable; it is the
-  §1-of-the-tenants-study efficiency table showing up as a policy result.
-- **`capture_min` matters.** Greedy reaches 85–87% *minimum* per tenant at
-  75% budget, so no tenant is starved; static-pin's minimum is 0% by
-  construction — it serves one tenant and abandons the rest. A mean alone
-  would hide that.
+- **LRU delivers exactly nothing (+0.0%) over the best fixed set.** It
+  converges to the same resident set and then stops adapting: recency is a
+  poor proxy for value when phases rotate, because LRU keeps what was
+  recently useful precisely as it stops being useful. Same failure mode as
+  the shipped SR10 scheduler — optimising a signal *correlated* with value
+  rather than value itself.
+- **Round-robin is actively worse (−2 to −6%)**, paying 21 switches to
+  greedy's 3–6 to achieve it. At 13.6 s a switch, quantum-based fairness is
+  unaffordable; this is the efficiency table from the tenants study showing
+  up as a policy result.
+- **`capture_min` matters.** Greedy reaches 84–87% *minimum* per tenant at
+  75% budget, so no tenant is starved; every other policy's minimum is 0%
+  — they serve a fixed subset and abandon the rest. A mean alone hides
+  that, and fairness is a first-class scheduling property.
 
 ## 3. Two degeneracies found, and what they mean
 
@@ -121,12 +128,13 @@ as a third condition because its degeneracy is informative.
 - The A5 study's "no policy beats a static pin" should be read as
   workload-limited, not machine-limited. Its conclusion about *coverage*
   stands; its implication about *scheduling* does not.
-- **Scheduling is worth doing on this region**, and the gain is large
-  (~3×) even at a 13.6 s switch cost — because the phases here are minutes
-  long, which is the one regime PR can serve. Shorter phases would erase
-  it, and that is the overlay argument restated.
+- **Scheduling is worth doing on this region** — 1.4–2.6× over the best
+  fixed set at a 13.6 s switch cost — but *only because the phases here are
+  minutes long*, which is the one regime PR can serve. `switch-cost-frontier.md`
+  quantifies exactly that: the gain survives while `s/P ≲ 0.3` and is gone
+  by 0.75.
 - **Value-aware beats recency-aware beats fair-share**, consistently. The
   same ordering the S3 scheduler fix found, now on an independent workload.
-- Next: sweep switch cost to find where greedy's advantage collapses. That
-  locates the phase-length/switch-cost frontier and turns "overlays would
-  help" into a bound.
+- **Done next, in `switch-cost-frontier.md`:** the frontier is `s/P ≈ 0.3`,
+  which puts JTAG PR outside every timescale below a minute and is the
+  measured basis for abandoning it as the scheduling mechanism.
