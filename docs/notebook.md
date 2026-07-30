@@ -2644,10 +2644,59 @@ that a table write is a context switch four orders of magnitude cheaper
 than partial reconfiguration, which is what moves `s/P` off the frontier
 — now has a circuit behind it that meets timing.
 
-**Open:** on-hardware bring-up. Load the partial, write a real table
-through the §3 protocol, confirm `TABLE_ID`/`EPOCH` attestation and
-nomination against the model on live traffic. The bitstream is verified
-but has not been on the card.
+**Correction, found during bring-up:** that link measured a **4096-state**
+engine, not the full corpus. `pyro_circuit_overlay_top.v` hardcoded
+`MAX_STATES(4096)` from when the bitmap was still headed for BRAM; the
+URAM move removed the reason and the override outlived it. So the OOC
+numbers are full-corpus but the in-context one was not, and "the full
+corpus fits the region and runs at rate" was not supported. Caught by a
+`TABLE_CAPS` read-back of 4096. A parameter that encodes a constraint
+should die with the constraint.
+
+**And the engine was unreachable.** A5 §3's wire protocol existed only on
+paper. `rp_wrapper` could drive seven CSR addresses, none in
+`0x0068`–`0x0080`; the host stopped at kind `0x07`. `TBL_CTRL[LOAD]`
+could never be asserted, so no table could ever be written. The engine
+had been built, timed, and verified against the model — and none of that
+could reveal there was no road to it. I had spent a day making the
+destination faster without checking that anything could get there.
+
+Four defects appeared within an hour of driving real frames, all the same
+species: an **interface** assumption that held for the generated engines
+and quietly did not hold for this one.
+
+- `ST_TBL_OPEN` drove `eng_csr_addr` twice, so the `TBL_CTRL` write
+  retargeted to the read-only `TABLE_ACTIVE`.
+- This engine registers `csr_rdata` (2 cycles); `ST_PERF` assumes the
+  generated engine's combinational read (1 cycle).
+- The wrapper drives RESET → OUT_CAP → START → wait BUSY → feed → wait
+  DONE. This engine is a streaming scanner and never asserted BUSY, so
+  the wrapper parked forever. Sharing a port list is not sharing a
+  protocol — which is precisely what the alias comment had asserted.
+- `_engine_backpressure`'s docstring *states* that the engine must hold
+  the in-flight beat in a skid. This engine had none and is busy ~8
+  cycles per byte, so it dropped nearly every byte: the table loaded,
+  committed and attested perfectly, and matched **nothing**. A 1-deep
+  skid is not enough — the master can be one beat past the ready it saw —
+  so the queue is depth 2 with `in_ready` deasserting at depth 1.
+
+The last one turns `in_ready` into a credit rather than "taking it now",
+which the engine testbench then violated by holding valid until ready
+(enqueueing each byte two or three times). Both sides now say so in
+writing.
+
+Worth keeping: every one of these was invisible to the engine
+differential, because the engine was never what was broken. And two of
+them were documented hazards I had read and not applied.
+
+`tests/hw/overlay_table_diff.py` now drives the whole wire protocol under
+xsim and passes — identity end to end, epoch in `MATCH_REPLY`, matches
+equal to the model, and an out-of-order chunk refused with the active
+table intact. `tb_pyro_rp_wd.v` adds a watchdog, because the shared
+beat-player spins forever on a stalled FSM and a hang looked exactly like
+a slow run until it cost a 25-minute timeout.
+
+**Open:** the corrected full-corpus link, then on-hardware bring-up.
 
 916 unit tests green; wide RTL differential passes (5 subjects, 85
 matches, CRC 0x9c8f7ce9).

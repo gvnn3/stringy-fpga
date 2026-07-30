@@ -382,9 +382,20 @@ SLRs; the spread is routing luck, not design quality.  With zero logic
 levels on the worst path, **there is nothing left to optimize in the
 RTL** — what remains is placement.
 
-### In context — the number that decides
+### In context — a result, and what it was actually a result *for*
 
-The engine PR-links against the locked static and **meets timing**:
+**Correction.** The first in-context link was run against
+`pyro_circuit_overlay_top.v`, which hardcoded `MAX_STATES(4096)`.  That
+override dated from when the bitmap was still headed for BRAM and ~530
+tiles looked unavoidable; once the bitmap moved to URAM the constraint
+disappeared but the override stayed.  So the link below measured a
+**4096-state, BRAM-only** engine — roughly a tenth of the corpus — not
+the 39,647-state URAM table.  It was caught by a `TABLE_CAPS` read-back
+of 4096 during bring-up.  The out-of-context numbers were never affected
+(they used the RTL defaults), but the sentence "the full corpus fits the
+region and runs at rate" was not supported by this link.
+
+The 4096-state result, kept because it is still a real data point:
 
 | | |
 |---|---|
@@ -396,24 +407,82 @@ The engine PR-links against the locked static and **meets timing**:
 | partial bitstream | 3,646,240 B |
 | link time | 2,844 s |
 
-This is the measurement that was missing, and it says the OOC anxiety was
-misplaced.  Constraining placement to the `pyro_rp` pblock on SLR2 —
-which concentrates the 50 URAMs and 108 BRAM36s instead of letting them
-scatter across three SLRs — cost nothing relative to the unconstrained
-OOC range of +0.089…+0.212 ns, and the RM↔static boundary paths (OF-1:
-5–120 ps on six of 21 group builds) did not push it negative.  A
-route-bound design got *better* routes once its placement was bounded.
+What it does establish: a PR link of this engine against the locked
+static closes comfortably, and the RM↔static boundary paths (OF-1: 5–120
+ps on six of 21 group builds) do not eat the margin.  What it does *not*
+establish is anything about the full-corpus configuration, which carries
+50 URAMs the linked design did not contain.  The full-corpus link is
+running and the number will be recorded when it lands.
 
-So the full-corpus overlay engine, with the uncapped 39,647-state trie
-resident in URAM, fits the region and runs at rate.
+### §3 was specified but never built
+
+Bring-up found that the amendment's wire protocol existed only on paper.
+`rp_wrapper` could drive seven CSR addresses, all hardcoded in its
+perf/control FSM, and none of them was in `0x0068`–`0x0080`; the host
+stopped at kind `0x07`.  `TBL_CTRL[LOAD]` was unreachable, so no table
+could be written and `active_valid` could never leave 0.  The engine had
+been built, timed, and differentially verified against the model, and
+none of that could reveal that there was no road to it.
+
+Four defects surfaced within an hour of driving real frames, and they
+share a theme worth stating: each is an **interface** assumption that
+held for the generated engines and silently did not hold for this one.
+
+- `ST_TBL_OPEN` drove `eng_csr_addr` twice, retargeting the `TBL_CTRL`
+  write to the read-only `TABLE_ACTIVE`.
+- This engine **registers** `csr_rdata` (2-cycle round trip); `ST_PERF`
+  assumes the generated engine's combinational read. The table read-out
+  now spaces its reads correctly. **`ST_PERF` is still wrong for this
+  engine** and is left that way deliberately rather than changed
+  silently — the R45a counters are not part of §3.
+- The wrapper drives every engine through RESET → OUT_CAP → START → wait
+  BUSY → feed → wait DONE. This one is natively a streaming scanner and
+  never asserted BUSY, so the wrapper parked forever. Sharing a port list
+  is not sharing a protocol — which is exactly what the alias comment
+  had claimed.
+- `_engine_backpressure`'s own docstring requires the engine to hold the
+  in-flight beat in a skid, because `ST_FEED` commits `eng_in_valid` and
+  `feed_idx` before it can observe `in_ready`. This engine had no skid
+  and is busy ~8 cycles per byte, so it dropped nearly every byte: the
+  table loaded, committed and attested **perfectly**, and matched
+  nothing. A 1-deep skid is insufficient — the master can be one beat
+  past the ready it saw — so the queue is depth 2 with `in_ready`
+  deasserting at depth 1.
+
+That last one makes `in_ready` a **credit**, not "taking it now", and
+every cycle `in_valid` is high with room is a distinct beat. That is how
+`rp_wrapper` drives it. A conventional hold-until-ready master enqueues
+each byte repeatedly, which is what the engine testbench had been doing
+once the queue existed; it was adapted and the contract is now written
+on both sides.
+
+`tests/hw/overlay_table_diff.py` drives the whole path under xsim and
+passes: identity end to end, epoch attribution in `MATCH_REPLY`, matches
+equal to the model, and an out-of-order chunk refused with the active
+table intact.
+
+**Divergences from §3 as written**, to be amended rather than
+implemented around:
+
+1. §3.1 assigns `0x007C` to `TABLE_BYTES_HI`. The engine implements
+   `TBL_CTRL` there and a single 32-bit counter at `0x0078`; 32 bits
+   covers the 2.1 MB maximum and the load needs a control register.
+2. `TABLE_STATUS_REPLY` is 32 B of what the device actually knows, not
+   §3's 40 B — the engine has no CSR for `engine_id`,
+   `table_format_version`, or `capacity_patterns`, and emitting zeros
+   for them would read as "no engine".
+3. `TABLE_DATA` is **sequential-only**. §3 advertises offset-addressed
+   idempotent writes, but the engine streams its CRC as bytes arrive, so
+   it can only accept in-order delivery. The wrapper validates each
+   chunk's offset against `bytes_rcvd` and refuses a mismatch rather than
+   mis-writing the shadow. True restartability needs a commit-time CRC
+   pass over the assembled image.
 
 ### Still open
 
-Nothing in the timing argument.  What remains before this can be called
-silicon-ready is **on-hardware bring-up**: load the partial, write a real
-table through the §3 protocol, and confirm `TABLE_ID`/`EPOCH` attestation
-and nomination against the model on live traffic.  The bitstream exists
-and is verified; it has not yet been on the card.
+**On-hardware bring-up.** Load the partial, write a real table, confirm
+`TABLE_ID`/`EPOCH` and nomination against the model on live traffic.
+Everything above is simulation.
 
 ## 9. Decision requested
 
