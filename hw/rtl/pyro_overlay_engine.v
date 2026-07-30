@@ -158,9 +158,14 @@ module pyro_overlay_engine #(
 
     // ---------------- load path -----------------------------------------
     reg [31:0]  wr_addr;
-    reg [31:0]  word_sr;      // 4-byte accumulator (base/dense/fail/oflat)
-    reg [255:0] bm_sr;        // 32-byte accumulator (bitmap)
-    reg [63:0]  oidx_sr;      // 8-byte accumulator (out_idx)
+    // The load-path accumulators have the same shape of problem as a_state:
+    // one register feeding write-data pins across every bank of an array, so
+    // the path is route-bound (91% route, 1 logic level).  Replicating them
+    // is a physical optimization only.
+    (* max_fanout = 16 *) reg [31:0]  word_sr;   // 4-byte accumulator
+                                                 // (base/dense/fail/oflat)
+    (* max_fanout = 16 *) reg [255:0] bm_sr;     // 32-byte accum (bitmap)
+    (* max_fanout = 16 *) reg [63:0]  oidx_sr;   // 8-byte accum (out_idx)
     reg [1:0]   wr_bcnt;
 
     function [31:0] crc32c_byte;
@@ -239,7 +244,17 @@ module pyro_overlay_engine #(
     reg        req_done;
 
     // Registered BRAM ports: address regs in, data regs out.
-    reg [31:0]  a_state, a_dense, a_oidx, a_oflat;
+    //
+    // a_state addresses four arrays at once -- bitmap (40 URAM288), oidx (10
+    // URAM288), base and fail (BRAM) -- so one register drives address pins
+    // spread right across the region.  Measured, that route was 91% of a
+    // 3.411 ns critical path with a single logic level: the delay is
+    // distance, not computation.  max_fanout lets synthesis replicate the
+    // register so each cluster is driven by a nearby copy.  This is a
+    // physical optimization only; the replicas are functionally identical
+    // and the netlist semantics do not change.
+    (* max_fanout = 16 *) reg [31:0] a_state;
+    reg [31:0]  a_dense, a_oidx, a_oflat;
     reg [255:0] d_bitmap, d_bitmap_q;
     reg [31:0]  d_base, d_fail, d_dense, d_oflat;
     reg [63:0]  d_oidx, d_oidx_q;
