@@ -138,11 +138,19 @@ module pyro_overlay_engine #(
     // Moving ONLY the bitmap is not enough: the remainder still needs 183
     // BRAM36, over the 160 budget. oidx is the next largest and is 64 bits
     // wide, so it costs a single URAM column.
-    (* ram_style = "ultra" *) reg [255:0] bitmap_mem [0:MAX_STATES-1];
+    // cascade_height caps how deep Vivado chains URAM primitives.  Left
+    // unbounded it built a SEVEN-deep cascade whose ripple is COMBINATIONAL:
+    // measured 14 logic levels of which URAM288 x7, 3.25 ns of logic, and
+    // WNS back to -1.297 ns.  Capping the chain trades a little output
+    // muxing for a far shorter path; the URAM COUNT is unchanged, since
+    // that is set by capacity, not by how the primitives are wired.
+    (* ram_style = "ultra", cascade_height = 2 *)
+    reg [255:0] bitmap_mem [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  base_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  fail_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  dense_mem  [0:MAX_DENSE-1];
-    (* ram_style = "ultra" *) reg [63:0]  oidx_mem   [0:MAX_STATES-1];
+    (* ram_style = "ultra", cascade_height = 2 *)
+    reg [63:0]  oidx_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  oflat_mem  [0:MAX_OUT-1];
 
     reg [31:0] hdr_n_states, hdr_n_patterns, hdr_engine_id, hdr_version;
@@ -232,17 +240,19 @@ module pyro_overlay_engine #(
 
     // Registered BRAM ports: address regs in, data regs out.
     reg [31:0]  a_state, a_dense, a_oidx, a_oflat;
-    reg [255:0] d_bitmap;
+    reg [255:0] d_bitmap, d_bitmap_q;
     reg [31:0]  d_base, d_fail, d_dense, d_oflat;
-    reg [63:0]  d_oidx;
+    reg [63:0]  d_oidx, d_oidx_q;
 
     always @(posedge clk) begin
-        d_bitmap <= bitmap_mem[a_state];
-        d_base   <= base_mem  [a_state];
-        d_fail   <= fail_mem  [a_state];
-        d_dense  <= dense_mem [a_dense];
-        d_oidx   <= oidx_mem  [a_oidx];
-        d_oflat  <= oflat_mem [a_oflat];
+        d_bitmap   <= bitmap_mem[a_state];
+        d_bitmap_q <= d_bitmap;      // isolate the URAM cascade ripple
+        d_base     <= base_mem  [a_state];
+        d_fail     <= fail_mem  [a_state];
+        d_dense    <= dense_mem [a_dense];
+        d_oidx     <= oidx_mem  [a_oidx];
+        d_oidx_q   <= d_oidx;        // ditto
+        d_oflat    <= oflat_mem [a_oflat];
     end
 
     function [5:0] pc32;
@@ -270,10 +280,10 @@ module pyro_overlay_engine #(
     // and the add to base.
     wire [2:0] sel_lane = cur_byte[7:5];
     wire [4:0] sub_bit  = cur_byte[4:0];
-    wire [31:0] lane0 = d_bitmap[31:0];    wire [31:0] lane1 = d_bitmap[63:32];
-    wire [31:0] lane2 = d_bitmap[95:64];   wire [31:0] lane3 = d_bitmap[127:96];
-    wire [31:0] lane4 = d_bitmap[159:128]; wire [31:0] lane5 = d_bitmap[191:160];
-    wire [31:0] lane6 = d_bitmap[223:192]; wire [31:0] lane7 = d_bitmap[255:224];
+    wire [31:0] lane0 = d_bitmap_q[31:0];    wire [31:0] lane1 = d_bitmap_q[63:32];
+    wire [31:0] lane2 = d_bitmap_q[95:64];   wire [31:0] lane3 = d_bitmap_q[127:96];
+    wire [31:0] lane4 = d_bitmap_q[159:128]; wire [31:0] lane5 = d_bitmap_q[191:160];
+    wire [31:0] lane6 = d_bitmap_q[223:192]; wire [31:0] lane7 = d_bitmap_q[255:224];
     wire [31:0] sel_lane_bits =
         (sel_lane == 3'd0) ? lane0 : (sel_lane == 3'd1) ? lane1 :
         (sel_lane == 3'd2) ? lane2 : (sel_lane == 3'd3) ? lane3 :
@@ -300,7 +310,7 @@ module pyro_overlay_engine #(
         ((r_lane > 3'd5) ? {3'd0, r_pc5} : 9'd0) +
         ((r_lane > 3'd6) ? {3'd0, r_pc6} : 9'd0);
     wire [8:0] rank2 = pfx + {3'd0, r_partial};
-    wire hit = d_bitmap[cur_byte];
+    wire hit = d_bitmap_q[cur_byte];
 
     reg [31:0] emit_off, emit_left;
     reg [63:0] emit_end;
@@ -324,6 +334,7 @@ module pyro_overlay_engine #(
             res_wr <= 0; res_start <= 0; res_end <= 0;
             res_pattern_id <= 0; res_flags <= 0;
             csr_rdata <= 0;
+            d_bitmap_q <= 0; d_oidx_q <= 0;
         end else begin
             res_wr <= 1'b0;
 
@@ -459,11 +470,11 @@ module pyro_overlay_engine #(
                     S_OWAIT:  st <= S_OWAIT2;
                     S_OWAIT2: st <= S_OIDX;
                     S_OIDX: begin
-                        if (d_oidx[63:32] != 32'd0) begin
-                            emit_off  <= d_oidx[31:0];
-                            emit_left <= d_oidx[63:32];
+                        if (d_oidx_q[63:32] != 32'd0) begin
+                            emit_off  <= d_oidx_q[31:0];
+                            emit_left <= d_oidx_q[63:32];
                             emit_end  <= pos;
-                            a_oflat   <= d_oidx[31:0];
+                            a_oflat   <= d_oidx_q[31:0];
                             st        <= S_FWAIT;
                         end else st <= S_IDLE;
                     end
