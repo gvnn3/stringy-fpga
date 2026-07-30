@@ -2512,3 +2512,120 @@ a bad deal right up until those 256 rules genuinely cannot fire.
 clause. The remaining study recommendations — revisit GROUP_MAX/`any`-class
 packing, treat capacity as the real lever, don't open A5 on coverage
 grounds — are owner decisions, recorded in docs/studies/a5-working-set.md.
+
+## 2026-07-30 — The reframe: Snort as workload, FPGA scheduling as the subject
+
+A correction to what these experiments are *for*, and everything after it
+follows from the correction.
+
+Up to this point the work read as "make SNORT-PF cover more rules." That
+had it backwards. The subject is **whether OS scheduler techniques can
+swap functionality on an FPGA at run time**; the Snort ruleset is the
+workload that makes the question concrete — a large, naturally
+partitioned, demand-driven body of work with real traffic to drive it.
+Coverage numbers are instrumentation, not the goal. Once stated plainly
+this is obvious, but several days of experiments had been optimizing the
+instrument.
+
+The analogy the rest of the work runs on: the RP region is memory/CPU, a
+circuit is a process, partial reconfiguration is a context switch, an
+overlay table write is a *cheap* context switch, and an SR5 miss is a
+benign page fault — wrong-but-safe, because the FPGA only ever nominates
+and Snort re-verifies.
+
+### The tenants
+
+A scheduler with one kind of job is not a scheduler. Built seven tenants
+over `pyro/sched/`, all sharing the Snort corpus as their data but
+differing in the shape of their demand:
+
+- pattern match (the existing prefilter), exact IP match, fixed-offset
+  packet-header match, case-split matching,
+- a **gang-scheduled** pipeline tenant — stages that are worthless unless
+  co-resident, which is where `wasted_luts()` comes from,
+- a **deadline** tenant with `preemptible_under()`,
+- a **same-kind control** tenant, so treatment effects can be separated
+  from tenant-heterogeneity effects.
+
+`view_meet` had a bug worth remembering: it returned the *first* superset
+view rather than the narrowest, so a payload-only gang could inherit a
+frame constraint it never asked for. Fixed to select the minimal view.
+
+### The frontier
+
+The policy experiment initially reported a headline about 4× too large,
+because the `static-pin` baseline conflated *packing* with *scheduling* —
+it was being beaten partly for reasons that had nothing to do with
+scheduling. Replaced with a best-fixed-set baseline: +181% collapsed to
++156%, and on the skewed tenant set the advantage vanished entirely to
++0%. Two further degeneracies had to be handled first (budgets below the
+largest tenant zero everything; a 658× footprint skew made density
+packing starve the large tenant so every policy came out identical), and
+the first frontier sweep was aliased by phase alignment — `phase_trace`
+ignored its seed, producing a non-monotonic curve. Randomized star order
+plus ±30% jitter, averaged over nine seeds, fixed it.
+
+Result: the frontier is a **ratio**, not a pair of numbers. Scheduling
+pays while `s/P ≲ 0.3` (switch cost over phase length), and the curves
+for P = 30/120/600 s collapse onto each other, which is the evidence that
+it really is scale-invariant.
+
+That single constant is what killed JTAG. At the measured 13.6 s partial
+reconfiguration cost, `s/P < 0.3` demands phases longer than ~45 s. Any
+workload that shifts faster than that cannot be scheduled by PR at all.
+So: **abandon JTAG as the switch mechanism.** The only way to reach the
+interesting part of the curve is overlays.
+
+### A5, and the engine
+
+Designed the loadable-table protocol and its identity layer, approved as
+A5 (docs/spec-amendments-a5-overlay.md), then built it: host builder and
+serializer, a behavioural model that executes the **serialized image**
+rather than the in-memory automaton (so a layout bug has somewhere to
+show up), and `hw/rtl/pyro_overlay_engine.v`.
+
+Load time at real scale is **0.66 ms** for the 1.64 MB table in 172 jumbo
+frames — against 13.6 s for PR, four orders of magnitude. That is the
+whole point of the exercise: it moves `s` far enough left that the
+frontier stops binding.
+
+Three findings from building it:
+
+The **uncapped** trie is 2.08 MB at 53–55 B/state and fits URAM, where
+SF14 concluded it did not. State counts reproduced SF14 exactly
+(11,078/21,841/38,700), which makes the disagreement about image size
+alone and therefore trustworthy. The 16-byte anchor cap is no longer
+required on memory grounds.
+
+Two identity bugs were caught **by construction**, which is the argument
+for the two-level identity in the first place: the host used
+`zlib.crc32` (IEEE) against the RTL's Castagnoli, and the differential
+caught it on its first run.
+
+And a false pass worth recording as method. The URAM cascade fix
+reported +0.383 ns; the number was worthless. The new pipeline registers
+had two drivers (the memory block, plus an async reset), synthesis kept
+the constant and discarded the real one, the bitmap read path became
+dead code, and `opt_design` deleted all 50 URAMs. It was timing a
+768-LUT stub. **Simulation cannot catch this** — the reset branch only
+fires during reset, so xsim sees one driver, and the differential passed
+identically before and after the fix. The run exited 0 and printed
+comfortable slack; only the utilization report gave it away.
+`scripts/overlay_ooc_timing.tcl` now refuses a verdict unless synthesis
+raised zero critical warnings *and* the routed netlist still has its
+memories.
+
+With that fixed, full corpus meets 250 MHz out of context: 50/64 URAM,
+108/160 BRAM36, 2364 LUT / 2209 FF, WNS **+0.089 to +0.212 ns**. Quoted
+as a range on purpose — every worst path has 0–1 logic levels and 91–98%
+route delay, so with no pblock the figure is routing luck and moves more
+than 0.1 ns between runs. There is nothing left to optimize in the RTL;
+what remains is placement.
+
+**Open:** the in-context PR link, running as this is written. That is the
+number that decides — only there is the engine confined to the `pyro_rp`
+pblock on SLR2 with the RM↔static boundary paths included. Nothing here
+is silicon-ready until it lands.
+
+916 unit tests green; wide RTL differential passes (5 subjects, 85
+matches, CRC 0x9c8f7ce9).
