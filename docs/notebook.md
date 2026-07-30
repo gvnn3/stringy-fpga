@@ -2622,10 +2622,32 @@ route delay, so with no pblock the figure is routing luck and moves more
 than 0.1 ns between runs. There is nothing left to optimize in the RTL;
 what remains is placement.
 
-**Open:** the in-context PR link, running as this is written. That is the
-number that decides — only there is the engine confined to the `pyro_rp`
-pblock on SLR2 with the RM↔static boundary paths included. Nothing here
-is silicon-ready until it lands.
+### And in context, it links
+
+The PR link landed while this entry was being written: **255.23 MHz,
+`met_timing=True`, `pr_verified=True`**, +0.082 ns against the 250 MHz
+target, 8,605 LUT / 2,927 FF including the `rp_wrapper` harness, a
+3.6 MB partial bitstream, 2,844 s to build.
+
+The interesting part is that it is *better* than the OOC worry implied.
+Confining placement to the `pyro_rp` pblock on SLR2 concentrates the 50
+URAMs and 108 BRAM36s instead of letting them scatter across three SLRs,
+and for a design that is 91–98% route delay that constraint helps rather
+than hurts. The RM↔static boundary paths cost little enough to stay
+inside the margin. The lesson to carry: for route-bound designs an
+unconstrained OOC run is not a conservative lower bound on the
+in-context result — it is just a different, noisier experiment.
+
+So the full-corpus overlay engine, with the uncapped 39,647-state trie
+resident in URAM, fits the region and runs at rate. A5's central claim —
+that a table write is a context switch four orders of magnitude cheaper
+than partial reconfiguration, which is what moves `s/P` off the frontier
+— now has a circuit behind it that meets timing.
+
+**Open:** on-hardware bring-up. Load the partial, write a real table
+through the §3 protocol, confirm `TABLE_ID`/`EPOCH` attestation and
+nomination against the model on live traffic. The bitstream is verified
+but has not been on the card.
 
 916 unit tests green; wide RTL differential passes (5 subjects, 85
 matches, CRC 0x9c8f7ce9).

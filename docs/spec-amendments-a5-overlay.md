@@ -382,13 +382,38 @@ SLRs; the spread is routing luck, not design quality.  With zero logic
 levels on the worst path, **there is nothing left to optimize in the
 RTL** — what remains is placement.
 
+### In context — the number that decides
+
+The engine PR-links against the locked static and **meets timing**:
+
+| | |
+|---|---|
+| fmax | **255.23 MHz** (target 250) |
+| WNS | **+0.082 ns** |
+| `met_timing` | **True** |
+| `pr_verified` | **True** |
+| LUT / FF | 8,605 / 2,927 (engine **plus** `rp_wrapper` harness) |
+| partial bitstream | 3,646,240 B |
+| link time | 2,844 s |
+
+This is the measurement that was missing, and it says the OOC anxiety was
+misplaced.  Constraining placement to the `pyro_rp` pblock on SLR2 —
+which concentrates the 50 URAMs and 108 BRAM36s instead of letting them
+scatter across three SLRs — cost nothing relative to the unconstrained
+OOC range of +0.089…+0.212 ns, and the RM↔static boundary paths (OF-1:
+5–120 ps on six of 21 group builds) did not push it negative.  A
+route-bound design got *better* routes once its placement was bounded.
+
+So the full-corpus overlay engine, with the uncapped 39,647-state trie
+resident in URAM, fits the region and runs at rate.
+
 ### Still open
 
-The **in-context PR link** is the number that decides, and it is not in
-yet.  Only there is the engine confined to the `pyro_rp` pblock on SLR2
-with the RM↔static boundary paths included (OF-1 measured those costing
-5–120 ps on six of 21 group builds).  Nothing here should be read as
-silicon-ready until that lands.
+Nothing in the timing argument.  What remains before this can be called
+silicon-ready is **on-hardware bring-up**: load the partial, write a real
+table through the §3 protocol, and confirm `TABLE_ID`/`EPOCH` attestation
+and nomination against the model on live traffic.  The bitstream exists
+and is verified; it has not yet been on the card.
 
 ## 9. Decision requested
 
