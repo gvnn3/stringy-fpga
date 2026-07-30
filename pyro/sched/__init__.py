@@ -56,6 +56,7 @@ from .tenants import (  # noqa: F401
     build_all_tenants,
     header_match_tenant,
     ip_match_tenant,
+    matched_treatment,
     pyro_regex_tenant,
     snortpf_tenants,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "host_path_tenant",
     "inline_filter_tenant",
     "partition_report",
+    "matched_treatment",
     "same_kind_control",
     "header_match_tenant",
     "ip_match_tenant",

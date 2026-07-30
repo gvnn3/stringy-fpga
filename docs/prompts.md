@@ -1629,3 +1629,7 @@ Add the gang-scheduled pipeline tenant
 
 Add the deadline tenant and the same-kind control tenant
 
+## 2026-07-30 01:52:40
+
+Run a policy across the control and treatment sets
+

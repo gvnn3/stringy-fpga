@@ -444,3 +444,47 @@ def homogeneity(tenants: Sequence) -> Dict[str, object]:
                        and len({t.input_view for t in tenants}) == 1
                        and lo > 0 and hi / lo <= 1.5),
     }
+
+
+def matched_treatment(target_luts: Optional[int] = None,
+                      tolerance: float = 1.6) -> List[Tenant]:
+    """One tenant per KIND, with footprints matched to within ``tolerance``.
+
+    The treatment condition proper.  :func:`build_all_tenants` varies kind,
+    input view, value currency **and** footprint all at once — and footprint
+    skew there is 658x, which dominates: value-density packing admits the
+    small tenants and permanently starves the large one, so every policy
+    converges to the same resident set and the comparison measures packing
+    rather than scheduling.
+
+    Holding footprint roughly constant isolates the variable actually under
+    test — heterogeneity of kind, input view and value currency — exactly as
+    :func:`same_kind_control` holds all four constant.  Together the two
+    sets form a factorial: control varies nothing, this varies everything
+    except size.
+    """
+    header = header_match_tenant()
+    target = int(target_luts or header.footprint()["est_luts"])
+
+    # ip-match: size by prefix count until it lands near the target.
+    ip = None
+    for n in range(8, 400, 4):
+        cand = ip_match_tenant(["10.%d.%d.0/24" % (i // 256, i % 256)
+                                for i in range(n)])
+        if cand.footprint()["est_luts"] >= target:
+            ip = cand
+            break
+    if ip is None:                                    # pragma: no cover
+        ip = ip_match_tenant()
+
+    # snortpf: the real group whose footprint is closest to the target.
+    pool = snortpf_tenants()
+    grp = min(pool, key=lambda t: abs(t.footprint()["est_luts"] - target))
+
+    out = [header, ip, grp]
+    luts = [t.footprint()["est_luts"] for t in out]
+    spread = max(luts) / max(1, min(luts))
+    if spread > tolerance:                            # pragma: no cover
+        raise ValueError("could not match footprints within %.2fx (got %.2fx)"
+                         % (tolerance, spread))
+    return out
