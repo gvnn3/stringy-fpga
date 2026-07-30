@@ -122,12 +122,15 @@ def _jumbo_slices(t: str) -> str:
     t = _replace1(t, "rx_words[rx_beat[4:0]]", "rx_words[rx_beat[7:0]]")
     t = _replace1(t, "tx_words[tx_beat[4:0]]", "tx_words[tx_beat[7:0]]")
     t = _replace1(t, "reg [4:0]   txw_sel;", "reg [7:0]   txw_sel;")
-    t = _replace_n(t, "txw_sel = 5'd0;", "txw_sel = 8'd0;", 3)
+    # 4 since A5 §3 added the TABLE_STATUS_REPLY composer.
+    t = _replace_n(t, "txw_sel = 5'd0;", "txw_sel = 8'd0;", 4)
     t = _replace_n(t, "txw_sel = compose_idx[10:6];",
                    "txw_sel = compose_idx[13:6];", 2)
     # word-selects of the corpus feed: one in the ST_FEED code (v2 byte feed
     # or v3 wide feed) + one in the rx_words declaration comment
-    t = _replace_n(t, "rx_words[feed_addr[10:6]]", "rx_words[feed_addr[13:6]]", 2)
+    # 3 since A5 §3 added ST_TBL_FEED, which streams table chunks through
+    # the same addressing as the corpus feed.
+    t = _replace_n(t, "rx_words[feed_addr[10:6]]", "rx_words[feed_addr[13:6]]", 3)
     assert "feed_addr[10:6]" not in t
     return t
 
@@ -540,6 +543,14 @@ module pyro_rp #(
   localparam [7:0]  KIND_STATUS_ERR  = 8'h05;
   localparam [7:0]  KIND_PERF_REQ    = 8'h06;  // R45a read-out (R78.11, v2.4.0)
   localparam [7:0]  KIND_PERF_REPLY  = 8'h07;
+  // A5 §3: overlay table load.  Additive kinds; a device predating the
+  // amendment drops them as unknown (R78.4), which is the correct behaviour.
+  localparam [7:0]  KIND_TBL_BEGIN    = 8'h08;
+  localparam [7:0]  KIND_TBL_DATA     = 8'h09;
+  localparam [7:0]  KIND_TBL_COMMIT   = 8'h0A;
+  localparam [7:0]  KIND_TBL_STAT_REQ = 8'h0B;
+  localparam [7:0]  KIND_TBL_STAT_REP = 8'h0C;
+  localparam [7:0]  KIND_TBL_ABORT    = 8'h0D;
   localparam [7:0]  PYRO_MAGIC       = 8'h50;  // 'P'
   localparam [7:0]  PYRO_VER         = 8'h01;  // protocol version 1
   localparam [7:0]  ETH_HI           = 8'h88;  // EtherType 0x88B5 big-endian
@@ -556,6 +567,28 @@ module pyro_rp #(
   localparam [15:0] CSR_BYTES_HI  = 16'h0064;
   localparam [31:0] CTRL_START  = 32'h0000_0001;
   localparam [31:0] CTRL_RESET  = 32'h0000_0002;
+
+  // A5 §3.1 overlay table CSRs.  NOTE a divergence from the amendment as
+  // written: §3.1 lists 0x007C as TABLE_BYTES_HI, but the engine implements
+  // TBL_CTRL there and carries a single 32-bit byte counter at 0x0078.  A
+  // 32-bit counter is sufficient (the largest table is ~2.1 MB) and the load
+  // needs a control register, so the engine's map is the useful one; §3.1
+  // should be amended to match rather than the RTL changed to match it.
+  localparam [15:0] CSR_TBL_ACTIVE = 16'h0068;
+  localparam [15:0] CSR_TBL_SHADOW = 16'h006C;
+  localparam [15:0] CSR_TBL_EPOCH  = 16'h0070;
+  localparam [15:0] CSR_TBL_STATUS = 16'h0074;
+  localparam [15:0] CSR_TBL_BYTES  = 16'h0078;
+  localparam [15:0] CSR_TBL_CTRL   = 16'h007C;
+  localparam [15:0] CSR_TBL_CAPS   = 16'h0080;
+  // TBL_CTRL bits: 0 LOAD, 1 COMMIT, 2 ABORT.  BEGIN writes LOAD|ABORT in one
+  // go: the engine applies the abort (clearing wr_addr/bytes_rcvd/CRC seed)
+  // and latches load_mode in the same cycle, which is exactly "open a fresh
+  // transfer".
+  localparam [31:0] TBL_OPEN    = 32'h0000_0005;   // LOAD | ABORT
+  localparam [31:0] TBL_COMMIT  = 32'h0000_0002;
+  localparam [31:0] TBL_ABORT   = 32'h0000_0004;
+  localparam [31:0] E_TBL_SEQ   = 32'd8;   // chunk offset != engine bytes_rcvd
 
   // ---- frame buffers (RAM-inferable; a PYRO frame is <= NWORDS 512-bit beats) --
   // RX: ONE full-word write per accepted beat (single write port).  We store the
@@ -670,9 +703,19 @@ module pyro_rp #(
                    ST_BHDR      = 4'd8,   // build reply header + framing
                    ST_BENT      = 4'd9,   // serialize pyro_match entries
                    ST_TX        = 4'd10,  // drive reply beats (combinational out)
-                   ST_PERF      = 4'd11;  // R78.11: read R45a counters from CSRs
+                   ST_PERF      = 4'd11,  // R78.11: read R45a counters from CSRs
+                   ST_TBL_OPEN  = 4'd12,  // A5 §3: TBL_CTRL <- LOAD|ABORT
+                   ST_TBL_SEQ   = 4'd13,  // A5 §3: check chunk offset vs bytes_rcvd
+                   ST_TBL_FEED  = 4'd14,  // A5 §3: stream chunk bytes into the engine
+                   ST_TBL_STAT  = 4'd15;  // A5 §3: read the six table CSRs
   reg [3:0]  state;
-  reg [1:0]  reply_kind;   // 0 = ID_REPLY, 1 = STATUS/ERROR, 2 = MATCH_REPLY, 3 = PERF_REPLY
+  reg [2:0]  reply_kind;   // 0 = ID_REPLY, 1 = STATUS/ERROR, 2 = MATCH_REPLY,
+                           // 3 = PERF_REPLY, 4 = TABLE_STATUS_REPLY
+  // A5 §3 table-load working set.
+  reg [7:0]  tbl_kind;     // which table op is in flight
+  reg [3:0]  tbl_idx;      // CSR read-out sequencer (2 cycles per register)
+  reg [31:0] tbl_active, tbl_shadow, tbl_epoch, tbl_status, tbl_bytes, tbl_caps;
+  reg [31:0] tbl_err;      // 0 = ok, else an error the wrapper itself raised
   reg [15:0] tx_beat;
 
   // R78.11 PERF_REPLY scratch: the four R45a counter halves, latched in ST_PERF.
@@ -761,7 +804,7 @@ module pyro_rp #(
       compose_idx   <= 16'd0;
       byte_in_ent   <= 5'd0;
       word_acc      <= 512'b0;
-      reply_kind    <= 2'd0;
+      reply_kind    <= 3'd0;
       corpus_len    <= 16'd0;
       reply_cap     <= 16'd0;
       perf_cyc_lo   <= 32'd0;
@@ -769,6 +812,17 @@ module pyro_rp #(
       perf_byt_lo   <= 32'd0;
       perf_byt_hi   <= 32'd0;
       perf_idx      <= 3'd0;
+      // A5 §3: epoch 0 is the "no valid table" encoding, matching the
+      // engine's own post-reset state -- never stale content reading as good.
+      tbl_kind      <= 8'd0;
+      tbl_idx       <= 4'd0;
+      tbl_active    <= 32'd0;
+      tbl_shadow    <= 32'd0;
+      tbl_epoch     <= 32'd0;
+      tbl_status    <= 32'd0;
+      tbl_bytes     <= 32'd0;
+      tbl_caps      <= 32'd0;
+      tbl_err       <= 32'd0;
       eng_csr_write <= 1'b0;
       eng_csr_addr  <= CSR_STATUS;
       eng_csr_wdata <= 32'b0;
@@ -836,14 +890,14 @@ module pyro_rp #(
             state   <= ST_RX;                // not a PYRO frame -> drop (R78.1)
             rx_beat <= 16'd0;
           end else if (h_kind == KIND_ID_REQ) begin
-            reply_kind <= 2'd0;              // ID_REPLY
+            reply_kind <= 3'd0;              // ID_REPLY
             state <= ST_BHDR;
           end else if (h_kind == KIND_MATCH_REQ) begin
             if ({hdr[8*18 +: 8], hdr[8*19 +: 8]} != SLOT) begin
-              reply_kind <= 2'd1;            // STATUS/ERROR NOT_RESIDENT (R78.8/R87)
+              reply_kind <= 3'd1;            // STATUS/ERROR NOT_RESIDENT (R78.8/R87)
               state <= ST_BHDR;
             end else begin
-              reply_kind <= 2'd2;            // MATCH_REPLY (R78.7)
+              reply_kind <= 3'd2;            // MATCH_REPLY (R78.7)
               // W5: clamp corpus_len = min(length-12, rx_len-40, MAX_FRAME-40),
               // guarding rx_len < 40, so a host-crafted `length` can never make
               // the feed read past the bytes actually buffered.
@@ -860,17 +914,156 @@ module pyro_rp #(
             end
           end else if (h_kind == KIND_PERF_REQ) begin
             if ({hdr[8*18 +: 8], hdr[8*19 +: 8]} != SLOT) begin
-              reply_kind <= 2'd1;            // STATUS/ERROR NOT_RESIDENT (R78.11)
+              reply_kind <= 3'd1;            // STATUS/ERROR NOT_RESIDENT (R78.11)
               state <= ST_BHDR;
             end else begin
-              reply_kind <= 2'd3;            // PERF_REPLY (R78.11)
+              reply_kind <= 3'd3;            // PERF_REPLY (R78.11)
               perf_idx   <= 3'd0;
               state <= ST_PERF;
+            end
+          end else if (h_kind == KIND_TBL_BEGIN || h_kind == KIND_TBL_DATA ||
+                       h_kind == KIND_TBL_COMMIT || h_kind == KIND_TBL_ABORT ||
+                       h_kind == KIND_TBL_STAT_REQ) begin
+            // ---- A5 §3 overlay table load ------------------------------
+            if ({hdr[8*18 +: 8], hdr[8*19 +: 8]} != SLOT) begin
+              reply_kind <= 3'd1;            // STATUS/ERROR NOT_RESIDENT
+              state <= ST_BHDR;
+            end else begin
+              // Every table op answers with TABLE_STATUS_REPLY.  That is the
+              // whole observability surface (§3), so the host never has to
+              // infer what happened -- it reads active/shadow/epoch/bytes
+              // back after each step and can compare against what it sent.
+              reply_kind <= 3'd4;
+              tbl_idx    <= 4'd0;
+              tbl_err    <= 32'd0;
+              // TABLE_DATA payload = u64 offset, u32 length, bytes[] at 40.
+              // Same clamp discipline as the corpus feed (W5): a host-crafted
+              // length can never make the feed read past the wire bytes.
+              raw_corpus   = ({hdr[8*24 +: 8], hdr[8*25 +: 8]} >= 16'd12)
+                             ? ({hdr[8*24 +: 8], hdr[8*25 +: 8]} - 16'd12) : 16'd0;
+              avail_corpus = (rx_len >= 16'd40) ? (rx_len - 16'd40) : 16'd0;
+              cl_tmp = raw_corpus;
+              if (cl_tmp > avail_corpus)     cl_tmp = avail_corpus;
+              if (cl_tmp > (MAX_FRAME - 40)) cl_tmp = MAX_FRAME - 40;
+              corpus_len <= cl_tmp;
+              tbl_kind   <= h_kind;
+              if (h_kind == KIND_TBL_BEGIN) begin
+                state <= ST_TBL_OPEN;
+              end else if (h_kind == KIND_TBL_DATA) begin
+                // Read bytes_rcvd so the chunk's offset can be checked
+                // against it before a single byte is written.
+                eng_csr_addr <= CSR_TBL_BYTES;
+                state <= ST_TBL_SEQ;
+              end else begin
+                state <= ST_TBL_OPEN;        // COMMIT / ABORT / STATUS_REQ
+              end
             end
           end else begin
             state   <= ST_RX;                // unknown kind -> drop (R78.4)
             rx_beat <= 16'd0;
           end
+        end
+
+        // ---- A5 §3: one CSR write, then report status ------------------
+        // BEGIN/COMMIT/ABORT are each a single TBL_CTRL write; STATUS_REQ is
+        // no write at all.  All four then fall through to ST_TBL_STAT, so the
+        // reply always describes the state *after* the operation.
+        // eng_csr_addr must be driven EXACTLY once here.  Driving it a second
+        // time to pre-start the status read would silently retarget the WRITE
+        // (non-blocking: last assignment wins), sending TBL_OPEN to the
+        // read-only TABLE_ACTIVE register instead of TBL_CTRL -- load_mode
+        // would never assert and every subsequent byte would be dropped.
+        // ST_TBL_STAT issues its own first address instead.
+        ST_TBL_OPEN: begin
+          if (tbl_kind != KIND_TBL_STAT_REQ) begin
+            eng_csr_write <= 1'b1;
+            eng_csr_addr  <= CSR_TBL_CTRL;
+            eng_csr_wdata <= (tbl_kind == KIND_TBL_BEGIN)  ? TBL_OPEN
+                           : (tbl_kind == KIND_TBL_COMMIT) ? TBL_COMMIT
+                                                           : TBL_ABORT;
+          end
+          tbl_idx <= 4'd0;
+          state <= ST_TBL_STAT;
+        end
+
+        // ---- A5 §3: sequential-delivery check --------------------------
+        // The engine accumulates CRC-32C over bytes AS THEY ARRIVE and
+        // appends at its own wr_addr; it does not honour the chunk offset.
+        // So out-of-order or duplicated delivery would corrupt the shadow
+        // silently.  Rather than let that happen, reject any chunk whose
+        // offset is not exactly the bytes the engine has already taken.
+        // The transfer stays fail-closed: a rejected chunk leaves the
+        // shadow untouched and the host restarts from TABLE_BEGIN.
+        //
+        // This is a deliberate narrowing of §3, which advertises
+        // offset-addressed idempotent writes.  Honouring that needs the CRC
+        // computed over the assembled image at commit instead of streamed,
+        // which is a later change; until then the device must not pretend
+        // to a property it does not have.
+        // Two spacer cycles before the compare.  The overlay engine REGISTERS
+        // csr_rdata, so the value for an address driven in cycle N appears in
+        // N+2, not N+1.  (ST_PERF above assumes N+1, which is right for the
+        // generated engine's combinational read but wrong for this one -- see
+        // the note on ST_PERF.)  Reading a cycle early here would compare the
+        // chunk offset against a stale register and reject valid chunks.
+        ST_TBL_SEQ: begin
+          eng_csr_addr <= CSR_TBL_BYTES;
+          if (tbl_idx < 4'd2) begin
+            tbl_idx <= tbl_idx + 4'd1;
+          end else begin
+            tbl_idx <= 4'd0;
+            if ({hdr[8*32 +: 8], hdr[8*33 +: 8], hdr[8*34 +: 8], hdr[8*35 +: 8]}
+                != eng_csr_rdata) begin
+              tbl_err <= E_TBL_SEQ;
+              state <= ST_TBL_STAT;
+            end else if (corpus_len == 16'd0) begin
+              state <= ST_TBL_STAT;
+            end else begin
+              feed_idx <= 16'd0;
+              state    <= ST_TBL_FEED;
+            end
+          end
+        end
+
+        // ---- A5 §3: stream the chunk into the engine -------------------
+        // Byte-per-cycle, same addressing as ST_FEED.  load_mode is already
+        // set (TABLE_BEGIN did it), so in_ready is unconditionally high and
+        // the engine consumes every beat.  in_last is NOT asserted: a chunk
+        // is a fragment of one image, not a complete unit, and in_last would
+        // be meaningless during a load.
+        ST_TBL_FEED: begin
+          eng_in_valid <= 1'b1;
+          feed_addr    = 16'd40 + feed_idx;
+          eng_in_data  <= rx_words[feed_addr[10:6]][ {feed_addr[5:0], 3'b000} +: 8 ];
+          eng_in_last  <= 1'b0;
+          if (feed_idx == (corpus_len - 16'd1)) begin
+            tbl_idx <= 4'd0;
+            state <= ST_TBL_STAT;
+          end
+          feed_idx <= feed_idx + 16'd1;
+        end
+
+        // ---- A5 §3: read the six table CSRs for the reply --------------
+        // TWO cycles per register, because this engine registers csr_rdata:
+        // an address driven in cycle N is sampled by the engine during N+1
+        // and its data is readable in N+2.  The odd indices are the spacers
+        // that make that latency explicit rather than assumed.  The per-cycle
+        // default (eng_csr_addr <= CSR_STATUS) reclaims the bus on the spacer,
+        // which is harmless -- the engine already sampled the address it
+        // needed on the cycle before.
+        ST_TBL_STAT: begin
+          eng_in_valid <= 1'b0;
+          case (tbl_idx)
+            4'd0:  eng_csr_addr <= CSR_TBL_ACTIVE;
+            4'd2:  begin tbl_active <= eng_csr_rdata; eng_csr_addr <= CSR_TBL_SHADOW; end
+            4'd4:  begin tbl_shadow <= eng_csr_rdata; eng_csr_addr <= CSR_TBL_EPOCH;  end
+            4'd6:  begin tbl_epoch  <= eng_csr_rdata; eng_csr_addr <= CSR_TBL_STATUS; end
+            4'd8:  begin tbl_status <= eng_csr_rdata; eng_csr_addr <= CSR_TBL_BYTES;  end
+            4'd10: begin tbl_bytes  <= eng_csr_rdata; eng_csr_addr <= CSR_TBL_CAPS;   end
+            4'd12: begin tbl_caps   <= eng_csr_rdata; state <= ST_BHDR; end
+            default: ;   // spacer: let the registered read land
+          endcase
+          tbl_idx <= tbl_idx + 4'd1;
         end
 
         // ---- R78.11: read the R45a counters from the engine CSR block --------
@@ -969,9 +1162,11 @@ module pyro_rp #(
           // PYRO control header (R78.3): magic ver kind flags slot seq length resv
           wacc[8*14 +: 8] = PYRO_MAGIC;
           wacc[8*15 +: 8] = PYRO_VER;
-          wacc[8*16 +: 8] = (reply_kind == 2'd0) ? KIND_ID_REPLY :
-                            (reply_kind == 2'd1) ? KIND_STATUS_ERR :
-                            (reply_kind == 2'd3) ? KIND_PERF_REPLY : KIND_MATCH_REPLY;
+          wacc[8*16 +: 8] = (reply_kind == 3'd0) ? KIND_ID_REPLY :
+                            (reply_kind == 3'd1) ? KIND_STATUS_ERR :
+                            (reply_kind == 3'd3) ? KIND_PERF_REPLY :
+                            (reply_kind == 3'd4) ? KIND_TBL_STAT_REP :
+                                                   KIND_MATCH_REPLY;
           wacc[8*17 +: 8] = 8'h00;                       // flags
           wacc[8*18 +: 8] = hdr[8*18 +: 8];      // slot echo (BE)
           wacc[8*19 +: 8] = hdr[8*19 +: 8];
@@ -981,7 +1176,37 @@ module pyro_rp #(
           wacc[8*23 +: 8] = hdr[8*23 +: 8];
           wacc[8*26 +: 8] = 8'h00;                       // reserved
           wacc[8*27 +: 8] = 8'h00;
-          if (reply_kind == 2'd0) begin
+          if (reply_kind == 3'd4) begin
+            // TABLE_STATUS_REPLY payload (A5 §3), 40 B, all big-endian:
+            //   active_id shadow_id epoch status_flags
+            //   bytes_received(as u64) engine_caps error
+            // The error word is the wrapper's own (sequence violation), 0 when
+            // the wrapper is happy; engine-side refusals show up as the
+            // status flags plus an unchanged active_id, which is what a
+            // fail-closed commit looks like from outside.
+            wacc[8*24 +: 8] = 8'h00; wacc[8*25 +: 8] = 8'h20;   // length = 32
+            wacc[8*28 +: 8] = tbl_active[31:24]; wacc[8*29 +: 8] = tbl_active[23:16];
+            wacc[8*30 +: 8] = tbl_active[15:8];  wacc[8*31 +: 8] = tbl_active[7:0];
+            wacc[8*32 +: 8] = tbl_shadow[31:24]; wacc[8*33 +: 8] = tbl_shadow[23:16];
+            wacc[8*34 +: 8] = tbl_shadow[15:8];  wacc[8*35 +: 8] = tbl_shadow[7:0];
+            wacc[8*36 +: 8] = tbl_epoch[31:24];  wacc[8*37 +: 8] = tbl_epoch[23:16];
+            wacc[8*38 +: 8] = tbl_epoch[15:8];   wacc[8*39 +: 8] = tbl_epoch[7:0];
+            wacc[8*40 +: 8] = tbl_status[31:24]; wacc[8*41 +: 8] = tbl_status[23:16];
+            wacc[8*42 +: 8] = tbl_status[15:8];  wacc[8*43 +: 8] = tbl_status[7:0];
+            wacc[8*44 +: 8] = 8'h00; wacc[8*45 +: 8] = 8'h00;   // bytes hi (u64)
+            wacc[8*46 +: 8] = 8'h00; wacc[8*47 +: 8] = 8'h00;
+            wacc[8*48 +: 8] = tbl_bytes[31:24];  wacc[8*49 +: 8] = tbl_bytes[23:16];
+            wacc[8*50 +: 8] = tbl_bytes[15:8];   wacc[8*51 +: 8] = tbl_bytes[7:0];
+            wacc[8*52 +: 8] = tbl_caps[31:24];   wacc[8*53 +: 8] = tbl_caps[23:16];
+            wacc[8*54 +: 8] = tbl_caps[15:8];    wacc[8*55 +: 8] = tbl_caps[7:0];
+            wacc[8*56 +: 8] = tbl_err[31:24];    wacc[8*57 +: 8] = tbl_err[23:16];
+            wacc[8*58 +: 8] = tbl_err[15:8];     wacc[8*59 +: 8] = tbl_err[7:0];
+            word_acc <= wacc;
+            txw_en = 1'b1; txw_sel = 5'd0; txw_data = wacc;      // flush word 0
+            tx_len  <= 16'd60;   // 14 eth + 14 pyro + 32 payload
+            tx_beat <= 16'd0;
+            state   <= ST_TX;
+          end else if (reply_kind == 3'd0) begin
             // ID_REPLY payload (R78.5/R78.5a/R78.5b): static_shell_id | harness_version | rp_child_id
             wacc[8*24 +: 8] = 8'h00; wacc[8*25 +: 8] = 8'h0C;   // length = 12
             wacc[8*28 +: 8] = SPEC16[15:8];  wacc[8*29 +: 8] = SPEC16[7:0];
@@ -1028,8 +1253,22 @@ module pyro_rp #(
             wacc[8*25 +: 8] = (16'd8 + (match_count * 16'd24)) & 16'hFF; // length lo
             wacc[8*28 +: 8] = match_count[15:8]; wacc[8*29 +: 8] = match_count[7:0];
             wacc[8*30 +: 8] = 8'h00;             wacc[8*31 +: 8] = {7'd0, ovf}; // status bit0 OVF
-            wacc[8*32 +: 8] = 8'h00; wacc[8*33 +: 8] = 8'h00;
-            wacc[8*34 +: 8] = 8'h00; wacc[8*35 +: 8] = 8'h00;
+            // A5 §3: payload bytes 4-7 (frame 32-35) were reserved and now
+            // carry the EPOCH of the table that produced these matches --
+            // the SR14' attribution gate.  Additive: a pre-A5 device wrote
+            // zero here, which the host reads as "no epoch, overlay unused",
+            // and that is also what this reports before the first table load
+            // because tbl_epoch resets to 0.
+            //
+            // tbl_epoch is latched in ST_TBL_STAT rather than re-read per
+            // scan, which is exact rather than approximate: the epoch changes
+            // only on a TBL_CTRL commit, every commit goes through
+            // ST_TBL_STAT, and this responder handles one frame at a time --
+            // so no commit can slip between the latch and a scan.  Re-reading
+            // it here would need a spare CSR cycle on the match path and
+            // would return the same value.
+            wacc[8*32 +: 8] = tbl_epoch[31:24]; wacc[8*33 +: 8] = tbl_epoch[23:16];
+            wacc[8*34 +: 8] = tbl_epoch[15:8];  wacc[8*35 +: 8] = tbl_epoch[7:0];
             word_acc    <= wacc;                 // word 0 header; entries append @36
             build_idx   <= 16'd0;
             compose_idx <= 16'd36;               // first entry byte lands at offset 36

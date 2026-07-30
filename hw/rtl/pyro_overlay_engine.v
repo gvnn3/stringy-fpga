@@ -107,8 +107,17 @@ module pyro_overlay_engine #(
     localparam [31:0] MAGIC       = 32'h5059524F;
     localparam [31:0] HARNESS_VER = 32'h00020300;
 
-    localparam [15:0] A_STATUS     = 16'h0014;
+    // R45 harness contract.  This engine is natively a STREAMING scanner --
+    // it matches whatever arrives on in_valid -- but rp_wrapper drives every
+    // engine through RESET -> OUT_CAP -> START -> wait BUSY -> feed -> wait
+    // DONE.  Sharing a port list is not the same as sharing a protocol: the
+    // wrapper parked forever in ST_WAIT_BUSY because nothing here ever
+    // asserted BUSY, so the table would load and then never match anything.
+    // These three registers make the streaming engine answer the handshake.
+    localparam [15:0] A_CTRL       = 16'h0010;   // bit0 START, bit1 RESET
+    localparam [15:0] A_STATUS     = 16'h0014;   // bit0 BUSY, bit1 DONE, bit3 OVF
     localparam [15:0] A_CIRC_ID0   = 16'h0018;
+    localparam [15:0] A_OUT_CAP    = 16'h0048;
     localparam [15:0] A_OUT_COUNT  = 16'h004C;
     localparam [15:0] A_TBL_ACTIVE = 16'h0068;
     localparam [15:0] A_TBL_SHADOW = 16'h006C;
@@ -123,6 +132,8 @@ module pyro_overlay_engine #(
     localparam integer B_ABORT  = 2;
 
     reg [31:0] status, out_count, tbl_ctrl;
+    reg [31:0] out_cap;          // R45 OUT_CAP; 0 = uncapped
+    reg        busy, done_f, ovf_f;
     reg [31:0] active_id, shadow_crc, epoch, bytes_rcvd;
     reg        active_valid;
     wire       load_mode = tbl_ctrl[B_LOAD];
@@ -330,11 +341,63 @@ module pyro_overlay_engine #(
     reg [31:0] emit_off, emit_left;
     reg [63:0] emit_end;
 
-    assign in_ready = load_mode ? 1'b1 : (active_valid && (st == S_IDLE));
+    // 1-deep skid buffer -- the second half of the rp_wrapper backpressure
+    // contract (pyro.hdl.rp_wrapper._engine_backpressure, HAZARD (a)).
+    //
+    // The wrapper asserts eng_in_valid and advances feed_idx in the SAME
+    // cycle, so it cannot see in_ready fall in time to hold the beat it just
+    // committed.  An engine that simply ignores bytes while busy therefore
+    // loses them, with nothing on the wire to show for it.  This scanner is
+    // busy ~8 cycles per byte, so it dropped roughly every byte after the
+    // first and reported zero matches on a subject full of them -- the table
+    // loaded, committed, and attested correctly, and then matched nothing.
+    //
+    // So: accept whenever the skid is empty and park the byte until the FSM
+    // is back at the root.  in_ready is "the skid has room", not "I am idle",
+    // which is what makes the wrapper's early commit safe.
+    // DEPTH TWO, and the second slot is the whole point.  With a 1-deep skid
+    // and in_ready = "skid empty", the wrapper still loses a byte: it samples
+    // in_ready in cycle N and commits the NEXT beat in the same cycle, so
+    // when the skid fills at N+1 there is already a beat in flight with
+    // nowhere to land.  Measured exactly that way -- the load, commit and
+    // attestation were all correct and the scan returned zero matches.
+    //
+    // So in_ready deasserts at depth 1, leaving slot 1 reserved for the beat
+    // the wrapper has already committed.  Two entries is sufficient and
+    // necessary: the wrapper can never be more than one beat ahead of the
+    // ready it observed.
+    reg [7:0] sk0_d, sk1_d;
+    reg       sk0_l, sk1_l;
+    reg [1:0] sk_n;
+
+    // NOTE the handshake this implies, because it is NOT plain AXI-Stream.
+    // in_ready is a CREDIT ("there is room for one more"), not "I am taking
+    // this beat now", and every cycle in_valid is high with room available is
+    // a DISTINCT beat.  A master must therefore pulse in_valid once per byte
+    // rather than hold it until ready -- holding it would enqueue the same
+    // byte repeatedly.
+    //
+    // That is exactly how rp_wrapper drives it (its ST_FEED asserts
+    // eng_in_valid for one cycle per byte and a per-cycle default clears it),
+    // and it is what lets the wrapper commit a beat one cycle past the ready
+    // it observed without losing it.  A conventional hold-until-ready master
+    // needs adapting; tb_overlay_engine_multi was.
+    wire push = in_valid && !load_mode && active_valid && (sk_n < 2'd2);
+    wire pop  = (st == S_IDLE) && (sk_n != 2'd0);
+    // Bytes reach the FSM only through the queue, never straight off the
+    // wire; one path in means one place for an off-by-one to hide.
+    wire       have_byte = (sk_n != 2'd0);
+    wire [7:0] byte_in   = sk0_d;
+    wire       byte_last = sk0_l;
+
+    assign in_ready = load_mode ? 1'b1 : (active_valid && (sk_n == 2'd0));
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             status <= 0; out_count <= 0; tbl_ctrl <= 0;
+            out_cap <= 0; busy <= 1'b0; done_f <= 1'b0; ovf_f <= 1'b0;
+            sk_n <= 2'd0; sk0_d <= 8'd0; sk1_d <= 8'd0;
+            sk0_l <= 1'b0; sk1_l <= 1'b0;
             active_id <= 0; shadow_crc <= 32'hFFFFFFFF; epoch <= 0;
             bytes_rcvd <= 0; active_valid <= 0;
             wr_addr <= 0; wr_bcnt <= 0; word_sr <= 0; bm_sr <= 0; oidx_sr <= 0;
@@ -362,6 +425,30 @@ module pyro_overlay_engine #(
             res_wr <= 1'b0;
 
             // ---- CSR ----
+            // R45 scan handshake (see A_CTRL).  RESET clears the pipeline so
+            // scan N+1 cannot inherit state from scan N; START raises BUSY,
+            // which is the edge the wrapper is waiting on before it feeds.
+            if (csr_write && csr_addr == A_CTRL) begin
+                if (csr_wdata[1]) begin              // RESET
+                    sk_n      <= 2'd0;   // flush queued bytes with the pipeline
+                    busy      <= 1'b0;
+                    done_f    <= 1'b0;
+                    ovf_f     <= 1'b0;
+                    out_count <= 32'd0;
+                    st        <= S_IDLE;
+                    state_q   <= 32'd0;
+                    a_state   <= 32'd0;
+                    pos       <= 64'd0;
+                    req_done  <= 1'b0;
+                end
+                if (csr_wdata[0]) begin              // START
+                    busy   <= 1'b1;
+                    done_f <= 1'b0;
+                end
+            end
+            if (csr_write && csr_addr == A_OUT_CAP)
+                out_cap <= csr_wdata;
+
             if (csr_write && csr_addr == A_TBL_CTRL) begin
                 tbl_ctrl <= csr_wdata;
                 if (csr_wdata[B_ABORT]) begin
@@ -384,8 +471,13 @@ module pyro_overlay_engine #(
             end
             case (csr_addr)
                 A_CIRC_ID0:   csr_rdata <= MAGIC;
-                A_STATUS:     csr_rdata <= status;
+                // bit2 stays the commit-refused flag this engine already
+                // raised; bits 0/1/3 are the R45 BUSY/DONE/OVF the wrapper
+                // polls.  Composed on read so the two uses cannot drift.
+                A_STATUS:     csr_rdata <= {28'd0, ovf_f, status[2],
+                                            done_f, busy};
                 A_OUT_COUNT:  csr_rdata <= out_count;
+                A_OUT_CAP:    csr_rdata <= out_cap;
                 A_TBL_ACTIVE: csr_rdata <= active_id;
                 A_TBL_SHADOW: csr_rdata <= ~shadow_crc;
                 A_TBL_EPOCH:  csr_rdata <= epoch;
@@ -424,9 +516,33 @@ module pyro_overlay_engine #(
 
             // ---- SCAN ----
             if (!load_mode && active_valid) begin
+                // Input queue.  Push and pop can happen in the same cycle, so
+                // the three combinations are spelt out rather than layered as
+                // two independent updates that would fight over sk0.
+                case ({push, pop})
+                    2'b10: begin
+                        if (sk_n == 2'd0) begin sk0_d <= in_data; sk0_l <= in_last; end
+                        else              begin sk1_d <= in_data; sk1_l <= in_last; end
+                        sk_n <= sk_n + 2'd1;
+                    end
+                    2'b01: begin
+                        sk0_d <= sk1_d; sk0_l <= sk1_l;
+                        sk_n  <= sk_n - 2'd1;
+                    end
+                    2'b11: begin
+                        if (sk_n == 2'd1) begin
+                            sk0_d <= in_data; sk0_l <= in_last;
+                        end else begin
+                            sk0_d <= sk1_d;   sk0_l <= sk1_l;
+                            sk1_d <= in_data; sk1_l <= in_last;
+                        end
+                        // depth unchanged: one in, one out
+                    end
+                    default: ;
+                endcase
                 case (st)
-                    S_IDLE: if (in_valid) begin
-                        cur_byte <= in_data;
+                    S_IDLE: if (have_byte) begin
+                        cur_byte <= byte_in;
                         if (req_done) begin
                             // First byte of a NEW request: fresh offsets,
                             // matching restarts at the root.
@@ -437,7 +553,10 @@ module pyro_overlay_engine #(
                         end else begin
                             a_state <= state_q;
                         end
-                        if (in_last) req_done <= 1'b1;
+                        // byte_last, NOT in_last: when the byte came from the
+                        // skid its end-of-request marker came with it, and
+                        // the wire's in_last has long since gone away.
+                        if (byte_last) req_done <= 1'b1;
                         st <= S_FETCH;
                     end
                     // Two waits, not one: a URAM cascade this deep needs an
@@ -502,7 +621,14 @@ module pyro_overlay_engine #(
                         end else st <= S_IDLE;
                     end
                     S_FWAIT: st <= S_EMIT;
-                    S_EMIT: begin
+                    S_EMIT: if (out_cap != 32'd0 && out_count >= out_cap) begin
+                        // R47 overflow: report what fits and flag it, rather
+                        // than overrunning the wrapper's reply store.  SR3 is
+                        // unaffected -- an overflowed reply is still a set of
+                        // real nominations, and the host re-verifies anyway.
+                        ovf_f <= 1'b1;
+                        st    <= S_IDLE;
+                    end else begin
                         res_wr         <= 1'b1;
                         res_pattern_id <= d_oflat;
                         res_start      <= 64'd0;  // host derives from end
@@ -517,6 +643,17 @@ module pyro_overlay_engine #(
                     end
                     default: st <= S_IDLE;
                 endcase
+
+                // Request complete: the byte carrying in_last has been
+                // consumed (req_done) AND the pipeline has drained back to
+                // the root (st == S_IDLE).  Both halves are needed -- ending
+                // on req_done alone would report DONE while matches were
+                // still being emitted, and the wrapper would sample
+                // out_count too early.
+                if (busy && req_done && st == S_IDLE) begin
+                    busy   <= 1'b0;
+                    done_f <= 1'b1;
+                end
             end
         end
     end

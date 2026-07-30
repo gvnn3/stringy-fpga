@@ -50,7 +50,7 @@ import struct
 import tempfile
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Tuple
+from typing import Callable, NamedTuple, Optional, Tuple
 
 __all__ = [
     "PyroDeviceError",
@@ -63,6 +63,11 @@ __all__ = [
     "probe_device",
     "load_partial",
     "read_perf_counters",
+    # A5 §3 overlay table load
+    "load_table",
+    "read_table_status",
+    "TableStatus",
+    "PYRO_E_TABLE_SEQUENCE",
     # message-kind constants (R78.4)
     "KIND_ID_REQUEST",
     "KIND_ID_REPLY",
@@ -71,6 +76,12 @@ __all__ = [
     "KIND_STATUS",
     "KIND_PERF_REQUEST",
     "KIND_PERF_REPLY",
+    "KIND_TABLE_BEGIN",
+    "KIND_TABLE_DATA",
+    "KIND_TABLE_COMMIT",
+    "KIND_TABLE_STATUS_REQUEST",
+    "KIND_TABLE_STATUS_REPLY",
+    "KIND_TABLE_ABORT",
 ]
 
 # ---------------------------------------------------------------------------
@@ -103,11 +114,22 @@ KIND_MATCH_REPLY = 0x04
 KIND_STATUS = 0x05  # STATUS/ERROR
 KIND_PERF_REQUEST = 0x06  # R45a counter read-out (R78.11, v2.4.0)
 KIND_PERF_REPLY = 0x07
+# A5 §3 overlay table load.  Additive: a device built before the amendment
+# drops these as unknown kinds (R78.4) and simply never replies, which the
+# host reads as "no overlay engine here" rather than as a fault.
+KIND_TABLE_BEGIN = 0x08
+KIND_TABLE_DATA = 0x09
+KIND_TABLE_COMMIT = 0x0A
+KIND_TABLE_STATUS_REQUEST = 0x0B
+KIND_TABLE_STATUS_REPLY = 0x0C
+KIND_TABLE_ABORT = 0x0D
 
 #: Sendable/receivable message kinds (R78.4); ``0x00`` reserved is not a kind.
 VALID_KINDS = frozenset({
     KIND_ID_REQUEST, KIND_ID_REPLY, KIND_MATCH_REQUEST,
     KIND_MATCH_REPLY, KIND_STATUS, KIND_PERF_REQUEST, KIND_PERF_REPLY,
+    KIND_TABLE_BEGIN, KIND_TABLE_DATA, KIND_TABLE_COMMIT,
+    KIND_TABLE_STATUS_REQUEST, KIND_TABLE_STATUS_REPLY, KIND_TABLE_ABORT,
 })
 
 #: Expected shell SPEC16 the host runtime is compiled with (R81): spec 2.2.
@@ -651,6 +673,196 @@ def read_perf_counters(config: DeviceConfig,
         return None
     finally:
         transport.close()
+
+
+class TableStatus(NamedTuple):
+    """The A5 §3 ``TABLE_STATUS_REPLY`` observability surface.
+
+    ``active_table_id == 0`` means *nothing valid is resident* — the engine's
+    post-reset state.  It never means "unknown"; the device has no encoding
+    for stale-content-that-reads-as-good, which is the point of §5.
+    """
+    active_table_id: int
+    shadow_table_id: int
+    epoch: int
+    status_flags: int
+    bytes_received: int
+    capacity_states: int
+    error: int
+
+    @property
+    def load_open(self) -> bool:
+        """TBL_STATUS bit 1: a transfer is open (``load_mode`` asserted)."""
+        return bool(self.status_flags & 0x2)
+
+    @property
+    def active_valid(self) -> bool:
+        """TBL_STATUS bit 2: a committed table is resident and scanning."""
+        return bool(self.status_flags & 0x4)
+
+
+#: A5 §3 wrapper-raised error: a ``TABLE_DATA`` chunk whose offset did not
+#: equal the bytes the engine had already accepted.  The device streams its
+#: CRC as bytes arrive, so it can only accept strictly sequential delivery;
+#: it rejects rather than silently mis-writing the shadow.
+PYRO_E_TABLE_SEQUENCE = 8
+
+
+def _table_op(config: "DeviceConfig", transport, kind: int, slot: int,
+              seq: int, payload: bytes) -> Optional[TableStatus]:
+    """One table request, and the ``TABLE_STATUS_REPLY`` it produces.
+
+    Every table operation answers with the full status surface, so the host
+    never infers what happened from silence — it reads back what the device
+    believes and can compare that against what it sent.
+    """
+    eth_hdr = (bytes(config.dst_mac) + bytes(config.src_mac)
+               + struct.pack(">H", ETHERTYPE))
+    transport.send(eth_hdr + encode_frame(kind, slot, seq, payload,
+                                          max_payload=config.max_payload))
+    deadline = time.monotonic() + float(config.probe_timeout_s)
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            return None
+        reply = transport.recv(remaining)
+        if reply is None:
+            return None
+        reply = bytes(reply)
+        if (len(reply) < 14 + PYRO_HEADER_LEN
+                or struct.unpack(">H", reply[12:14])[0] != ETHERTYPE):
+            continue
+        try:
+            dec = decode_frame(reply[14:], max_payload=config.max_payload)
+        except PyroFrameError:
+            continue
+        if dec.seq != seq:
+            continue
+        if dec.kind == KIND_STATUS:
+            raise PyroLoadError(
+                "device refused table op kind 0x%02x: STATUS/ERROR code %d"
+                % (kind, struct.unpack(">I", dec.payload[0:4])[0]
+                   if dec.length >= 4 else -1))
+        if dec.kind != KIND_TABLE_STATUS_REPLY:
+            continue
+        if dec.length < 32:
+            raise PyroFrameError(
+                "malformed TABLE_STATUS_REPLY: payload length %d < 32"
+                % dec.length)
+        (active, shadow, epoch, flags, nbytes, caps, err) = struct.unpack(
+            ">IIIIQII", dec.payload[0:32])
+        return TableStatus(active, shadow, epoch, flags, nbytes, caps, err)
+
+
+def load_table(config: "DeviceConfig", image: bytes, *, slot: int = 1,
+               chunk_bytes: Optional[int] = None) -> TableStatus:
+    """Write a serialized overlay table and commit it (A5 §3).
+
+    This is the cheap context switch the whole scheduling argument rests on:
+    a table write replaces the resident pattern set without reconfiguring
+    fabric, so the switch cost ``s`` drops from PR's 13.6 s to the wire time
+    of ``image``.
+
+    Fail-closed throughout, per §5.  The device recomputes CRC-32C over what
+    it actually received and commits **only** on a match; a refused commit
+    leaves the previously active table untouched, so a bad load degrades to
+    "no change", never to a silently wrong resident table.  On success the
+    returned status carries the new ``active_table_id`` and an incremented
+    ``epoch``.
+
+    Raises :class:`PyroLoadError` if the device rejects a step or if the
+    committed ``active_table_id`` does not equal the host's CRC of ``image``
+    — the two-level identity check of §2.1, done end to end rather than
+    trusted.
+    """
+    from pyro.overlay.table import table_id as _table_id
+
+    if config.transport_factory is None and config.iface is None \
+            and config.chardev is None:
+        raise PyroLoadError("no transport configured (R68 fail-closed)")
+    want_id = _table_id(image)
+    # Leave room for the 12-byte TABLE_DATA sub-header inside one frame.
+    cap = int(chunk_bytes) if chunk_bytes else (config.max_payload - 12)
+    if cap <= 0:
+        raise PyroLoadError("chunk capacity %d is not positive" % cap)
+
+    transport = _make_transport(config)
+    try:
+        seq = 0
+
+        def op(kind, payload):
+            nonlocal seq
+            seq += 1
+            st = _table_op(config, transport, kind, slot, seq, payload)
+            if st is None:
+                raise PyroLoadError(
+                    "no TABLE_STATUS_REPLY to kind 0x%02x seq %d — the "
+                    "resident child may predate A5 §3 (unknown kinds are "
+                    "dropped, R78.4)" % (kind, seq))
+            if st.error:
+                raise PyroLoadError(
+                    "device raised table error %d on kind 0x%02x "
+                    "(bytes_received=%d)" % (st.error, kind, st.bytes_received))
+            return st
+
+        # BEGIN gates compatibility before a byte moves (§3).
+        op(KIND_TABLE_BEGIN, struct.pack(">IIQIHH", TABLE_FORMAT_VERSION_A5,
+                                         _engine_id_of(image), len(image),
+                                         want_id, 0, 0))
+        off = 0
+        while off < len(image):
+            n = min(cap, len(image) - off)
+            op(KIND_TABLE_DATA,
+               struct.pack(">QI", off, n) + image[off:off + n])
+            off += n
+        st = op(KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0))
+        if st.active_table_id != want_id:
+            raise PyroLoadError(
+                "commit refused or identity mismatch: device active_table_id "
+                "0x%08x != host 0x%08x (device took %d of %d bytes) — the "
+                "previously active table is untouched (A5 §5)"
+                % (st.active_table_id, want_id, st.bytes_received, len(image)))
+        return st
+    finally:
+        transport.close()
+
+
+def read_table_status(config: "DeviceConfig",
+                      slot: int = 1) -> Optional[TableStatus]:
+    """Read the A5 §3 status surface without changing anything.
+
+    ``None`` means no reply — the expected result against a child that
+    predates the amendment, not a fault.
+    """
+    if (config.transport_factory is None and config.iface is None
+            and config.chardev is None):
+        return None
+    try:
+        transport = _make_transport(config)
+    except OSError:
+        return None
+    try:
+        return _table_op(config, transport, KIND_TABLE_STATUS_REQUEST,
+                         slot, 1, b"")
+    except OSError:
+        return None
+    finally:
+        transport.close()
+
+
+#: A5 §2.1 table format version the host speaks.
+TABLE_FORMAT_VERSION_A5 = 1
+
+
+def _engine_id_of(image: bytes) -> int:
+    """The ``engine_id`` the image declares, read from its own header.
+
+    Taken from the image rather than passed in, so ``TABLE_BEGIN`` cannot
+    announce one engine while the bytes describe another.
+    """
+    if len(image) < 12:
+        raise PyroLoadError("table image shorter than its header")
+    return struct.unpack_from("<I", image, 12)[0]
 
 
 class _Transport:

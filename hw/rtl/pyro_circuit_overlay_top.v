@@ -25,15 +25,29 @@ module pyro_circuit (
     output wire [31:0] res_pattern_id,
     output wire [31:0] res_flags
 );
-    // Sized to the SF2 RP envelope: 4096 states costs 53 BRAM36 of the 160
-    // available.  The FULL 39,647-state corpus table would need ~530 BRAM
-    // tiles, well over budget, so at full scale the 32 B/state bitmap must
-    // move to URAM (64 URAM = 2.25 MB) with the narrow arrays left in BRAM.
-    // That is a separate change; this size answers the in-context TIMING
-    // question first.
+    // FULL-CORPUS sizing.  The 39,647-state table needs 40 URAM288 for the
+    // 256 b/state bitmap and 10 more for out_idx, leaving base/fail/dense/
+    // out_flat in BRAM at 108 of 160 BRAM36 -- measured, not estimated.
+    //
+    // This was 4096 for one release, from when the bitmap was still headed
+    // for BRAM and ~530 tiles looked unavoidable.  That number outlived its
+    // reason: once the bitmap moved to URAM the constraint went away, but
+    // the override stayed and quietly capped every in-context build at a
+    // tenth of the corpus.  A parameter that encodes a constraint should die
+    // with the constraint.
+    //
+    // PYRO_OVERLAY_STATES exists only so simulation can instantiate a small
+    // engine -- xsim walks these arrays and full size makes a table-load
+    // differential needlessly slow.  It is NOT a synthesis knob: builds take
+    // the default, which is the size that ships.
+`ifndef PYRO_OVERLAY_STATES
+  `define PYRO_OVERLAY_STATES 40960
+`endif
     pyro_overlay_engine #(
-        .MAX_STATES(4096), .MAX_DENSE(8192), .MAX_OUT(4096),
-        .IMAGE_BYTES(262144), .ENGINE_ID(32'h0A5E0001)
+        .MAX_STATES(`PYRO_OVERLAY_STATES),
+        .MAX_DENSE(`PYRO_OVERLAY_STATES),
+        .MAX_OUT(16384),
+        .IMAGE_BYTES(2621440), .ENGINE_ID(32'h0A5E0001)
     ) u_engine (
         .clk(clk), .rst_n(rst_n),
         .csr_addr(csr_addr), .csr_wdata(csr_wdata),

@@ -103,12 +103,18 @@ module tb_overlay_engine_multi;
         for (s = 0; s < N_SUBJ; s = s + 1) begin
             got = 0;
             for (i = 0; i < idx_len[s]; i = i + 1) begin
-                @(posedge clk);
+                // in_ready is a CREDIT, not "taking it now" (see the
+                // handshake note in pyro_overlay_engine.v): every cycle
+                // in_valid is high with room available enqueues a byte.  So
+                // wait for credit FIRST, then pulse in_valid for exactly one
+                // cycle.  The old hold-until-ready form enqueued the same
+                // byte two or three times over, which corrupted the stream.
+                while (!in_ready) @(posedge clk);
                 in_valid <= 1; in_data <= subj[idx_off[s] + i];
                 in_last  <= (i == idx_len[s] - 1);   // end of THIS request
                 @(posedge clk);
-                while (!in_ready) @(posedge clk);
                 in_valid <= 0; in_last <= 0;
+                @(posedge clk);
             end
             repeat (60) @(posedge clk);
 
