@@ -275,6 +275,77 @@ than it is:
 - **This amendment does not authorise suppression.** SR17's four gates are
   untouched; nomination-only remains in force.
 
+## 8a. Implementation findings (measured, 2026-07-30)
+
+The engine was built the same day A5 was approved.  Several §2–§6 figures
+were estimates; these are the measured replacements, and two of them
+change the picture.
+
+### Table sizing — better than SF14 assumed
+
+State counts reproduce SF14 **exactly** at all three anchor caps (11,078 /
+21,841 / 38,700), which is a strong independent check on that fact.  The
+image, however, is smaller than SF14's ~64 B/state assumption:
+
+| anchor cap | states | image | vs SF2's 2.25 MB URAM |
+|---|---|---|---|
+| 8 B | 11,078 | 0.61 MB | fits |
+| 16 B | 21,841 | 1.18 MB | fits |
+| **uncapped** | 38,700 | **2.08 MB** | **fits** |
+
+At 53–55 B/state the **uncapped** trie fits URAM, where SF14 concluded it
+did not.  The 16-byte cap is no longer required on memory grounds.
+
+### Memory placement — the bitmap alone is not enough
+
+Sized against SF2's RP envelope (160 BRAM36 + 64 URAM) at the real
+39,647-state corpus table:
+
+| array | size | placement |
+|---|---|---|
+| bitmap | 256b × 39,647 = 1.21 MB | **40 URAM** (276 BRAM36 if block) |
+| out_idx | 64b × 39,647 = 0.30 MB | **10 URAM** (69 BRAM36 if block) |
+| base / fail / dense / out_flat | — | 108 BRAM36 measured |
+
+**50 of 64 URAM, 108 of 160 BRAM36.**  Moving only the bitmap leaves the
+remainder needing 183 BRAM36, over budget — `out_idx` had to move too.
+Both are pinned by test so the arithmetic is not rediscovered at synthesis
+time.
+
+### Load time — §6's headline, reproduced at real scale
+
+The 1.64 MB `ci` image loads in **172 jumbo frames**; at the measured
+2.3 GiB/s char-dev rate that is **0.66 ms** of wire time.  §0's 0.54 ms
+was arithmetic on a 1.33 MB estimate; the real table is larger and the
+real number is 0.66 ms.  Still four orders of magnitude below PR's 13.6 s,
+so the argument is unchanged.
+
+### Precision — the cost of anchor-only matching, measured
+
+AC matches literal anchors, not AC-S3-2's lowered chains, so the overlay
+over-approximates.  Measured against the lowered circuits over the AC-S2-3
+corpus: **0 extra nominations** on `$HTTP_PORTS/0` and `any/1`, **6 extra**
+on `literal/0` (the group that actually carries chains), and **zero
+misses** anywhere — SR3 preserved, as required.
+
+### Identity — CRC-32C, and a caught mismatch
+
+§2.1 specifies CRC-32C.  The first host implementation used Python's
+`zlib.crc32`, which is the **IEEE** polynomial, not Castagnoli; the RTL
+differential caught the disagreement on its first run (device 0xf2edc7f8
+vs host 0xe4924a78).  The host now implements CRC-32C directly and the two
+agree bit for bit.  This is exactly the class of silent divergence the
+two-level identity exists to prevent, and it is mildly reassuring that it
+was caught by construction rather than by luck.
+
+### Still open
+
+Timing at full corpus scale is **not yet closed**.  URAM inference works
+(no fallbacks), but an unbounded cascade chained seven URAM288s
+combinationally and cost 1.297 ns; `cascade_height=2` plus an extra output
+register is under measurement.  Nothing here should be read as
+silicon-ready until that lands and a PR link follows.
+
 ## 9. Decision requested
 
 ☑ **APPROVE A5** (owner, 2026-07-30) — open the loadable-table slot with
