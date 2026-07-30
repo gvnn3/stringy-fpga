@@ -51,7 +51,7 @@
 //  1. The LOAD path accumulates a whole word in a shift register and writes
 //     it once.  The obvious byte-at-a-time read-modify-write needs an async
 //     read and costs the array its BRAM.
-//  2. The SCAN path is a 9-state FSM with an explicit WAIT state per
+//  2. The SCAN path is a 10-state FSM with an explicit WAIT state per
 //     dependent read (a registered read issued in cycle N is valid in N+2,
 //     not N+1).  It processes a byte every ~7 cycles rather than
 //     1 B/cycle, so this engine is ~7x slower per byte than the
@@ -182,7 +182,8 @@ module pyro_overlay_engine #(
     // because the testbench had been fixed to fail on a wrong match set.
     localparam [3:0] S_IDLE  = 4'd0,
                      S_FETCH = 4'd1,   // wait: bitmap/base/fail in flight
-                     S_RANK  = 4'd2,   // valid; rank + issue dense read
+                     S_RANK  = 4'd2,   // valid; latch per-lane popcounts
+                     S_RANK2 = 4'd9,   // prefix-sum the rank; issue dense
                      S_DWAIT = 4'd3,   // wait: dense in flight
                      S_DENSE = 4'd4,   // valid; issue oidx read
                      S_OWAIT = 4'd5,   // wait: oidx in flight
@@ -220,13 +221,50 @@ module pyro_overlay_engine #(
         end
     endfunction
 
-    wire [255:0] mask_below = (cur_byte == 8'd0) ? 256'd0
-                            : ({256{1'b1}} >> (256 - cur_byte));
-    wire [255:0] masked = d_bitmap & mask_below;
-    wire [8:0] rank = pc32(masked[31:0])    + pc32(masked[63:32])
-                    + pc32(masked[95:64])   + pc32(masked[127:96])
-                    + pc32(masked[159:128]) + pc32(masked[191:160])
-                    + pc32(masked[223:192]) + pc32(masked[255:224]);
+    // Rank = popcount of transition bits strictly below cur_byte.
+    //
+    // The obvious form -- build a 256-bit mask by variable-shifting, AND it
+    // with the bitmap, then popcount 256 bits -- puts a 256-bit barrel
+    // shifter AND a 256-input adder tree in one combinational path.  That
+    // was the whole timing gap.
+    //
+    // Instead: eight FIXED 32-bit popcounts (no mask, no shifter), plus ONE
+    // 32-bit partial for the lane the byte falls in, then a prefix sum
+    // selected by the lane index.  The only variable shift left is 32 bits
+    // wide.  Stage 1 registers the nine counts; stage 2 does the prefix sum
+    // and the add to base.
+    wire [2:0] sel_lane = cur_byte[7:5];
+    wire [4:0] sub_bit  = cur_byte[4:0];
+    wire [31:0] lane0 = d_bitmap[31:0];    wire [31:0] lane1 = d_bitmap[63:32];
+    wire [31:0] lane2 = d_bitmap[95:64];   wire [31:0] lane3 = d_bitmap[127:96];
+    wire [31:0] lane4 = d_bitmap[159:128]; wire [31:0] lane5 = d_bitmap[191:160];
+    wire [31:0] lane6 = d_bitmap[223:192]; wire [31:0] lane7 = d_bitmap[255:224];
+    wire [31:0] sel_lane_bits =
+        (sel_lane == 3'd0) ? lane0 : (sel_lane == 3'd1) ? lane1 :
+        (sel_lane == 3'd2) ? lane2 : (sel_lane == 3'd3) ? lane3 :
+        (sel_lane == 3'd4) ? lane4 : (sel_lane == 3'd5) ? lane5 :
+        (sel_lane == 3'd6) ? lane6 : lane7;
+    wire [31:0] sub_mask = (sub_bit == 5'd0) ? 32'd0
+                         : (32'hFFFFFFFF >> (6'd32 - {1'b0, sub_bit}));
+
+    // Stage-1 registers (filled in S_RANK1, consumed in S_RANK2).
+    reg [5:0] r_pc0, r_pc1, r_pc2, r_pc3, r_pc4, r_pc5, r_pc6, r_pc7;
+    reg [5:0] r_partial;
+    reg [2:0] r_lane;
+    reg [31:0] r_base;
+    reg        r_hit;
+
+    // Prefix sum over the registered lane counts: shallow, and every term
+    // is only 6 bits wide.
+    wire [8:0] pfx =
+        ((r_lane > 3'd0) ? {3'd0, r_pc0} : 9'd0) +
+        ((r_lane > 3'd1) ? {3'd0, r_pc1} : 9'd0) +
+        ((r_lane > 3'd2) ? {3'd0, r_pc2} : 9'd0) +
+        ((r_lane > 3'd3) ? {3'd0, r_pc3} : 9'd0) +
+        ((r_lane > 3'd4) ? {3'd0, r_pc4} : 9'd0) +
+        ((r_lane > 3'd5) ? {3'd0, r_pc5} : 9'd0) +
+        ((r_lane > 3'd6) ? {3'd0, r_pc6} : 9'd0);
+    wire [8:0] rank2 = pfx + {3'd0, r_partial};
     wire hit = d_bitmap[cur_byte];
 
     reg [31:0] emit_off, emit_left;
@@ -322,9 +360,18 @@ module pyro_overlay_engine #(
                     end
                     S_FETCH: st <= S_RANK;       // BRAM read latency
                     S_RANK: begin
+                        // Latch the nine independent counts; the prefix sum
+                        // and the add to base happen next cycle.
+                        r_pc0 <= pc32(lane0); r_pc1 <= pc32(lane1);
+                        r_pc2 <= pc32(lane2); r_pc3 <= pc32(lane3);
+                        r_pc4 <= pc32(lane4); r_pc5 <= pc32(lane5);
+                        r_pc6 <= pc32(lane6); r_pc7 <= pc32(lane7);
+                        r_partial <= pc32(sel_lane_bits & sub_mask);
+                        r_lane    <= sel_lane;
+                        r_base    <= d_base;
+                        r_hit     <= hit;
                         if (hit) begin
-                            a_dense <= d_base + {23'd0, rank};
-                            st      <= S_DWAIT;
+                            st <= S_RANK2;
                         end else if (state_q != 0) begin
                             // Failure fallback: retry the SAME byte.  d_fail
                             // is a registered read, so no async port here.
@@ -335,6 +382,10 @@ module pyro_overlay_engine #(
                             pos <= pos + 1;      // miss at the root
                             st  <= S_IDLE;
                         end
+                    end
+                    S_RANK2: begin
+                        a_dense <= r_base + {23'd0, rank2};
+                        st      <= S_DWAIT;
                     end
                     S_DWAIT: st <= S_DENSE;
                     S_DENSE: begin
