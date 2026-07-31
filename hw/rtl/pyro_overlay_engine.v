@@ -119,6 +119,16 @@ module pyro_overlay_engine #(
     localparam [15:0] A_CIRC_ID0   = 16'h0018;
     localparam [15:0] A_OUT_CAP    = 16'h0048;
     localparam [15:0] A_OUT_COUNT  = 16'h004C;
+    // R45a performance counters (added 2026-07-31).  The telemetry audit
+    // found these unmapped: reads of 0x0058-0x0064 fell to the default
+    // (HARNESS_VER), so a PERF_REQUEST against this child returned constant
+    // garbage that looked plausible.  Same per-scan semantics as the
+    // generated engines: the wrapper's CTRL.RESET before each scan (W4)
+    // zeroes them, so they cover exactly the most recent scan.
+    localparam [15:0] A_CYCLES_LO  = 16'h0058;
+    localparam [15:0] A_CYCLES_HI  = 16'h005C;
+    localparam [15:0] A_BYTES_LO   = 16'h0060;
+    localparam [15:0] A_BYTES_HI   = 16'h0064;
     localparam [15:0] A_TBL_ACTIVE = 16'h0068;
     localparam [15:0] A_TBL_SHADOW = 16'h006C;
     localparam [15:0] A_TBL_EPOCH  = 16'h0070;
@@ -142,6 +152,12 @@ module pyro_overlay_engine #(
     reg [31:0] expect_crc;       // host's declared TABLE_ID (A5 §5)
     reg        commit_err;       // last commit was refused
     reg        busy, done_f, ovf_f;
+    // CYCLES counts every cycle busy is high -- START to completion,
+    // INCLUDING feed stalls, because that is the honest scan latency the
+    // host experiences.  BYTES counts bytes consumed from the input queue.
+    // At ~8 cycles/byte the ratio is the engine's signature; a wire read
+    // that does not show it is reading the wrong thing.
+    reg [63:0] perf_cycles, perf_bytes;
     reg [31:0] active_id, shadow_crc, epoch, bytes_rcvd;
     reg        active_valid;
     wire       load_mode = tbl_ctrl[B_LOAD];
@@ -404,6 +420,7 @@ module pyro_overlay_engine #(
         if (!rst_n) begin
             status <= 0; out_count <= 0; tbl_ctrl <= 0;
             out_cap <= 0; busy <= 1'b0; done_f <= 1'b0; ovf_f <= 1'b0;
+            perf_cycles <= 64'd0; perf_bytes <= 64'd0;
             expect_crc <= 32'd0; commit_err <= 1'b0;
             sk_n <= 2'd0; sk0_d <= 8'd0; sk1_d <= 8'd0;
             sk0_l <= 1'b0; sk1_l <= 1'b0;
@@ -432,6 +449,7 @@ module pyro_overlay_engine #(
             // walked S_FETCH -> S_RANK, which loads them first.
         end else begin
             res_wr <= 1'b0;
+            if (busy) perf_cycles <= perf_cycles + 64'd1;
 
             // ---- CSR ----
             // R45 scan handshake (see A_CTRL).  RESET clears the pipeline so
@@ -440,6 +458,8 @@ module pyro_overlay_engine #(
             if (csr_write && csr_addr == A_CTRL) begin
                 if (csr_wdata[1]) begin              // RESET
                     sk_n      <= 2'd0;   // flush queued bytes with the pipeline
+                    perf_cycles <= 64'd0;    // per-scan counters (W4/R45a)
+                    perf_bytes  <= 64'd0;
                     busy      <= 1'b0;
                     done_f    <= 1'b0;
                     ovf_f     <= 1'b0;
@@ -498,6 +518,10 @@ module pyro_overlay_engine #(
                                             done_f, busy};
                 A_OUT_COUNT:  csr_rdata <= out_count;
                 A_OUT_CAP:    csr_rdata <= out_cap;
+                A_CYCLES_LO:  csr_rdata <= perf_cycles[31:0];
+                A_CYCLES_HI:  csr_rdata <= perf_cycles[63:32];
+                A_BYTES_LO:   csr_rdata <= perf_bytes[31:0];
+                A_BYTES_HI:   csr_rdata <= perf_bytes[63:32];
                 A_TBL_ACTIVE: csr_rdata <= active_id;
                 A_TBL_SHADOW: csr_rdata <= ~shadow_crc;
                 A_TBL_EPOCH:  csr_rdata <= epoch;
@@ -539,6 +563,7 @@ module pyro_overlay_engine #(
                 // Input queue.  Push and pop can happen in the same cycle, so
                 // the three combinations are spelt out rather than layered as
                 // two independent updates that would fight over sk0.
+                if (pop) perf_bytes <= perf_bytes + 64'd1;
                 case ({push, pop})
                     2'b10: begin
                         if (sk_n == 2'd0) begin sk0_d <= in_data; sk0_l <= in_last; end

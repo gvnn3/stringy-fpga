@@ -721,7 +721,7 @@ module pyro_rp #(
 
   // R78.11 PERF_REPLY scratch: the four R45a counter halves, latched in ST_PERF.
   reg [31:0] perf_cyc_lo, perf_cyc_hi, perf_byt_lo, perf_byt_hi;
-  reg [2:0]  perf_idx;
+  reg [3:0]  perf_idx;
 
   integer k;
 
@@ -812,7 +812,7 @@ module pyro_rp #(
       perf_cyc_hi   <= 32'd0;
       perf_byt_lo   <= 32'd0;
       perf_byt_hi   <= 32'd0;
-      perf_idx      <= 3'd0;
+      perf_idx      <= 4'd0;
       // A5 §3: epoch 0 is the "no valid table" encoding, matching the
       // engine's own post-reset state -- never stale content reading as good.
       tbl_kind      <= 8'd0;
@@ -919,7 +919,7 @@ module pyro_rp #(
               state <= ST_BHDR;
             end else begin
               reply_kind <= 3'd3;            // PERF_REPLY (R78.11)
-              perf_idx   <= 3'd0;
+              perf_idx   <= 4'd0;
               state <= ST_PERF;
             end
           end else if (h_kind == KIND_TBL_BEGIN || h_kind == KIND_TBL_DATA ||
@@ -1091,15 +1091,29 @@ module pyro_rp #(
         // are post-DONE stable — a coherent, non-destructive read (R45a/R78.11).
         // NOTE: the per-cycle default eng_csr_addr <= CSR_STATUS is overridden
         // by the explicit drives below for exactly the cycles that matter.
+        // TWO cycles per counter, address HELD across both (2026-07-31).
+        // The generated engines answer a CSR address combinationally (data
+        // one cycle after the address registers); the A5 overlay engine
+        // REGISTERS csr_rdata, so its data lands one cycle later still.
+        // Holding the address for both cycles and latching on the second
+        // is correct for either: a combinational engine repeats the same
+        // stable value, a registered one has just delivered it.  The old
+        // one-cycle sequence read the overlay child's counters a cycle
+        // early -- constant garbage that decoded plausibly, found by the
+        // telemetry audit rather than by any testbench.
         ST_PERF: begin
           case (perf_idx)
-            3'd0: eng_csr_addr <= CSR_CYCLES_LO;
-            3'd1: begin eng_csr_addr <= CSR_CYCLES_HI; perf_cyc_lo <= eng_csr_rdata; end
-            3'd2: begin eng_csr_addr <= CSR_BYTES_LO;  perf_cyc_hi <= eng_csr_rdata; end
-            3'd3: begin eng_csr_addr <= CSR_BYTES_HI;  perf_byt_lo <= eng_csr_rdata; end
+            4'd0: eng_csr_addr <= CSR_CYCLES_LO;
+            4'd1: eng_csr_addr <= CSR_CYCLES_LO;   // hold: data lands
+            4'd2: begin eng_csr_addr <= CSR_CYCLES_HI; perf_cyc_lo <= eng_csr_rdata; end
+            4'd3: eng_csr_addr <= CSR_CYCLES_HI;
+            4'd4: begin eng_csr_addr <= CSR_BYTES_LO;  perf_cyc_hi <= eng_csr_rdata; end
+            4'd5: eng_csr_addr <= CSR_BYTES_LO;
+            4'd6: begin eng_csr_addr <= CSR_BYTES_HI;  perf_byt_lo <= eng_csr_rdata; end
+            4'd7: eng_csr_addr <= CSR_BYTES_HI;
             default: begin perf_byt_hi <= eng_csr_rdata; state <= ST_BHDR; end
           endcase
-          perf_idx <= perf_idx + 3'd1;
+          perf_idx <= perf_idx + 4'd1;
         end
 
         // ---- W4: explicitly RESET the engine before each scan ----------

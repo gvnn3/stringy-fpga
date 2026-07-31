@@ -130,6 +130,13 @@ def main(argv=None):
     add(pdev.KIND_TABLE_STATUS_REQUEST, b"", "status")
     add(pdev.KIND_MATCH_REQUEST, struct.pack(">IIHH", 0, 0, 61, 0) + subject,
         "match")
+    # R45a counters for the scan just performed.  The wrapper resets them
+    # before each scan (W4), so this must show exactly that scan: BYTES equal
+    # to the subject length, CYCLES showing the ~8 cycles/byte signature.
+    # The old ST_PERF read the overlay child's registered CSR bus a cycle
+    # early and returned HARNESS_VER constants that decoded plausibly -- an
+    # exact BYTES check is what makes that failure mode impossible to miss.
+    add(pdev.KIND_PERF_REQUEST, b"", "perf")
     # Fail-closed probe: a chunk claiming an offset the engine is not at.
     # It must be refused, and the active table must survive it.
     add(pdev.KIND_TABLE_DATA, struct.pack(">QI", 999999, 4) + b"XXXX",
@@ -273,6 +280,24 @@ def main(argv=None):
         if got != want:
             errors.append("matches differ:\n  device %s\n  model  %s"
                           % (sorted(got), sorted(want)))
+
+    s_perf = [s for s, k, t in plan if t == "perf"][0]
+    dp = by_seq.get(s_perf)
+    if dp is None or dp.kind != pdev.KIND_PERF_REPLY:
+        errors.append("no PERF_REPLY (kind=%s)" % (hex(dp.kind) if dp else None))
+    else:
+        cycles, nbytes = struct.unpack(">QQ", dp.payload[0:16])
+        print("PERF_REPLY: cycles=%d bytes=%d (%.2f cyc/B over %d B subject)"
+              % (cycles, nbytes, cycles / nbytes if nbytes else 0.0,
+                 len(subject)))
+        if nbytes != len(subject):
+            errors.append("PERF bytes %d != subject length %d — the R45a "
+                          "read is broken again" % (nbytes, len(subject)))
+        # Loose bounds: >= 6 cyc/B (the FSM cannot be faster) and <= 20
+        # (a stall this large would mean the feed handshake regressed).
+        if nbytes and not (6 <= cycles / nbytes <= 20):
+            errors.append("PERF cycles/byte %.2f outside [6, 20]"
+                          % (cycles / nbytes))
 
     s_bad = [s for s, k, t in plan if t == "bad-offset"][0]
     stb = status_of(s_bad)
