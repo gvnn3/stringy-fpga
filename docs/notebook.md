@@ -2835,3 +2835,43 @@ subject sits just above 5 — my sim subject only passed the band because
 it was match-heavy. The band is now [4.9, 20] with the FSM-derived floor
 written next to it. A measurement that can surprise the person who built
 the pipeline is exactly what telemetry is for.
+
+## 2026-07-31 (cont.) — Demo and dashboard end to end; one honest gap and one growing box
+
+Ran the whole telemetry surface against the card, both modes.
+
+**Scripted demo** (`--demo`): three table swaps at 12.2/26.9/15.9 ms —
+mean 18.4 ms, **741× faster than the 13.6 s PR baseline**, and the
+26.9 ms outlier is not noise, it is the 94 KB `literal/0` image against
+the 2.6 KB `$SSH_PORTS/0` one; swap cost is size-linear, exactly as the
+frontier model wants it. 35 scans, 132 nominations across 37 SIDs with
+per-SID attribution through the sidecar, 35/35 replies, zero loss,
+zero OVF, epoch advancing per swap. The perf counters added this
+morning reported every scan.
+
+**Live dashboard** (`--serve --drive`): running it honestly exposed a
+design gap — serve mode was passive, and a fresh `TelemetryState` knows
+only about work done in its own process, so the switch-history panel
+would render correct and empty. Added `--drive`: the serve process
+becomes the actor, a couple of corpus-derived scans per collection tick
+and a group swap every N ticks, all inside the single collector thread
+so scans, swaps and snapshots strictly interleave and wire operations
+can never race for replies. `set_resident()` fires at each swap before
+the next scans — the SR14 attribution discipline in miniature.
+Measured live: four driven swaps (12.3/26.0/12.0/26.0 ms), epochs
+11→14, both groups in `/history.json`, 60/60 replies, `/metrics`
+tracking it all.
+
+**And one UI defect, the kind that only shows up by actually looking at
+the thing.** The switch-time panel grew on every reload. `ctx2d()` read
+the design height from the canvas's `height` attribute, then wrote
+`h × devicePixelRatio` back to that same attribute — so the next redraw
+read the inflated value and multiplied again. At any DPR > 1 the panels
+grew geometrically, one step per 2-second poll. The chart plumbing ran
+on every poll and was not idempotent. Fixed by latching the design
+height into `dataset.h` on first touch and never deriving it from
+anything the function mutates, plus `setTransform` in place of `scale`
+so the context transform cannot compound either. The general lesson is
+old but keeps being true: anything that runs per-tick must be a fixed
+point, and "read what you just wrote" is how a renderer becomes a
+feedback loop.

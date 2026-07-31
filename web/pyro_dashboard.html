@@ -157,16 +157,27 @@ const fmt = (v, d) => v == null ? "–"
 const hex8 = v => v == null ? "–" : "0x" + (v >>> 0).toString(16)
                                             .padStart(8, "0");
 
-/* ---- canvas plumbing: back every chart with a dpr-scaled context ---- */
+/* ---- canvas plumbing: back every chart with a dpr-scaled context ----
+   Called on EVERY redraw (2 s poll, 10 s history poll, window resize), so
+   it must be idempotent.  The first version read the design height from the
+   canvas's `height` attribute and then wrote h*dpr back to that same
+   attribute — the next call read the inflated value and multiplied again,
+   so at any devicePixelRatio > 1 the panels grew geometrically, one step
+   per poll.  The design height is therefore latched into dataset.h on
+   first touch and never derived from anything the function mutates.
+   setTransform (not scale) for the same reason: an absolute assignment
+   cannot compound, whatever state the context is in. */
 function ctx2d(canvas) {
+  if (!canvas.dataset.h)
+    canvas.dataset.h = canvas.getAttribute("height") || "150";
   const w = canvas.clientWidth || 300,
-        h = parseInt(canvas.getAttribute("height"), 10),
+        h = parseInt(canvas.dataset.h, 10),
         dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(w * dpr);
+  canvas.width = Math.round(w * dpr);      // also resets context state
   canvas.height = Math.round(h * dpr);
   canvas.style.height = h + "px";
   const g = canvas.getContext("2d");
-  g.scale(dpr, dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, w, h);
   g.font = "11px system-ui, sans-serif";
   return [g, w, h];
