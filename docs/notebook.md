@@ -2798,3 +2798,40 @@ limits that ship today: one table resident at a time (banking is what
 would let a swap overlap serving), ~8 cycles/byte scan rate, and
 anchor-only matching (costs precision, never completeness — 6 extra
 nominations on one group, zero misses anywhere, measured).
+
+## 2026-07-31 — R45a perf counters: the overlay child's throughput is now wire-readable
+
+Closed the one telemetry gap worth fabric changes. `PERF_REQUEST` against
+the overlay child had returned constant garbage from two stacked
+defects, each invisible without the other: the engine never mapped
+`0x0058–0x0064` (reads fell to the `HARNESS_VER` default), and the
+wrapper's `ST_PERF` latched each value one cycle after driving the next
+address — right for the generated engines' combinational CSR read, one
+early for this engine's registered one. The garbage decoded plausibly.
+No testbench caught it; the telemetry audit did, by asking what each
+address actually maps to.
+
+Fixes, both sides. Engine: 64-bit `perf_cycles`/`perf_bytes`, CYCLES
+counting every busy cycle *including feed stalls* — the scan latency the
+host experiences, not a datasheet number — and BYTES counting queue
+pops; `CTRL.RESET` zeroes both, so W4 gives the same per-scan semantics
+as the generated engines. Wrapper: `ST_PERF` now holds each address two
+cycles and latches on the second, correct against either CSR-bus
+latency, and the differential sends a real `PERF_REQUEST` whose BYTES
+must equal the subject length — the check the old failure mode cannot
+pass.
+
+Re-linked and on the card: **253.49 MHz** (best of the three full-corpus
+links), `pr_verified`, loaded, bring-up green. Measured over the wire:
+188 cycles / 37 bytes on a match-free subject, 248/49 on a match-heavy
+one; the demo's three table swaps at 11.9/12.3/26.0 ms; `/metrics` now
+carries `pyro_perf_*` with real samples (49 MB/s on short subjects).
+
+And the counters immediately paid for themselves by falsifying my own
+test: I had written the differential's plausibility band as [6, 20]
+cyc/B off the ~8 figure. First silicon read: **5.08**. A root-miss byte
+takes exactly 5 cycles (IDLE→FETCH→FETCH2→RANK→RANK2), so a match-free
+subject sits just above 5 — my sim subject only passed the band because
+it was match-heavy. The band is now [4.9, 20] with the FSM-derived floor
+written next to it. A measurement that can surprise the person who built
+the pipeline is exactly what telemetry is for.

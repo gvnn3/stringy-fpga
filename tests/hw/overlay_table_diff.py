@@ -293,10 +293,14 @@ def main(argv=None):
         if nbytes != len(subject):
             errors.append("PERF bytes %d != subject length %d — the R45a "
                           "read is broken again" % (nbytes, len(subject)))
-        # Loose bounds: >= 6 cyc/B (the FSM cannot be faster) and <= 20
-        # (a stall this large would mean the feed handshake regressed).
-        if nbytes and not (6 <= cycles / nbytes <= 20):
-            errors.append("PERF cycles/byte %.2f outside [6, 20]"
+        # Bounds from the FSM, not from vibes.  A root-miss byte takes
+        # exactly 5 cycles (IDLE->FETCH->FETCH2->RANK->RANK2), so a
+        # match-free subject sits just above 5 cyc/B -- measured 5.08 on
+        # silicon -- and match-heavy subjects run higher (9.28 here).
+        # The first version of this band said [6, 20] and only passed
+        # because this subject has matches; the floor is 5.
+        if nbytes and not (4.9 <= cycles / nbytes <= 20):
+            errors.append("PERF cycles/byte %.2f outside [4.9, 20]"
                           % (cycles / nbytes))
 
     s_bad = [s for s, k, t in plan if t == "bad-offset"][0]

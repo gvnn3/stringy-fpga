@@ -1685,3 +1685,15 @@ Continue
 
 Bring it up on hardware.
 
+## 2026-07-30 21:30:11
+
+Add this information to the notebook as it's own entry.  Update the demo doc.  Describe the telemetry we can currently get out of the FPGA. Make sure that switch time, rules matched, packets dropped, rules missed and other counters are present and can be extracted.  Create a demo application that gathers the measurements and outputs them in a consumable format (likely JSON) but also add code to present the data graphiccally, likely in a grafana or similar dashbaord.  Use ultracode to do allof this.
+
+## 2026-07-30 21:30:29
+
+Add this information to the notebook as it's own entry.  Update the demo doc.  Describe the telemetry we can currently get out of the FPGA. Make sure that switch time, rules matched, packets dropped, rules missed and other counters are present and can be extracted.  Create a demo application that gathers the measurements and outputs them in a consumable format (likely JSON) but also add code to present the data graphiccally, likely in a grafana or similar dashbaord.  Use ultracode to do allof this.
+
+## 2026-07-31 01:09:24
+
+Add the perf counters and re-link.
+
