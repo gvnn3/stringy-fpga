@@ -385,20 +385,43 @@ def _device_section(cfg) -> dict:
             # refused-commit flag (A_STATUS bit2) is not host-visible.
             "commit_err": bool(st.status_flags & 0x8),
         }
-        # A TABLE_STATUS_REPLY fingerprints the A5 overlay child, whose
-        # R45a CSRs (0x0058-0x0064) do not exist: a PERF_REPLY from it is
-        # the CSR default read through a one-cycle-early latch — constant/
-        # skewed garbage.  Null is the honest value.
-        sec["perf"] = {
-            "cycles": None, "bytes": None,
-            "bytes_per_cycle": None, "throughput_mb_s": None,
-            "note": ("A5 overlay child resident: R45a counters are "
-                     "unmapped in this engine and the wrapper's ST_PERF "
-                     "read is a cycle early for its registered CSR bus — "
-                     "PERF_REPLY would be garbage, so it is not read. "
-                     "~8 cycles/byte at 250 MHz is a bench/sim anchor, "
-                     "not wire telemetry."),
-        }
+        # Overlay child: R45a counters exist as of 2026-07-31 (engine maps
+        # 0x0058-0x0064; the wrapper's ST_PERF holds each address two
+        # cycles, correct for this engine's registered CSR bus).  A child
+        # built BEFORE that fix returns the CSR default (HARNESS_VER
+        # 0x00020300) in every half through a one-cycle-early latch — a
+        # constant we can fingerprint exactly, so stale garbage is nulled
+        # rather than charted.
+        _PRE_FIX_GARBAGE = (0x00020300 << 32) | 0x00020300
+        pc = _device.read_perf_counters(cfg, slot=1)
+        if pc is None:
+            sec["perf"] = {
+                "cycles": None, "bytes": None,
+                "bytes_per_cycle": None, "throughput_mb_s": None,
+                "note": "no PERF_REPLY (transient or non-resident slot)",
+            }
+        elif pc[0] == _PRE_FIX_GARBAGE and pc[1] == _PRE_FIX_GARBAGE:
+            sec["perf"] = {
+                "cycles": None, "bytes": None,
+                "bytes_per_cycle": None, "throughput_mb_s": None,
+                "note": ("overlay child predates the 2026-07-31 R45a fix: "
+                         "PERF_REPLY is the HARNESS_VER constant, not a "
+                         "measurement — reload the current partial"),
+            }
+        else:
+            cycles, nbytes = pc
+            bpc = (nbytes / cycles) if cycles else None
+            sec["perf"] = {
+                # Most-recent-scan only: the wrapper resets the counters
+                # before every MATCH (W4).  CYCLES includes feed stalls —
+                # it is the scan latency the host experiences, so at the
+                # engine's ~8 cyc/B the throughput figure is honest, not
+                # a datasheet number.
+                "cycles": cycles, "bytes": nbytes,
+                "bytes_per_cycle": None if bpc is None else round(bpc, 4),
+                "throughput_mb_s": (None if bpc is None
+                                    else round(bpc * 250e6 / 1e6, 2)),
+            }
         return sec
 
     sec["table_note"] = ("no TABLE_STATUS_REPLY — resident child predates "
@@ -620,16 +643,18 @@ def prometheus_text(snapshot: dict) -> str:
     perf = dev.get("perf") or {}
     emit("pyro_perf_cycles", "gauge",
          "R45a cycle count of the MOST RECENT scan only (the wrapper "
-         "resets counters before every scan). Generated engine children "
-         "only; omitted against the A5 overlay child, whose PERF readout "
-         "is garbage by construction.", perf.get("cycles"))
+         "resets counters before every scan). Overlay-child CYCLES "
+         "include feed stalls (~8-10 cyc/B); omitted only against a "
+         "pre-2026-07-31 overlay child (fingerprinted constant).",
+         perf.get("cycles"))
     emit("pyro_perf_bytes", "gauge",
          "R45a bytes the engine consumed in the most recent scan (post "
          "length clamp). Same availability caveats as pyro_perf_cycles.",
          perf.get("bytes"))
     emit("pyro_perf_bytes_per_cycle", "gauge",
          "bytes/cycles of the last scan (~1 B/cyc/core for generated "
-         "group engines).", perf.get("bytes_per_cycle"))
+         "group engines; ~0.1-0.12 for the overlay child).",
+         perf.get("bytes_per_cycle"))
     emit("pyro_perf_throughput_mb_s", "gauge",
          "bytes_per_cycle x 250 MHz, MB/s — utilization of the last scan.",
          perf.get("throughput_mb_s"))

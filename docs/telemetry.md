@@ -203,8 +203,8 @@ are extractable today, "internal" rows are not.
 | OVF bit | 0x04 payload[2:4] u16 BE bit0 | `bool(status & 1)` | OR-latch of engine A_STATUS bit3 across ST_DRAIN; means truncated at 61 — re-scan/resume. Bits 1–15 currently always 0. |
 | match epoch (SR14′ gate) | 0x04 payload[4:8] u32 BE | `struct.unpack('>I', dec.payload[4:8])[0]` | 0 = pre-A5 child or no table ever committed. Latched in ST_TBL_STAT, exact because commits serialize through the same single-frame FSM. Compare against the device's commit-time epoch, not a fresh model's. |
 | per-match entry | 0x04 payload[8+24i:32+24i] LE `<QQII` | `_s, end, pid, _f = struct.unpack('<QQII', ...)` per entry | LE inside BE header. `start` always 0 (recompute `end−len+1`); `end` relative to this request's corpus; `pattern_id` = slot index → gid:sid list via sidecar; `flags = (epoch[15:0]<<16) \| 1`. |
-| scan cycles (R45a) | 0x07 PERF_REPLY payload[0:8] u64 BE (CSR 0x0058/0x005C) | `read_perf_counters(cfg, slot=1)` → `(cycles, bytes)` or None | **Most recent scan only** — wrapper writes CTRL.RESET before every scan (W4); destroyed by the next MATCH_REQUEST. **Generated engine children only**: on the A5 overlay child these CSRs are unmapped (default read 0x00020300) and ST_PERF's N+1 read is one cycle early for the overlay's N+2 registered rdata — the reply is constant/skewed garbage. On a v4 multi-core child, routes to the last-done core. None is not a fault. |
-| scan bytes (R45a) | 0x07 payload[8:16] u64 BE (CSR 0x0060/0x0064) | second element of `read_perf_counters` | Same caveats. Counts bytes the *engine* consumed (post W5 clamp), ≤ declared length if the host lied. cycles/bytes gives cyc/B (generated group engines ~1 B/cyc/core; the overlay would be ~8 cyc/B *if* it had counters — that figure is bench/sim, not wire telemetry). |
+| scan cycles (R45a) | 0x07 PERF_REPLY payload[0:8] u64 BE (CSR 0x0058/0x005C) | `read_perf_counters(cfg, slot=1)` → `(cycles, bytes)` or None | **Most recent scan only** — wrapper writes CTRL.RESET before every scan (W4); destroyed by the next MATCH_REQUEST. Works on generated children AND (since 2026-07-31) the A5 overlay child, whose CYCLES include feed stalls; a pre-fix overlay child returns the 0x0002030000020300 constant, which `pyro.telemetry` fingerprints and nulls. On a v4 multi-core child, routes to the last-done core. None is not a fault. |
+| scan bytes (R45a) | 0x07 payload[8:16] u64 BE (CSR 0x0060/0x0064) | second element of `read_perf_counters` | Same caveats. Counts bytes the *engine* consumed (post W5 clamp), ≤ declared length if the host lied. cycles/bytes gives cyc/B: generated group engines ~1 B/cyc/core; the overlay child ~8–10 cyc/B — now wire-readable (sim-measured 9.28 cyc/B; per-scan overhead shrinks the gap on longer subjects). |
 | active_table_id | 0x0C TABLE_STATUS_REPLY payload[0:4] (CSR 0x0068 A_TBL_ACTIVE) | `read_table_status(cfg, slot=1).active_table_id`; non-mutating; every table op also returns full TableStatus | = CRC-32C of the committed image; verify vs `pyro.overlay.table.table_id(image)`. 0 = nothing valid resident, never "unknown". Unchanged by a refused commit. None = child predates A5 §3. |
 | shadow_table_id | 0x0C payload[4:8] (CSR 0x006C A_TBL_SHADOW) | `.shadow_table_id` | Live running CRC (`~shadow_crc`) of bytes received so far; must equal declared CRC at commit. Reset to seed (reads 0) by BEGIN/ABORT; meaningful only while load_open. |
 | epoch | 0x0C payload[8:12] (CSR 0x0070 A_TBL_EPOCH) | `.epoch` | Increments only on CRC-verified commit; cumulative since engine reset — compare deltas or the device's commit-time value. 0 = never committed. |
@@ -222,7 +222,7 @@ are extractable today, "internal" rows are not.
 | 0x0014 A_STATUS | bit0 BUSY, bit1 DONE (level, W4 polling-safe), bit2 sticky commit-refused, bit3 OVF | Wrapper-internal polling only (ST_WAIT_BUSY, ST_DRAIN); bit2 never clears except full reset and is never copied into any reply. |
 | 0x0018 A_CIRC_ID0 | MAGIC 0x5059524F ("PYRO") | Never read by the wrapper. Host-visible identity is enforced at commit instead: TABLE_BEGIN carries engine_id (image header byte 12, LE, via `_engine_id_of`) and the engine refuses unless it equals 0x0A5E0001. |
 | 0x0048 A_OUT_CAP / 0x004C A_OUT_COUNT | cap written per scan (ST_CAP, min(host cap, 61)); engine's own emit count | Wrapper never reads them for a reply — wire count is the wrapper's independent capture counter; divergence is unobservable from the host. |
-| 0x0058–0x0064 CYCLES/BYTES | R45a perf counters | Exist only in generated engine children; unmapped on the A5 overlay (fall to default rdata 0x00020300). |
+| 0x0058–0x0064 CYCLES/BYTES | R45a perf counters | Generated children and (since 2026-07-31) the A5 overlay engine — 64-bit, per-scan, CYCLES incl. feed stalls. Pre-fix overlay children fall to default rdata 0x00020300. |
 | 0x0084 A_TBL_EXPECT | host-declared CRC from TABLE_BEGIN (frame offset 44), written before load opens (two-stage ST_TBL_OPEN) | Write-only in practice; reads return the engine default. Exists because a self-computed CRC is self-consistent and therefore useless as a check — measured on silicon: an in-flight-corrupted transfer once committed cleanly and destroyed the working table. |
 | (contract) | CSR read latency | The overlay engine *registers* csr_rdata: address in cycle N → data in N+2; generated engines are combinational (N+1). The wrapper's table paths insert spacer cycles; ST_PERF assumes N+1 — exactly why PERF against the overlay child is garbage, and why an early ST_TBL_SEQ read "would compare the chunk offset against a stale register and reject valid chunks". Any future CSR consumer must know which engine it faces. |
 
@@ -258,10 +258,16 @@ Device side:
 - **No in-fabric dropped-frame counters.** Non-PYRO and unknown-kind frames
   drop silently (R78.1/R78.4) with nothing incremented; host-side timeouts
   are the only detection.
-- **No R45a counters in the A5 overlay engine.** 0x0058–0x0064 unmapped
-  (default read 0x00020300) plus the ST_PERF N+1-vs-N+2 latency mismatch ⇒
-  PERF against the resident overlay child is constant/skewed garbage. The
-  ~8 cyc/B figure is bench/sim, not wire-readable from this child.
+- **~~No R45a counters in the A5 overlay engine~~ — FIXED 2026-07-31.**
+  The engine now maps 64-bit cycles/bytes at 0x0058–0x0064 (CYCLES counts
+  busy cycles *including feed stalls* — the scan latency the host actually
+  experiences; BYTES counts queue pops; CTRL.RESET zeroes both, same
+  per-scan W4 semantics as generated engines), and ST_PERF holds each
+  address two cycles so the read is correct against either CSR-bus latency.
+  Measured in sim over the wire: 362 cycles / 39 bytes = 9.28 cyc/B.
+  A child built *before* this fix still returns the HARNESS_VER constant
+  (0x0002030000020300 in both halves); `pyro.telemetry` fingerprints that
+  exact value and nulls it rather than charting it.
 - **No per-rule/per-slot hit counters in fabric**; attribution is per-reply
   only, and beyond OUT_CAP=61 only the OVF bit survives.
 - **Per-scan counters destroyed by the next scan** (CTRL.RESET before every
