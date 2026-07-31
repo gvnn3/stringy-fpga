@@ -230,8 +230,39 @@ def run_demo(cfg, args):
 # --------------------------------------------------------------------------
 # --serve: stdlib HTTP, single hardware reader
 # --------------------------------------------------------------------------
-def run_serve(cfg, state, port, interval):
+def run_serve(cfg, state, port, interval, drive=None):
     import http.server
+
+    # --drive: the serve process generates its own live activity, because a
+    # fresh TelemetryState knows only about work done in THIS process — a
+    # passive server shows a correct but empty switch history.  drive is
+    # (group_a, group_b, swap_every_ticks) or None.  Everything runs inside
+    # the one collector thread: scans, swaps, and snapshots strictly
+    # interleave, so two wire operations can never race for replies (the
+    # HTTP handlers only read the ring).
+    drv = None
+    if drive is not None and cfg is not None:
+        from pyro.snort import groups as G
+        from pyro.snort import triage as Tr
+        ga, gb, swap_every = drive
+        st0 = pdev.read_table_status(cfg, slot=1)
+        if st0 is None:
+            raise SystemExit("--drive needs the overlay child resident")
+        cap = st0.capacity_states
+        rules = os.path.join(REPO, "third_party", "snort3-community-rules",
+                             "snort3-community.rules")
+        gs = {g.name: g for g in G.pack_groups(Tr.triage_file(rules))}
+        for name in (ga, gb):
+            if name not in gs:
+                raise SystemExit("no such group %r" % name)
+        tables = {n: _build_table(gs[n], cap)[0] for n in (ga, gb)}
+        subjects = {n: _subjects_for(gs[n], 10) for n in (ga, gb)}
+        T.timed_load_table(cfg, tables[ga], state)
+        state.set_resident(gs[ga])
+        drv = {"names": (ga, gb), "cur": 0, "tick": 0,
+               "swap_every": swap_every, "tables": tables,
+               "groups": {n: gs[n] for n in (ga, gb)},
+               "subjects": subjects, "seq": 5000}
 
     ring = deque(maxlen=HISTORY_MAX)
     ring.append(T.collect_snapshot(cfg, state))
@@ -240,6 +271,23 @@ def run_serve(cfg, state, port, interval):
     def collector():
         while True:
             time.sleep(interval)
+            if drv is not None:
+                drv["tick"] += 1
+                cur = drv["names"][drv["cur"]]
+                # a couple of scans per tick keeps nominations/perf moving
+                subs = drv["subjects"][cur]
+                for subj in subs[(drv["tick"] * 2) % len(subs):][:2]:
+                    drv["seq"] += 1
+                    state.record_scan(match_on_device(cfg, subj,
+                                                      seq=drv["seq"]))
+                if drv["tick"] % drv["swap_every"] == 0:
+                    drv["cur"] ^= 1
+                    nxt = drv["names"][drv["cur"]]
+                    # set_resident BEFORE the next scans: attributing a
+                    # reply against the old sidecar is the SR14
+                    # misattribution the setter's docstring warns about.
+                    T.timed_load_table(cfg, drv["tables"][nxt], state)
+                    state.set_resident(drv["groups"][nxt])
             snap = T.collect_snapshot(cfg, state)
             with lock:
                 ring.append(snap)
@@ -314,6 +362,12 @@ def main(argv=None):
                          "guessed — R68)")
     ap.add_argument("--interval", type=float, default=2.0,
                     help="--serve collection period, seconds (default 2)")
+    ap.add_argument("--drive", action="store_true",
+                    help="--serve only: generate live activity (scans every "
+                         "tick, group swap every --swap-every ticks) so the "
+                         "dashboard shows real switch/nomination series")
+    ap.add_argument("--swap-every", type=int, default=15,
+                    help="--drive swap period in ticks (default 15 = ~30 s)")
     ap.add_argument("--group-a", default="$SSH_PORTS/0",
                     help="--demo first group (default $SSH_PORTS/0)")
     ap.add_argument("--group-b", default="literal/0",
@@ -351,7 +405,9 @@ def main(argv=None):
         except KeyboardInterrupt:
             return 0
     if args.serve is not None:
-        return run_serve(cfg, state, args.serve, args.interval)
+        drive = ((args.group_a, args.group_b, max(1, args.swap_every))
+                 if args.drive else None)
+        return run_serve(cfg, state, args.serve, args.interval, drive=drive)
     return 2
 
 
