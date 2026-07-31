@@ -1,4 +1,4 @@
-# Demonstrating the system (state as of 2026-07-28)
+# Demonstrating the system (state as of 2026-07-30)
 
 What this shows, two tracks sharing one shell:
 
@@ -10,10 +10,13 @@ What this shows, two tracks sharing one shell:
   once but are gated by an open EQDMA IP loss issue (§0) and currently
   land at 2.6–3.1 GiB/s on a fresh boot, so the R1 5 GiB/s target is
   not yet certifiable.
-* **SNORT-PF** (§8): 256 Snort community rules compiled into ONE
-  pattern-set circuit resident in the same dynamic region — the FPGA
-  nominates candidate flows, Snort re-verifies. This is the child
-  currently on the card (loaded 2026-07-28).
+* **SNORT-PF** (§§8–9): 256 Snort community rules compiled into ONE
+  pattern-set circuit in the same dynamic region — the FPGA nominates
+  candidate flows, Snort re-verifies.
+* **A5 overlay** (§10): the same nomination job, but the rule table is
+  loaded at run time over the wire — a ~12 ms table swap instead of a
+  13.6 s JTAG reconfiguration. This is the child currently on the card
+  (loaded 2026-07-30).
 
 Everything below runs from the repo root on `nf-server06`. The two
 privileged scripts (`pyro_dataplane_swap.sh`, `pyro_wedge_recover.sh`) are
@@ -27,11 +30,13 @@ NOPASSWD-sudo for this user; nothing else needs root.
   `10ee:903f` at `02:00.0` and `h2cstats` reads live counters.
 * `.superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit`
   matches this static (fmax 260.8 MHz) and is the bit to `pyro_hw.py load`.
-* **2026-07-29: the resident child is the SNORT-PF 253-slot group,
-  rebuilt at the AC-S3-2 v2 group format** (identity rolled; all 21
-  groups now built — see §9)
-  (`group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit`, §8). To run
-  the PYRO demos in §§2–5, load the x4 regex child first (§1 step 3).
+* **2026-07-30: the resident child is the A5 overlay engine** (§10) —
+  full-corpus capacity (40,960 states), PR-linked at 251.32 MHz,
+  `pr_verified` (`overlay_engine_partial.bit`). The fixed-pattern
+  children are no longer resident: for the PYRO demos in §§2–5 load the
+  x4 regex child, for the SNORT-PF group demos in §8 load the 253-slot
+  group (§1 step 3). All 21 S3 groups remain built at the AC-S3-2 v2
+  format (identity rolled 2026-07-29; §9).
 * Generator/harness bumped to **2.3.0** on 2026-07-27 (R47b). Partials
   built before the bump — including the x4 child above — are **stale for
   the R47a-checked Python routing path** (§3; the C runtime rejects
@@ -59,11 +64,15 @@ sudo scripts/pyro_wedge_recover.sh     # user reset + QDMA soft reset + onic
 #    automatic in-band recovery). Pick the child for the demo you want:
 #    - PYRO regex demos (§§2-5): the x4 frame-parallel child
 #    - SNORT-PF demo (§8):       the 253-slot group child
+#    - overlay demo (§10):       the A5 overlay engine (current resident)
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
     .superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit
 # or:
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
     .superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
+# or:
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
+    .superpowers/pr-builds/overlay_engine_partial.bit
 
 # 4. Probe — the go/no-go check:
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
@@ -194,16 +203,18 @@ sudo scripts/pyro_dataplane_swap.sh iommu PYRO_IOMMU_TYPE=DMA-FQ    # default
 sudo scripts/pyro_dataplane_swap.sh data                            # rebind + queues
 ```
 
-## 8. SNORT-PF demo — 256 Snort rules in one circuit (current resident)
+## 8. SNORT-PF demo — 256 Snort rules in one circuit
 
 State as of 2026-07-28 (Phase S2 complete, spec `snort-rule-offload` v1.0.2):
-the resident child is the **$HTTP_PORTS group 0** pattern-set circuit —
+the child for this demo is the **$HTTP_PORTS group 0** pattern-set circuit —
 256 community rules deduped onto 253 slots, one shared 1 B/cycle harness,
 built through the same PR flow as every PYRO child. Identity
 `e1e145ba35391796ea6ac7a89af1c8e6`, `rp_child_id 0xba45e1e1`; post-route
 10,323 LUTs, fmax 253.29 MHz (12.7 % of the PR budget). The
 FPGA is a **candidate-nominating prefilter**: a hit means "this flow may
 match rule X — re-verify with Snort", never an alert by itself (R78.7).
+This child is no longer the one resident (the A5 overlay engine is, §10)
+— load it per §8.1 before running this section.
 
 ### 8.1 Load and probe
 
@@ -432,3 +443,65 @@ seg2 starts b'urce?f=x HTTP/'...  -> NOMINATE 1:848, 1:849 end=16
                                      (recovered via the 64 B overlap tail;
                                       neither segment contains the anchor alone)
 ```
+
+## 10. Overlay engine demo — run-time rule swapping + telemetry (current resident)
+
+State as of 2026-07-30: the resident child is the **A5 overlay engine** —
+one Aho-Corasick circuit whose rule table is NOT baked into the bitstream
+but loaded at run time over R78 (kinds 0x08–0x0D, CRC-gated commit).
+Full-corpus capacity: 40,960 states against the 39,647-state corpus need;
+PR-linked at 251.32 MHz, `pr_verified`. Every §9 group becomes a table
+image for this one child instead of a separate bitstream.
+
+### 10.1 Load and the go/no-go check
+
+```sh
+# Only needed if a different child is resident (~15 s incl in-band recovery):
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
+    .superpowers/pr-builds/overlay_engine_partial.bit
+
+# The go/no-go — probes, checks capacity, builds the $SSH_PORTS/0 table,
+# loads+commits it, runs 3 MATCH subjects against the host-side model, then
+# proves a deliberately corrupted commit is refused WITHOUT damaging the
+# working table (fail-closed, the property that makes run-time loading safe):
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_overlay_bringup.py
+# -> before load: ... caps=40960 ...          (full-corpus build, not a prefix)
+#    loaded and committed in ~12 ms: active=0x9c8f7ce9 ...
+#    subj[0..2]: device count == model count, epoch pinned to the commit
+#    device refused the bad commit and kept the good table
+#    BRINGUP: PASS
+```
+
+### 10.2 The headline number
+
+A table swap is a **12.3 ms** context switch (2,564 B image, load+commit
+wall time) where a JTAG PR child swap is **13.6 s** — a ~1100× gap. That
+is the difference between §9.5's rotation cost (a counted 14–45 s blind
+window per swap, SF20) and a switch cheap enough that the scheduler can
+change rule sets per traffic shift without a meaningful blind window. Even
+the full 1.64 MB corpus table is only 0.66 ms of wire time at 2.3 GiB/s —
+table size is not the bottleneck; round trips and host CRC are.
+
+### 10.3 Telemetry: snapshot, scripted demo, live dashboard
+
+```sh
+# One pyro-telemetry/1 JSON document — device surface (identity, epoch,
+# perf counters, commit status) + host surface (daemon/scheduler stats):
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --snapshot
+
+# Scripted on-hardware sequence: status -> build two group tables ->
+# load A (timed) -> ~20 MATCH round-trips -> swap to B (timed) -> more
+# scans -> swap back -> final JSON report:
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --demo
+
+# Live view — one background thread owns the wire, HTTP only reads its ring:
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --serve 8080
+# -> dashboard at http://localhost:8080/  (web/pyro_dashboard.html)
+#    Prometheus exposition at /metrics; Grafana provisioning under grafana/
+```
+
+Without `PYRO_DEVICE_IFACE` the collector degrades honestly to host-only
+snapshots (`usable: false`) and `--demo` refuses to run (R68: the
+interface is never guessed). The full metric inventory — what each number
+means, where it actually comes from, and what it cannot tell you — is
+`docs/telemetry.md`.
