@@ -1,0 +1,5 @@
+table_kb,swap_ms,group
+0.977,15.813,$SIP_PORTS/0
+2.246,15.986,$FTP_PORTS/0
+28.574,16.975,$ORACLE_PORTS/1
+85.109,25.974,literal/3

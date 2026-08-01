@@ -228,6 +228,130 @@ def run_demo(cfg, args):
 
 
 # --------------------------------------------------------------------------
+# --paper: timed run -> raw series + camera-ready figures
+# --------------------------------------------------------------------------
+#: Groups the paper run rotates through, chosen to SPAN table size (1 KB ->
+#: 146 KB) so the size-vs-latency figure has leverage, not two clusters.
+PAPER_GROUPS = ["$SIP_PORTS/0", "$FTP_PORTS/0", "$ORACLE_PORTS/1",
+                "literal/3", "any/0"]
+PAPER_SWAP_EVERY_S = 8.0     # ~4 swaps at 30 s, ~60 at 500 s
+PAPER_SCAN_GAP_S = 0.4       # scan cadence between swaps
+
+
+def run_paper(cfg, args):
+    """Drive the system for --paper seconds; write raw series + figures.
+
+    Collection and rendering are deliberately separate: everything measured
+    lands in ``run.json`` (with per-figure CSVs beside it), and the figures
+    are rendered FROM that file by scripts/pyro_paper_figs.py -- so a figure
+    can be restyled for a camera-ready deadline without re-running hardware,
+    and the CSVs are the artifact a reviewer can check.
+    """
+    from pyro.snort import groups as G
+    from pyro.snort import triage as Tr
+
+    seconds = float(args.paper)
+    outdir = args.paper_out or os.path.join(
+        REPO, "docs", "studies", "paper-data",
+        time.strftime("%Y%m%d-%H%M%S"))
+    os.makedirs(outdir, exist_ok=True)
+
+    ok, reason = pdev.probe_device(cfg)
+    print("probe: %s" % reason, file=sys.stderr)
+    if not ok:
+        return 1
+    st0 = pdev.read_table_status(cfg, slot=1)
+    if st0 is None:
+        print("no TABLE_STATUS_REPLY — the paper run needs the overlay "
+              "child resident", file=sys.stderr)
+        return 1
+
+    rules = os.path.join(REPO, "third_party", "snort3-community-rules",
+                         "snort3-community.rules")
+    gs = {g.name: g for g in G.pack_groups(Tr.triage_file(rules))}
+    names = [n for n in PAPER_GROUPS if n in gs]
+    tables = {n: _build_table(gs[n], st0.capacity_states)[0] for n in names}
+    subjects = {n: _subjects_for(gs[n], 10) for n in names}
+    print("groups: %s" % ", ".join("%s (%d B)" % (n, len(tables[n]))
+                                   for n in names), file=sys.stderr)
+
+    state = T.TelemetryState()
+    swaps, scans = [], []            # the two event series
+    seq = [20000]
+    t0 = time.monotonic()
+
+    def now():
+        return time.monotonic() - t0
+
+    def swap_to(name):
+        st = T.timed_load_table(cfg, tables[name], state)
+        state.set_resident(gs[name])
+        swaps.append({"t": now(), "group": name,
+                      "bytes": len(tables[name]),
+                      "ms": state.switch_history_ms[-1],
+                      "epoch": st.epoch})
+        print("  t=%6.1fs swap -> %-16s %6d B  %6.1f ms  epoch %d"
+              % (swaps[-1]["t"], name, len(tables[name]),
+                 swaps[-1]["ms"], st.epoch), file=sys.stderr)
+
+    cur = 0
+    swap_to(names[0])
+    next_swap = PAPER_SWAP_EVERY_S
+    i_subj = 0
+    while now() < seconds:
+        name = names[cur]
+        subj = subjects[name][i_subj % len(subjects[name])]
+        i_subj += 1
+        seq[0] += 1
+        reply = match_on_device(cfg, subj, seq=seq[0])
+        state.record_scan(reply)
+        pc = pdev.read_perf_counters(cfg, slot=1)
+        scans.append({
+            "t": now(), "group": name, "subject_bytes": len(subj),
+            # reply is a MatchReplySummary (or None on timeout) — the same
+            # object record_scan consumed.
+            "nominations": (reply.count if reply is not None else None),
+            "epoch": (reply.epoch if reply is not None else None),
+            "replied": reply is not None,
+            "cycles": pc[0] if pc else None,
+            "bytes": pc[1] if pc else None,
+        })
+        if now() >= next_swap and now() < seconds:
+            cur = (cur + 1) % len(names)
+            swap_to(names[cur])
+            next_swap += PAPER_SWAP_EVERY_S
+        time.sleep(PAPER_SCAN_GAP_S)
+
+    run = {
+        "meta": {
+            "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "duration_s": seconds, "iface": cfg.iface,
+            "pr_baseline_s": 13.6, "clock_mhz": 250,
+            "groups": {n: {"bytes": len(tables[n]),
+                           "rules": gs[n].rule_count} for n in names},
+            "engine_capacity_states": st0.capacity_states,
+        },
+        "swaps": swaps, "scans": scans,
+        "final_snapshot": T.collect_snapshot(cfg, state),
+    }
+    run_path = os.path.join(outdir, "run.json")
+    with open(run_path, "w") as f:
+        json.dump(run, f, indent=1, sort_keys=True)
+        f.write("\n")
+    print("wrote %s (%d swaps, %d scans)"
+          % (run_path, len(swaps), len(scans)), file=sys.stderr)
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import pyro_paper_figs
+    made = pyro_paper_figs.render(run_path, outdir)
+    for m in made:
+        print("wrote %s" % m, file=sys.stderr)
+    print(json.dumps({"outdir": outdir, "swaps": len(swaps),
+                      "scans": len(scans), "figures": made}))
+    return 0
+
+
+# --------------------------------------------------------------------------
 # --serve: stdlib HTTP, single hardware reader
 # --------------------------------------------------------------------------
 def run_serve(cfg, state, port, interval, drive=None):
@@ -354,6 +478,9 @@ def main(argv=None):
     mode.add_argument("--serve", type=int, metavar="PORT",
                       help="HTTP server: /, /snapshot.json, /history.json, "
                            "/metrics")
+    mode.add_argument("--paper", type=float, metavar="SECONDS",
+                      help="timed run (30/60/500 s) -> raw series + "
+                           "camera-ready figures under --paper-out")
     mode.add_argument("--demo", action="store_true",
                       help="scripted on-hardware demo (needs the overlay "
                            "child resident)")
@@ -366,6 +493,9 @@ def main(argv=None):
                     help="--serve only: generate live activity (scans every "
                          "tick, group swap every --swap-every ticks) so the "
                          "dashboard shows real switch/nomination series")
+    ap.add_argument("--paper-out", default=None,
+                    help="--paper output dir (default docs/studies/"
+                         "paper-data/<timestamp>)")
     ap.add_argument("--swap-every", type=int, default=15,
                     help="--drive swap period in ticks (default 15 = ~30 s)")
     ap.add_argument("--group-a", default="$SSH_PORTS/0",
@@ -380,17 +510,19 @@ def main(argv=None):
         cfg = make_config(args.iface)
     else:
         cfg = None
-        if args.demo:
+        if args.demo or args.paper:
             # R68 fail-closed: a netdev is never guessed, and the demo
             # cannot run host-only.
-            print("--demo needs --iface or PYRO_DEVICE_IFACE (R68: never "
-                  "guess a netdev)", file=sys.stderr)
+            print("--demo/--paper needs --iface or PYRO_DEVICE_IFACE "
+                  "(R68: never guess a netdev)", file=sys.stderr)
             return 2
         print("PYRO_DEVICE_IFACE not set — host-only snapshots (device "
               "section null; R68: never guess a netdev)", file=sys.stderr)
 
     if args.demo:
         return run_demo(cfg, args)
+    if args.paper:
+        return run_paper(cfg, args)
 
     state = T.TelemetryState()
     if args.snapshot:

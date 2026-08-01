@@ -1,0 +1,913 @@
+{
+ "final_snapshot": {
+  "device": {
+   "iface": "ens2",
+   "perf": {
+    "bytes": 69,
+    "bytes_per_cycle": 0.0949,
+    "cycles": 727,
+    "throughput_mb_s": 23.73
+   },
+   "reason": "device_usable=true \u2014 static_shell_id=0x02020000, transport: CAP_NET_RAW present",
+   "static_shell_id": 33685504,
+   "table": {
+    "active_table_id": 266632008,
+    "active_valid": true,
+    "bytes_received": 87152,
+    "capacity_states": 40960,
+    "commit_err": false,
+    "epoch": 2721,
+    "error": 0,
+    "load_open": false,
+    "shadow_table_id": 266632008,
+    "status_flags": 5
+   },
+   "usable": true
+  },
+  "loss": {
+   "netdev": {
+    "rx_dropped": 0,
+    "rx_errors": 0,
+    "rx_missed_errors": 0,
+    "rx_packets": 128766,
+    "tx_dropped": 0,
+    "tx_packets": 128820
+   },
+   "replies_received": 71,
+   "request_loss": 0.0,
+   "requests_sent": 71
+  },
+  "matching": {
+   "by_sid": {
+    "1:11968": 16,
+    "1:27899": 16,
+    "1:27902": 16,
+    "1:2885": 2,
+    "1:2886": 2,
+    "1:2887": 2,
+    "1:2888": 4,
+    "1:2889": 2,
+    "1:2890": 2,
+    "1:2891": 4,
+    "1:2892": 2,
+    "1:2893": 2,
+    "1:2894": 22,
+    "1:2895": 2,
+    "1:2896": 2,
+    "1:2897": 4,
+    "1:2900": 2,
+    "1:2901": 2,
+    "1:2902": 2,
+    "1:2903": 4,
+    "1:2904": 2,
+    "1:2905": 2,
+    "1:2906": 4,
+    "1:2907": 2,
+    "1:2908": 2,
+    "1:2909": 3,
+    "1:2910": 1,
+    "1:2911": 1,
+    "1:2912": 1,
+    "1:31830": 16,
+    "1:31831": 16,
+    "1:32041": 16,
+    "1:32042": 16,
+    "1:33220": 5,
+    "1:33221": 2,
+    "1:33222": 2,
+    "1:33223": 3,
+    "1:33740": 1,
+    "1:33825": 1,
+    "1:34366": 2,
+    "1:34461": 1,
+    "1:37814": 1,
+    "1:37815": 2,
+    "1:38380": 1,
+    "1:38385": 1,
+    "1:38386": 1,
+    "1:38891": 1,
+    "1:39409": 1,
+    "1:39410": 5,
+    "1:39527": 2,
+    "1:39529": 1,
+    "1:39575": 1,
+    "1:39576": 2,
+    "1:39801": 1,
+    "1:39903": 1,
+    "1:39911": 3,
+    "1:40036": 2,
+    "1:40221": 2,
+    "1:40222": 2,
+    "1:46335": 16,
+    "1:48990": 1,
+    "1:48995": 1,
+    "1:49008": 3,
+    "1:49014": 6
+   },
+   "nominations_total": 266,
+   "ovf_events": 0,
+   "scans": 71,
+   "truncated_min": 0
+  },
+  "missed": {
+   "corpus_total_rules": 4017,
+   "coverage_resident_rules": 139,
+   "lowering_dropped": 26,
+   "non_resident_rules": 3757,
+   "note": "0 by SR3: hard misses among resident rules are a verified invariant (two-sided oracle + on-silicon bringup: device nomination set == model set, exactly), not a runtime measurement",
+   "ovf_truncation_events": 0,
+   "resident_hard_misses": 0
+  },
+  "scheduler": {
+   "port_mix": null,
+   "resident_group": "literal/3",
+   "scores": null
+  },
+  "schema": "pyro-telemetry/1",
+  "switch": {
+   "count": 4,
+   "history_ms": [
+    15.812876052223146,
+    15.986219048500061,
+    16.97524299379438,
+    25.973558076657355
+   ],
+   "last_ms": 25.973558076657355,
+   "pr_baseline_s": 13.6,
+   "wire_ms_est": 0.03529
+  },
+  "ts": 1785612098.3087301
+ },
+ "meta": {
+  "clock_mhz": 250,
+  "duration_s": 30.0,
+  "engine_capacity_states": 40960,
+  "generated": "2026-08-01T19:21:37",
+  "groups": {
+   "$FTP_PORTS/0": {
+    "bytes": 2300,
+    "rules": 3
+   },
+   "$ORACLE_PORTS/1": {
+    "bytes": 29260,
+    "rules": 35
+   },
+   "$SIP_PORTS/0": {
+    "bytes": 1000,
+    "rules": 5
+   },
+   "any/0": {
+    "bytes": 126760,
+    "rules": 256
+   },
+   "literal/3": {
+    "bytes": 87152,
+    "rules": 139
+   }
+  },
+  "iface": "ens2",
+  "pr_baseline_s": 13.6
+ },
+ "scans": [
+  {
+   "bytes": 19,
+   "cycles": 197,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 19,
+   "t": 0.04281689191702753
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 0.4708189459051937
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 0.8978188909823075
+  },
+  {
+   "bytes": 25,
+   "cycles": 231,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 25,
+   "t": 1.3258189959451556
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 1.7538144279969856
+  },
+  {
+   "bytes": 24,
+   "cycles": 222,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 24,
+   "t": 2.1798191859852523
+  },
+  {
+   "bytes": 26,
+   "cycles": 236,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 26,
+   "t": 2.608823489979841
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 3.036813373910263
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 3.460816743900068
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 3.8848151509882882
+  },
+  {
+   "bytes": 19,
+   "cycles": 197,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 19,
+   "t": 4.309818045934662
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 4.737811964005232
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 5.161812035948969
+  },
+  {
+   "bytes": 25,
+   "cycles": 231,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 25,
+   "t": 5.585821499931626
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 6.009814624907449
+  },
+  {
+   "bytes": 24,
+   "cycles": 222,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 24,
+   "t": 6.439800547901541
+  },
+  {
+   "bytes": 26,
+   "cycles": 236,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 26,
+   "t": 6.867817378952168
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 7.295804210007191
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 7.723813997930847
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 8.151804776978679
+  },
+  {
+   "bytes": 44,
+   "cycles": 447,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 8.59181789890863
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 9.01981338893529
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 9.452818045974709
+  },
+  {
+   "bytes": 50,
+   "cycles": 481,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 50,
+   "t": 9.878814689000137
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 10.30281312391162
+  },
+  {
+   "bytes": 49,
+   "cycles": 472,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 10.726815967937
+  },
+  {
+   "bytes": 51,
+   "cycles": 486,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 51,
+   "t": 11.154811177984811
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 11.578811339917593
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 12.010840647970326
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 12.43480914994143
+  },
+  {
+   "bytes": 44,
+   "cycles": 447,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 12.858818415901624
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 13.282812461955473
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 13.70681786199566
+  },
+  {
+   "bytes": 50,
+   "cycles": 481,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 50,
+   "t": 14.130817234981805
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 14.554816691903397
+  },
+  {
+   "bytes": 49,
+   "cycles": 472,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 14.978810981963761
+  },
+  {
+   "bytes": 51,
+   "cycles": 486,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 51,
+   "t": 15.402814514935017
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 15.826813082909212
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 16.255821986938827
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 16.7008195099188
+  },
+  {
+   "bytes": 168,
+   "cycles": 1690,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 168,
+   "t": 17.12481221195776
+  },
+  {
+   "bytes": 164,
+   "cycles": 1650,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 17.548812552937306
+  },
+  {
+   "bytes": 164,
+   "cycles": 1638,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 17.972811690997332
+  },
+  {
+   "bytes": 169,
+   "cycles": 1676,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 169,
+   "t": 18.396813080995344
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 18.824816306005232
+  },
+  {
+   "bytes": 175,
+   "cycles": 1741,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 175,
+   "t": 19.25281603296753
+  },
+  {
+   "bytes": 186,
+   "cycles": 1837,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 186,
+   "t": 19.6808149269782
+  },
+  {
+   "bytes": 178,
+   "cycles": 1782,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 178,
+   "t": 20.108813744969666
+  },
+  {
+   "bytes": 189,
+   "cycles": 1882,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 189,
+   "t": 20.532821826986037
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 20.96081368997693
+  },
+  {
+   "bytes": 168,
+   "cycles": 1690,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 168,
+   "t": 21.38881541090086
+  },
+  {
+   "bytes": 164,
+   "cycles": 1650,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 21.81281805189792
+  },
+  {
+   "bytes": 164,
+   "cycles": 1638,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 22.2388147279853
+  },
+  {
+   "bytes": 169,
+   "cycles": 1676,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 169,
+   "t": 22.666821922990493
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 23.094814557000063
+  },
+  {
+   "bytes": 175,
+   "cycles": 1741,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 175,
+   "t": 23.519819237990305
+  },
+  {
+   "bytes": 186,
+   "cycles": 1837,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 186,
+   "t": 23.944817337905988
+  },
+  {
+   "bytes": 178,
+   "cycles": 1782,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 178,
+   "t": 24.36881272890605
+  },
+  {
+   "bytes": 59,
+   "cycles": 653,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 59,
+   "t": 24.81881576194428
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 25.242819481994957
+  },
+  {
+   "bytes": 69,
+   "cycles": 727,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 69,
+   "t": 25.670816305908374
+  },
+  {
+   "bytes": 105,
+   "cycles": 1119,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 105,
+   "t": 26.09481793199666
+  },
+  {
+   "bytes": 97,
+   "cycles": 1041,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 97,
+   "t": 26.51881721697282
+  },
+  {
+   "bytes": 74,
+   "cycles": 811,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 74,
+   "t": 26.94681585696526
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 27.374814878916368
+  },
+  {
+   "bytes": 71,
+   "cycles": 769,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 71,
+   "t": 27.79881658090744
+  },
+  {
+   "bytes": 35,
+   "cycles": 425,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 35,
+   "t": 28.22482607094571
+  },
+  {
+   "bytes": 90,
+   "cycles": 945,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 90,
+   "t": 28.655821959953755
+  },
+  {
+   "bytes": 59,
+   "cycles": 653,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 59,
+   "t": 29.079814945929684
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 29.50882421794813
+  },
+  {
+   "bytes": 69,
+   "cycles": 727,
+   "epoch": 2721,
+   "group": "literal/3",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 69,
+   "t": 29.932817078894004
+  }
+ ],
+ "swaps": [
+  {
+   "bytes": 1000,
+   "epoch": 2718,
+   "group": "$SIP_PORTS/0",
+   "ms": 15.812876052223146,
+   "t": 0.01588195189833641
+  },
+  {
+   "bytes": 2300,
+   "epoch": 2719,
+   "group": "$FTP_PORTS/0",
+   "ms": 15.986219048500061,
+   "t": 8.167876306921244
+  },
+  {
+   "bytes": 29260,
+   "epoch": 2720,
+   "group": "$ORACLE_PORTS/1",
+   "ms": 16.97524299379438,
+   "t": 16.27289858192671
+  },
+  {
+   "bytes": 87152,
+   "epoch": 2721,
+   "group": "literal/3",
+   "ms": 25.973558076657355,
+   "t": 24.39519519091118
+  }
+ ]
+}

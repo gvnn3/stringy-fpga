@@ -505,3 +505,25 @@ snapshots (`usable: false`) and `--demo` refuses to run (R68: the
 interface is never guessed). The full metric inventory — what each number
 means, where it actually comes from, and what it cannot tell you — is
 `docs/telemetry.md`.
+
+### 9.x Paper-figure collection (`--paper`)
+
+```bash
+# Timed run (30 / 60 / 500 s): drives a size-spanning group rotation
+# (1 KB -> 127 KB tables, swap every 8 s, scan every 0.4 s), then writes
+# raw series + camera-ready figures:
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_telemetry_demo.py --paper 60
+# -> docs/studies/paper-data/<timestamp>/
+#      run.json            everything measured (swaps, scans, meta)
+#      fig_*.pdf/.png/.csv four figures + the numbers behind each one
+#
+# fig_switch_size   swap ms vs table KB + fit  (size-linearity)
+# fig_switch_gap    swaps vs 13.6 s PR baseline, log axis (the ~700x gap)
+# fig_scan_cost     scan cycles vs bytes, 5/8 cyc/B guides
+# fig_nominations   cumulative nominations + residency strip across swaps
+#
+# Figures are re-renderable from run.json WITHOUT hardware — restyle at
+# camera-ready time with:
+.venv-pyro/bin/python3 scripts/pyro_paper_figs.py <dir>/run.json <dir>
+```

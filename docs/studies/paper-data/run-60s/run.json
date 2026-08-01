@@ -1,0 +1,1677 @@
+{
+ "final_snapshot": {
+  "device": {
+   "iface": "ens2",
+   "perf": {
+    "bytes": 168,
+    "bytes_per_cycle": 0.0994,
+    "cycles": 1690,
+    "throughput_mb_s": 24.85
+   },
+   "reason": "device_usable=true \u2014 static_shell_id=0x02020000, transport: CAP_NET_RAW present",
+   "static_shell_id": 33685504,
+   "table": {
+    "active_table_id": 2918936902,
+    "active_valid": true,
+    "bytes_received": 29260,
+    "capacity_states": 40960,
+    "commit_err": false,
+    "epoch": 2792,
+    "error": 0,
+    "load_open": false,
+    "shadow_table_id": 2918936902,
+    "status_flags": 5
+   },
+   "usable": true
+  },
+  "loss": {
+   "netdev": {
+    "rx_dropped": 0,
+    "rx_errors": 0,
+    "rx_missed_errors": 0,
+    "rx_packets": 131944,
+    "tx_dropped": 0,
+    "tx_packets": 131998
+   },
+   "replies_received": 141,
+   "request_loss": 0.0,
+   "requests_sent": 141
+  },
+  "matching": {
+   "by_sid": {
+    "1:105": 2,
+    "1:115": 2,
+    "1:117": 2,
+    "1:118": 4,
+    "1:119": 2,
+    "1:11968": 32,
+    "1:141": 2,
+    "1:146": 4,
+    "1:147": 2,
+    "1:152": 2,
+    "1:158": 4,
+    "1:163": 2,
+    "1:1855": 3,
+    "1:1856": 1,
+    "1:195": 2,
+    "1:1982": 2,
+    "1:1984": 2,
+    "1:208": 2,
+    "1:225": 1,
+    "1:226": 1,
+    "1:227": 1,
+    "1:229": 3,
+    "1:230": 2,
+    "1:236": 2,
+    "1:238": 4,
+    "1:248": 2,
+    "1:250": 2,
+    "1:253": 2,
+    "1:254": 4,
+    "1:274": 2,
+    "1:27899": 32,
+    "1:27902": 32,
+    "1:283": 2,
+    "1:2885": 3,
+    "1:2886": 3,
+    "1:2887": 3,
+    "1:2888": 5,
+    "1:2889": 2,
+    "1:2890": 2,
+    "1:2891": 4,
+    "1:2892": 2,
+    "1:2893": 2,
+    "1:2894": 25,
+    "1:2895": 3,
+    "1:2896": 3,
+    "1:2897": 6,
+    "1:2900": 3,
+    "1:2901": 3,
+    "1:2902": 3,
+    "1:2903": 6,
+    "1:2904": 3,
+    "1:2905": 3,
+    "1:2906": 6,
+    "1:2907": 3,
+    "1:2908": 3,
+    "1:2909": 5,
+    "1:2910": 2,
+    "1:2911": 2,
+    "1:2912": 2,
+    "1:308": 2,
+    "1:3081": 4,
+    "1:31830": 31,
+    "1:31831": 31,
+    "1:32041": 32,
+    "1:32042": 32,
+    "1:33220": 5,
+    "1:33221": 2,
+    "1:33222": 2,
+    "1:33223": 4,
+    "1:33740": 2,
+    "1:33825": 2,
+    "1:34366": 4,
+    "1:34461": 2,
+    "1:37814": 2,
+    "1:37815": 4,
+    "1:38380": 2,
+    "1:38385": 2,
+    "1:38386": 2,
+    "1:38891": 2,
+    "1:39409": 2,
+    "1:39410": 8,
+    "1:39527": 3,
+    "1:39529": 1,
+    "1:39575": 1,
+    "1:39576": 2,
+    "1:39801": 1,
+    "1:39903": 1,
+    "1:39911": 3,
+    "1:40036": 2,
+    "1:40221": 2,
+    "1:40222": 2,
+    "1:46335": 31,
+    "1:48990": 2,
+    "1:48995": 2,
+    "1:49008": 6,
+    "1:49014": 6
+   },
+   "nominations_total": 515,
+   "ovf_events": 0,
+   "scans": 141,
+   "truncated_min": 0
+  },
+  "missed": {
+   "corpus_total_rules": 4017,
+   "coverage_resident_rules": 35,
+   "lowering_dropped": 26,
+   "non_resident_rules": 3861,
+   "note": "0 by SR3: hard misses among resident rules are a verified invariant (two-sided oracle + on-silicon bringup: device nomination set == model set, exactly), not a runtime measurement",
+   "ovf_truncation_events": 0,
+   "resident_hard_misses": 0
+  },
+  "scheduler": {
+   "port_mix": null,
+   "resident_group": "$ORACLE_PORTS/1",
+   "scores": null
+  },
+  "schema": "pyro-telemetry/1",
+  "switch": {
+   "count": 8,
+   "history_ms": [
+    14.289894024841487,
+    11.951638967730105,
+    16.99030806776136,
+    25.983553030528128,
+    30.96841392107308,
+    11.972901062108576,
+    12.979006976820529,
+    16.97825500741601
+   ],
+   "last_ms": 16.97825500741601,
+   "pr_baseline_s": 13.6,
+   "wire_ms_est": 0.011848
+  },
+  "ts": 1785612816.6817265
+ },
+ "meta": {
+  "clock_mhz": 250,
+  "duration_s": 60.0,
+  "engine_capacity_states": 40960,
+  "generated": "2026-08-01T19:33:36",
+  "groups": {
+   "$FTP_PORTS/0": {
+    "bytes": 2300,
+    "rules": 3
+   },
+   "$ORACLE_PORTS/1": {
+    "bytes": 29260,
+    "rules": 35
+   },
+   "$SIP_PORTS/0": {
+    "bytes": 1000,
+    "rules": 5
+   },
+   "any/0": {
+    "bytes": 126760,
+    "rules": 256
+   },
+   "literal/3": {
+    "bytes": 87152,
+    "rules": 139
+   }
+  },
+  "iface": "ens2",
+  "pr_baseline_s": 13.6
+ },
+ "scans": [
+  {
+   "bytes": 19,
+   "cycles": 197,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 19,
+   "t": 0.046289477963000536
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 0.4742936718976125
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 0.8982972699450329
+  },
+  {
+   "bytes": 25,
+   "cycles": 231,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 25,
+   "t": 1.3252952320035547
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 1.7492928829742596
+  },
+  {
+   "bytes": 24,
+   "cycles": 222,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 24,
+   "t": 2.1733047619927675
+  },
+  {
+   "bytes": 26,
+   "cycles": 236,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 26,
+   "t": 2.6012888479745016
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 3.029293332947418
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 3.455299610970542
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 3.879291408928111
+  },
+  {
+   "bytes": 19,
+   "cycles": 197,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 19,
+   "t": 4.3032921879785135
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 4.727293305913918
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 5.155291829956695
+  },
+  {
+   "bytes": 25,
+   "cycles": 231,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 25,
+   "t": 5.579293583985418
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 6.007307156920433
+  },
+  {
+   "bytes": 24,
+   "cycles": 222,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 24,
+   "t": 6.4352784169605
+  },
+  {
+   "bytes": 26,
+   "cycles": 236,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 26,
+   "t": 6.8632906639249995
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 7.295294950949028
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 7.723292557988316
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 8.148306728922762
+  },
+  {
+   "bytes": 44,
+   "cycles": 447,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 8.584296769928187
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 9.012289676000364
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 9.438297858927399
+  },
+  {
+   "bytes": 50,
+   "cycles": 481,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 50,
+   "t": 9.862294713966548
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 10.286290077958256
+  },
+  {
+   "bytes": 49,
+   "cycles": 472,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 10.712298497906886
+  },
+  {
+   "bytes": 51,
+   "cycles": 486,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 51,
+   "t": 11.136292944895104
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 11.560290021938272
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 11.984292163979262
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 12.415296694962308
+  },
+  {
+   "bytes": 44,
+   "cycles": 447,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 12.83930434298236
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 13.267309044953436
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 13.692299210000783
+  },
+  {
+   "bytes": 50,
+   "cycles": 481,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 50,
+   "t": 14.124293264001608
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 14.549294620985165
+  },
+  {
+   "bytes": 49,
+   "cycles": 472,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 14.977297289995477
+  },
+  {
+   "bytes": 51,
+   "cycles": 486,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 51,
+   "t": 15.40529326198157
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 15.829292749986053
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 16.25428848597221
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 16.69630078796763
+  },
+  {
+   "bytes": 168,
+   "cycles": 1690,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 168,
+   "t": 17.124300750903785
+  },
+  {
+   "bytes": 164,
+   "cycles": 1650,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 17.55229424999561
+  },
+  {
+   "bytes": 164,
+   "cycles": 1638,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 17.980293939937837
+  },
+  {
+   "bytes": 169,
+   "cycles": 1676,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 169,
+   "t": 18.408294800901785
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 18.837295735953376
+  },
+  {
+   "bytes": 175,
+   "cycles": 1741,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 175,
+   "t": 19.262306589982472
+  },
+  {
+   "bytes": 186,
+   "cycles": 1837,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 186,
+   "t": 19.690278059919365
+  },
+  {
+   "bytes": 178,
+   "cycles": 1782,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 178,
+   "t": 20.114323241985403
+  },
+  {
+   "bytes": 189,
+   "cycles": 1882,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 189,
+   "t": 20.54229112295434
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 20.96629002096597
+  },
+  {
+   "bytes": 168,
+   "cycles": 1690,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 168,
+   "t": 21.39255496498663
+  },
+  {
+   "bytes": 164,
+   "cycles": 1650,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 21.820294074947014
+  },
+  {
+   "bytes": 164,
+   "cycles": 1638,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 164,
+   "t": 22.24429890594911
+  },
+  {
+   "bytes": 169,
+   "cycles": 1676,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 169,
+   "t": 22.668290636967868
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 23.092296380898915
+  },
+  {
+   "bytes": 175,
+   "cycles": 1741,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 175,
+   "t": 23.516292271902785
+  },
+  {
+   "bytes": 186,
+   "cycles": 1837,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 186,
+   "t": 23.944291272899136
+  },
+  {
+   "bytes": 178,
+   "cycles": 1782,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 178,
+   "t": 24.36929128097836
+  },
+  {
+   "bytes": 59,
+   "cycles": 653,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 59,
+   "t": 24.81929042295087
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 25.25129114696756
+  },
+  {
+   "bytes": 69,
+   "cycles": 727,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 69,
+   "t": 25.675295841996558
+  },
+  {
+   "bytes": 105,
+   "cycles": 1119,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 105,
+   "t": 26.099296620930545
+  },
+  {
+   "bytes": 97,
+   "cycles": 1041,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 97,
+   "t": 26.52828615589533
+  },
+  {
+   "bytes": 74,
+   "cycles": 811,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 74,
+   "t": 26.952290439978242
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 27.376297696959227
+  },
+  {
+   "bytes": 71,
+   "cycles": 769,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 71,
+   "t": 27.800291820894927
+  },
+  {
+   "bytes": 35,
+   "cycles": 425,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 35,
+   "t": 28.224310295889154
+  },
+  {
+   "bytes": 90,
+   "cycles": 945,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 90,
+   "t": 28.648290136945434
+  },
+  {
+   "bytes": 59,
+   "cycles": 653,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 8,
+   "replied": true,
+   "subject_bytes": 59,
+   "t": 29.073290553991683
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 29.497283874894492
+  },
+  {
+   "bytes": 69,
+   "cycles": 727,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 69,
+   "t": 29.92128977389075
+  },
+  {
+   "bytes": 105,
+   "cycles": 1119,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 7,
+   "replied": true,
+   "subject_bytes": 105,
+   "t": 30.345300401910208
+  },
+  {
+   "bytes": 97,
+   "cycles": 1041,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 97,
+   "t": 30.769292919896543
+  },
+  {
+   "bytes": 74,
+   "cycles": 811,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 74,
+   "t": 31.193297009915113
+  },
+  {
+   "bytes": 49,
+   "cycles": 594,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 31.6202973179752
+  },
+  {
+   "bytes": 71,
+   "cycles": 769,
+   "epoch": 2788,
+   "group": "literal/3",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 71,
+   "t": 32.045309606939554
+  },
+  {
+   "bytes": 44,
+   "cycles": 507,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 32.508296342915855
+  },
+  {
+   "bytes": 31,
+   "cycles": 361,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 31,
+   "t": 32.93229439295828
+  },
+  {
+   "bytes": 48,
+   "cycles": 547,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 33.35629803291522
+  },
+  {
+   "bytes": 49,
+   "cycles": 655,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 33.78030372993089
+  },
+  {
+   "bytes": 85,
+   "cycles": 899,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 85,
+   "t": 34.20430387894157
+  },
+  {
+   "bytes": 79,
+   "cycles": 855,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 79,
+   "t": 34.62629574898165
+  },
+  {
+   "bytes": 43,
+   "cycles": 493,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 43,
+   "t": 35.05029502091929
+  },
+  {
+   "bytes": 63,
+   "cycles": 709,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 63,
+   "t": 35.47433395497501
+  },
+  {
+   "bytes": 49,
+   "cycles": 655,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 35.906297279987484
+  },
+  {
+   "bytes": 36,
+   "cycles": 427,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 36,
+   "t": 36.33429323299788
+  },
+  {
+   "bytes": 44,
+   "cycles": 507,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 36.759293576003984
+  },
+  {
+   "bytes": 31,
+   "cycles": 361,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 31,
+   "t": 37.18330098700244
+  },
+  {
+   "bytes": 48,
+   "cycles": 547,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 37.6072940248996
+  },
+  {
+   "bytes": 49,
+   "cycles": 655,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 38.03129639592953
+  },
+  {
+   "bytes": 85,
+   "cycles": 899,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 85,
+   "t": 38.457313616992906
+  },
+  {
+   "bytes": 79,
+   "cycles": 855,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 79,
+   "t": 38.8812898430042
+  },
+  {
+   "bytes": 43,
+   "cycles": 493,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 43,
+   "t": 39.30529062496498
+  },
+  {
+   "bytes": 63,
+   "cycles": 709,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 63,
+   "t": 39.733290801988915
+  },
+  {
+   "bytes": 49,
+   "cycles": 655,
+   "epoch": 2789,
+   "group": "any/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 40.16129016294144
+  },
+  {
+   "bytes": 24,
+   "cycles": 222,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 24,
+   "t": 40.59729060495738
+  },
+  {
+   "bytes": 26,
+   "cycles": 236,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 26,
+   "t": 41.02529755292926
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 41.45329585298896
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 41.877290483913384
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 42.301304405904375
+  },
+  {
+   "bytes": 19,
+   "cycles": 197,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 19,
+   "t": 42.73229176190216
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 43.160301749943756
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 43.58429122297093
+  },
+  {
+   "bytes": 25,
+   "cycles": 231,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 25,
+   "t": 44.008294983999804
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 44.4362830829341
+  },
+  {
+   "bytes": 24,
+   "cycles": 222,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 24,
+   "t": 44.86029094189871
+  },
+  {
+   "bytes": 26,
+   "cycles": 236,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 26,
+   "t": 45.28628608293366
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 45.71429780498147
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 46.14229263889138
+  },
+  {
+   "bytes": 49,
+   "cycles": 335,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 46.570291211945005
+  },
+  {
+   "bytes": 19,
+   "cycles": 197,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 19,
+   "t": 46.998292655916885
+  },
+  {
+   "bytes": 21,
+   "cycles": 211,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 21,
+   "t": 47.4262936739251
+  },
+  {
+   "bytes": 23,
+   "cycles": 221,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 23,
+   "t": 47.85429299797397
+  },
+  {
+   "bytes": 25,
+   "cycles": 231,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 25,
+   "t": 48.27729361993261
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 48.71829206892289
+  },
+  {
+   "bytes": 49,
+   "cycles": 472,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 49.14629238599446
+  },
+  {
+   "bytes": 51,
+   "cycles": 486,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 51,
+   "t": 49.570296594989486
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 49.99829256394878
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 50.42629871494137
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 50.85329253191594
+  },
+  {
+   "bytes": 44,
+   "cycles": 447,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 51.2782966849627
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 51.706302408943884
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 52.13229450699873
+  },
+  {
+   "bytes": 50,
+   "cycles": 481,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 50,
+   "t": 52.5572977908887
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 52.98529615695588
+  },
+  {
+   "bytes": 49,
+   "cycles": 472,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 53.41329333093017
+  },
+  {
+   "bytes": 51,
+   "cycles": 486,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 51,
+   "t": 53.84129415790085
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 54.26529372797813
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 54.68929271295201
+  },
+  {
+   "bytes": 49,
+   "cycles": 257,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 55.11829135590233
+  },
+  {
+   "bytes": 44,
+   "cycles": 447,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 44,
+   "t": 55.5462967089843
+  },
+  {
+   "bytes": 46,
+   "cycles": 461,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 46,
+   "t": 55.97429281589575
+  },
+  {
+   "bytes": 48,
+   "cycles": 471,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "nominations": 3,
+   "replied": true,
+   "subject_bytes": 48,
+   "t": 56.402293372899294
+  },
+  {
+   "bytes": 169,
+   "cycles": 1676,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 6,
+   "replied": true,
+   "subject_bytes": 169,
+   "t": 56.84729492093902
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 57.27229093690403
+  },
+  {
+   "bytes": 175,
+   "cycles": 1741,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 175,
+   "t": 57.69629094796255
+  },
+  {
+   "bytes": 186,
+   "cycles": 1837,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 186,
+   "t": 58.12229181395378
+  },
+  {
+   "bytes": 178,
+   "cycles": 1782,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 178,
+   "t": 58.546310617937706
+  },
+  {
+   "bytes": 189,
+   "cycles": 1882,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 4,
+   "replied": true,
+   "subject_bytes": 189,
+   "t": 58.97429978393484
+  },
+  {
+   "bytes": 49,
+   "cycles": 289,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 0,
+   "replied": true,
+   "subject_bytes": 49,
+   "t": 59.398293094942346
+  },
+  {
+   "bytes": 168,
+   "cycles": 1690,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "nominations": 5,
+   "replied": true,
+   "subject_bytes": 168,
+   "t": 59.827293501002714
+  }
+ ],
+ "swaps": [
+  {
+   "bytes": 1000,
+   "epoch": 2785,
+   "group": "$SIP_PORTS/0",
+   "ms": 14.289894024841487,
+   "t": 0.014320843969471753
+  },
+  {
+   "bytes": 2300,
+   "epoch": 2786,
+   "group": "$FTP_PORTS/0",
+   "ms": 11.951638967730105,
+   "t": 8.160353977931663
+  },
+  {
+   "bytes": 29260,
+   "epoch": 2787,
+   "group": "$ORACLE_PORTS/1",
+   "ms": 16.99030806776136,
+   "t": 16.271441327990033
+  },
+  {
+   "bytes": 87152,
+   "epoch": 2788,
+   "group": "literal/3",
+   "ms": 25.983553030528128,
+   "t": 24.39567800995428
+  },
+  {
+   "bytes": 126760,
+   "epoch": 2789,
+   "group": "any/0",
+   "ms": 30.96841392107308,
+   "t": 32.07679632992949
+  },
+  {
+   "bytes": 1000,
+   "epoch": 2790,
+   "group": "$SIP_PORTS/0",
+   "ms": 11.972901062108576,
+   "t": 40.173373140976764
+  },
+  {
+   "bytes": 2300,
+   "epoch": 2791,
+   "group": "$FTP_PORTS/0",
+   "ms": 12.979006976820529,
+   "t": 48.29035704198759
+  },
+  {
+   "bytes": 29260,
+   "epoch": 2792,
+   "group": "$ORACLE_PORTS/1",
+   "ms": 16.97825500741601,
+   "t": 56.41936084500048
+  }
+ ]
+}
