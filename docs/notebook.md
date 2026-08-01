@@ -2875,3 +2875,32 @@ so the context transform cannot compound either. The general lesson is
 old but keeps being true: anything that runs per-tick must be a fixed
 point, and "read what you just wrote" is how a renderer becomes a
 feedback loop.
+
+## 2026-07-31 (cont.) — An unplanned endurance result: ~2,700 swaps, identity intact
+
+Re-ran the scripted demo on request and the first line of the narrative
+was the result: the card answered the opening status read at **epoch
+2704**. The last recorded state before that was epoch 14 — the driven
+dashboard server, left running between sessions at a swap every ~16
+seconds, had pushed roughly **2,690 table swaps** through the engine
+over several unattended hours before it was stopped.
+
+What matters is not the count but what survived it. The epoch counter
+tracked every commit monotonically; the identity chain held (the demo's
+first swap committed at 2705 with the expected `TABLE_ID`); and the
+demo then ran clean on top: three swaps at 12.2/26.9/19.9 ms (mean
+19.7 ms, 692× under the PR baseline), 132 nominations across 37 SIDs
+matching the model, 35/35 replies, zero loss, zero OVF, counters
+reporting every scan. Nothing about the card needed recovering,
+resetting, or explaining.
+
+That is the property A5 was designed for, demonstrated by accident at a
+scale no planned test had reached: the table write is a context switch
+cheap enough to do thousands of times, and boring enough that doing it
+thousands of times changes nothing. A JTAG-PR equivalent of this
+accident — 2,690 reconfigurations — would have taken ten days of blind
+windows and, on this card's record, wedged the RP long before finishing.
+
+For the record: the counter is 32-bit, so at this cadence wraparound is
+~2,200 years out; epoch-based attribution is safe from that particular
+embarrassment.
