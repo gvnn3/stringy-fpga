@@ -5,10 +5,14 @@ Subcommands (all read-only on the host; ``load`` reconfigures ``pyro_rp`` over
 JTAG per R85 — the spec-sanctioned partial-load path; it never touches the
 static shell or the PCIe link):
 
-    probe                     R83/R84 ID_REQUEST probe (needs CAP_NET_RAW -> sudo)
-    load  <partial.bit>       R85/R86.5 JTAG partial load via hw_server, then the
-                              R85a in-band recovery (sudo -n pyro_wedge_recover.sh
-                              -- needs the NOPASSWD sudoers grant for that script)
+    probe                     R83/R84 ID_REQUEST probe (needs CAP_NET_RAW ->
+    sudo)
+    load  <partial.bit>       R85/R86.5 JTAG partial load via hw_server, then
+    the
+                              R85a in-band recovery (sudo -n
+                              pyro_wedge_recover.sh
+                              -- needs the NOPASSWD sudoers grant for that
+                              script)
     match <corpus> [--slot N] R78.6/R78.7 MATCH round-trip (needs CAP_NET_RAW)
     perf  [--slot N]          R78.11 CYCLES/BYTES read-out (needs CAP_NET_RAW)
 
@@ -49,7 +53,8 @@ def cmd_load(args):
 def _roundtrip(kind, slot, payload, what):
     """One request/reply over the raw-Ethernet transport (R86.7)."""
     cfg = _cfg()
-    transport = pdev._make_transport(cfg)  # bring-up tool: private transport OK
+    # bring-up tool: private transport OK
+    transport = pdev._make_transport(cfg)
     try:
         eth = (bytes(cfg.dst_mac) + bytes(cfg.src_mac)
                + struct.pack(">H", pdev.ETHERTYPE))
@@ -101,8 +106,9 @@ def cmd_match(args):
           f"(OVF={status & 1}) rtt={dt*1e6:.0f}us")
     for i in range(count):
         s, e, pid, fl = struct.unpack_from("<QQII", dec.payload, 8 + 24 * i)
-        print(f"  entry[{i}]: start={s} end={e} pattern_id={pid} flags=0x{fl:x}"
-              f"  (candidate window; host re-verifies per R78.7)")
+        print(
+    f"  entry[{i}]: start={s} end={e} pattern_id={pid} flags=0x{
+        fl:x}" f"  (candidate window; host re-verifies per R78.7)")
     return 0
 
 
@@ -117,15 +123,17 @@ def cmd_perf(args):
     if cycles:
         t_clk_ns = 4.0  # 250 MHz core clock (F4)
         gbps = nbytes / (cycles * t_clk_ns)  # bytes/ns == GB/s
-        print(f"  scan={cycles * t_clk_ns:.0f}ns "
-              f"util={nbytes / cycles:.3f} B/cyc  {gbps:.3f} GB/s on-chip", end="")
+        print(f"  scan={cycles *
+    t_clk_ns:.0f}ns " f"util={nbytes /
+     cycles:.3f} B/cyc  {gbps:.3f} GB/s on-chip", end="")
     print()
     return 0
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+    description=__doc__,
+     formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("probe")
     p = sub.add_parser("load")

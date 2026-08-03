@@ -8,7 +8,8 @@
 #
 # WHY THIS IS NEEDED (nf-server06, 2026-07-13):
 #
-#   1. `ftdi_sio` (the kernel USB-serial driver) grabs all four interfaces of the
+# 1. `ftdi_sio` (the kernel USB-serial driver) grabs all four interfaces of
+# the
 #      board's FT4232H. Vivado's JTAG stack talks to the chip through libusb and
 #      cannot claim an interface the kernel already owns -> hw_server reports
 #      "No matching targets found".
@@ -32,7 +33,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 VIVADO_DIR="${PYRO_VIVADO_DIR:-/usr/local/cad/2025.2/Vivado}"
-DRIVERS="${VIVADO_DIR}/data/xicom/cable_drivers/lin64/install_script/install_drivers/install_drivers"
+DRIVERS="${VIVADO_DIR}/data/xicom/cable_drivers/lin64"
+DRIVERS="${DRIVERS}/install_script/install_drivers/install_drivers"
 RULE=/etc/udev/rules.d/53-alveo-u250-jtag.rules
 
 echo "=== 1. Vivado cable drivers (udev rules) ==="
@@ -54,7 +56,8 @@ cat > "$RULE" <<'EOF'
 # cable reports manufacturer "Xilinx" (product A-U250-P64G) and so is not
 # covered. Without this, /dev/bus/usb/... stays root:root and a non-root
 # hw_server cannot open the cable.
-ACTION=="add", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", ATTRS{manufacturer}=="Xilinx", MODE:="666"
+ACTION=="add", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", \
+  ATTRS{manufacturer}=="Xilinx", MODE:="666"
 EOF
 echo "    wrote $RULE"
 
@@ -73,7 +76,10 @@ for dev in /sys/bus/usb/devices/*; do
         echo "    unbound $i from ftdi_sio"; released=$((released+1)); }
     fi
   done
-  echo "    cable: $base  ($(cat "$dev/manufacturer" 2>/dev/null) $(cat "$dev/product" 2>/dev/null), serial $(cat "$dev/serial" 2>/dev/null))"
+  mfr="$(cat "$dev/manufacturer" 2>/dev/null)"
+  prod="$(cat "$dev/product" 2>/dev/null)"
+  ser="$(cat "$dev/serial" 2>/dev/null)"
+  echo "    cable: $base  ($mfr $prod, serial $ser)"
 done
 [ "$released" -eq 0 ] && echo "    (nothing bound to ftdi_sio — fine)"
 

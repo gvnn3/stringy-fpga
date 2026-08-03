@@ -49,7 +49,9 @@ def test_fuzz_agrees_with_re(seed, monkeypatch):
     assert _norm(p.search(subj)) == _norm(r.search(subj)), (pat, subj)
     assert _norm(p.match(subj)) == _norm(r.match(subj)), (pat, subj)
     assert _norm(p.fullmatch(subj)) == _norm(r.fullmatch(subj)), (pat, subj)
-    assert _iter_spans(p.finditer(subj)) == _iter_spans(r.finditer(subj)), (pat, subj)
+    assert _iter_spans(
+    p.finditer(subj)) == _iter_spans(
+        r.finditer(subj)), (pat, subj)
     assert p.findall(subj) == r.findall(subj), (pat, subj)
     assert p.sub("#", subj) == r.sub("#", subj), (pat, subj)
     assert p.split(subj) == r.split(subj), (pat, subj)

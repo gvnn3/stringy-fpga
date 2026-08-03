@@ -24,17 +24,25 @@ MODES = ["default", "force_model"]
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("entry", oracle.EMPTY, ids=[e[0] for e in oracle.EMPTY])
+@pytest.mark.parametrize("entry", oracle.EMPTY,
+                         ids=[e[0] for e in oracle.EMPTY])
 def test_empty_matches(entry, mode):
-    """R22: zero-width matches replicate CPython advance-past-empty semantics for
+    """R22: zero-width matches replicate CPython advance-past-empty semantics
+    for
     findall/finditer/sub across all APIs."""
     label, pattern, flags, subject = entry
     _apply(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"empty:{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"empty:{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("entry", oracle.MUST_ADVANCE, ids=[e[0] for e in oracle.MUST_ADVANCE])
+@pytest.mark.parametrize("entry", oracle.MUST_ADVANCE,
+                         ids=[e[0] for e in oracle.MUST_ADVANCE])
 def test_must_advance_lazy_empty(entry, mode):
     """R22: lazy/empty-preferring quantifiers (a??, .*?, a*?, empty-branch
     alternations, empty-preferring-then-atom) reproduce CPython's must_advance
@@ -42,37 +50,60 @@ def test_must_advance_lazy_empty(entry, mode):
     same start — byte-identically across finditer/findall/sub/split."""
     label, pattern, flags, subject = entry
     _apply(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"mustadv:{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"mustadv:{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("entry", oracle.ANCHORS, ids=[e[0] for e in oracle.ANCHORS])
+@pytest.mark.parametrize("entry", oracle.ANCHORS,
+                         ids=[e[0] for e in oracle.ANCHORS])
 def test_multiline_and_anchors(entry, mode):
     """R24: MULTILINE ^/$, non-MULTILINE $ before trailing \\n, and \\Z are
     byte-identical to stock re."""
     label, pattern, flags, subject = entry
     _apply(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"anchor:{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"anchor:{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("entry", oracle.IGNORECASE, ids=[e[0] for e in oracle.IGNORECASE])
+@pytest.mark.parametrize("entry", oracle.IGNORECASE,
+                         ids=[e[0] for e in oracle.IGNORECASE])
 def test_ignorecase_folding(entry, mode):
     """R15/R16: IGNORECASE folding — ASCII/simple folds accelerate, full folds
     (ß<->ss) fall back, but every result is byte-identical to stock re."""
     label, pattern, flags, subject = entry
     _apply(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"ic:{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"ic:{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("entry", oracle.ASTRAL, ids=[e[0] for e in oracle.ASTRAL])
+@pytest.mark.parametrize("entry", oracle.ASTRAL,
+                         ids=[e[0] for e in oracle.ASTRAL])
 def test_astral_codepoint_offsets(entry, mode):
     """R21: offsets for astral (>= U+10000) subjects are code-point indices,
     exactly translated back from internal UTF-8, byte-identical to stock re."""
     label, pattern, flags, subject = entry
     _apply(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"astral:{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"astral:{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", MODES)

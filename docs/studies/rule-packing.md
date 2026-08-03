@@ -36,14 +36,60 @@ exactly zero.
 
 ## 2. What checking it found instead
 
-| # | packing | groups | max rules/group | max slots | worst-group LUTs (est.) | cov k=1 | cov k=4 | weekly-diff dirty |
-|---|---|---|---|---|---|---|---|---|
-| P0 | baseline — ≤256 **rules** (today) | 21 | 256 | 256 | 21,261 | 26.6% | 72.8% | 2/21 |
-| P1 | **slot-bound — ≤256 slots** | 20 | 385 | 256 | 21,261 | **30.3%** | 70.0% | 2/20 |
-| P2 | anchor-aware, ≤256 slots | 20 | 400 | 256 | 21,557 | 30.9% | 73.0% | **6/20** |
-| P3 | mixed-class, ≤256 slots | 21 | 385 | 256 | 21,261 | 30.3% | 69.7% | 2/20 |
-| P4a | slot-bound ≤512 slots | 13 | 734 | 512 | 29,538 | 59.5% | 76.9% | 2/13 |
-| P4b | **slot-bound ≤1024 slots** | 9 | 1,064 | 1024 | 45,078 | **71.1%** | 88.9% | 2/9 |
+- **P0**
+  - packing: baseline — ≤256 **rules** (today)
+  - groups: 21
+  - max rules/group: 256
+  - max slots: 256
+  - worst-group LUTs (est.): 21,261
+  - cov k=1: 26.6%
+  - cov k=4: 72.8%
+  - weekly-diff dirty: 2/21
+- **P1**
+  - packing: **slot-bound — ≤256 slots**
+  - groups: 20
+  - max rules/group: 385
+  - max slots: 256
+  - worst-group LUTs (est.): 21,261
+  - cov k=1: **30.3%**
+  - cov k=4: 70.0%
+  - weekly-diff dirty: 2/20
+- **P2**
+  - packing: anchor-aware, ≤256 slots
+  - groups: 20
+  - max rules/group: 400
+  - max slots: 256
+  - worst-group LUTs (est.): 21,557
+  - cov k=1: 30.9%
+  - cov k=4: 73.0%
+  - weekly-diff dirty: **6/20**
+- **P3**
+  - packing: mixed-class, ≤256 slots
+  - groups: 21
+  - max rules/group: 385
+  - max slots: 256
+  - worst-group LUTs (est.): 21,261
+  - cov k=1: 30.3%
+  - cov k=4: 69.7%
+  - weekly-diff dirty: 2/20
+- **P4a**
+  - packing: slot-bound ≤512 slots
+  - groups: 13
+  - max rules/group: 734
+  - max slots: 512
+  - worst-group LUTs (est.): 29,538
+  - cov k=1: 59.5%
+  - cov k=4: 76.9%
+  - weekly-diff dirty: 2/13
+- **P4b**
+  - packing: **slot-bound ≤1024 slots**
+  - groups: 9
+  - max rules/group: 1,064
+  - max slots: 1024
+  - worst-group LUTs (est.): 45,078
+  - cov k=1: **71.1%**
+  - cov k=4: 88.9%
+  - weekly-diff dirty: 2/9
 
 ### P1 — the free correction: bound by slots, not rules
 

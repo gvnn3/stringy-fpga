@@ -251,7 +251,8 @@ def coverage(groups, skew, phase_s, seed, n_flows, span_s, ks=(1, 4)):
         if k == 1:
             continue
         out["k%d" % k] = 100 * run(trace, value, ach,
-                                   LRUPolicy(k, 0.001, n, warm=[best]))["coverage"]
+                                   LRUPolicy(k, 0.001, n,
+                                             warm=[best]))["coverage"]
     return out
 
 
@@ -331,25 +332,41 @@ def main():
     print("all 256 rules fire, so k=1 coverage is 256/achievable(port) for")
     print("ANY arrangement.  Mixing classes changes WHICH rules are resident,")
     print("never HOW MANY.  Measured, current packing:\n")
-    print("  %-7s %-12s %-16s %s" % ("port", "achievable", "best group V", "= 256?"))
+    print(
+    "  %-7s %-12s %-16s %s" %
+    ("port",
+    "achievable",
+    "best group V",
+     "= 256?"))
     for p in (80, 22, 25, 443, 1521):
         bv = max(value[g][p] for g in range(len(base)))
-        print("  %-7d %-12d %-16d %s" % (p, ach[p], bv, "yes" if bv >= 256 else "NO"))
+        print(
+    "  %-7d %-12d %-16d %s" %
+     (p, ach[p], bv, "yes" if bv >= 256 else "NO"))
     print("\nSo the real levers are the SLOT bound and group WIDTH, below.\n")
 
     # ---- variants ----------------------------------------------------
     variants = [
         ("P0 baseline (<=256 rules)", lambda e: pack_baseline(e, 256), {}),
         ("P1 slot-bound (<=256 slots)", lambda e: pack_slot_bound(e, 256), {}),
-        ("P2 anchor-aware (<=256 slots)", lambda e: pack_anchor_aware(e, 256), {}),
-        ("P3 mixed-class (<=256 slots)", lambda e: pack_mixed_class(e, 256), {}),
+        ("P2 anchor-aware (<=256 slots)",
+         lambda e: pack_anchor_aware(e, 256), {}),
+        ("P3 mixed-class (<=256 slots)",
+         lambda e: pack_mixed_class(e, 256), {}),
         ("P4a slot-bound <=512", lambda e: pack_slot_bound(e, 512), {}),
         ("P4b slot-bound <=1024", lambda e: pack_slot_bound(e, 1024), {}),
     ]
 
     print("=" * 110)
-    print("%-30s %-7s %-9s %-9s %-11s %-8s %-8s" %
-          ("packing", "groups", "max rule", "max slot", "est LUTs", "cov k=1", "cov k=4"))
+    print(
+    "%-30s %-7s %-9s %-9s %-11s %-8s %-8s" %
+    ("packing",
+    "groups",
+    "max rule",
+    "max slot",
+    "est LUTs",
+    "cov k=1",
+     "cov k=4"))
     print("=" * 110)
     results = []
     for name, packer, kw in variants:

@@ -54,13 +54,17 @@ import os
 import re
 import struct
 import subprocess
-from typing import Dict, FrozenSet, List, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import (Dict, FrozenSet, List, NamedTuple, Optional,
+                    Sequence, Set, Tuple)
 
 from pyro._circuit_model import GroupCircuitModel
 from pyro.snort import groups as G
 from pyro.snort import triage as T
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 CORPUS = os.path.join(REPO, "third_party", "snort3-community-rules",
                       "snort3-community.rules")
 
@@ -132,7 +136,8 @@ def group_model(group, datapath_bytes: int = 1) -> GroupCircuitModel:
 
 def sidecar_index(group) -> Dict[int, Tuple[Tuple[int, int], ...]]:
     """``slot -> ((gid, sid), ...)`` — one slot can serve several rules."""
-    return {s.index: tuple((r.gid, r.sid) for r in s.rules) for s in group.slots}
+    return {s.index: tuple((r.gid, r.sid) for r in s.rules)
+                           for s in group.slots}
 
 
 # --------------------------------------------------------------------------
@@ -274,7 +279,8 @@ def slot_exemplar(slot, maximal: bool = False) -> bytes:
         if "SPACE" in cat and "NOT" not in cat:
             return set(b" \t\r\n\f\v")
         if "NOT" in cat:
-            return {0x2E}                # '.' is neither digit, word, nor space
+            # '.' is neither digit, word, nor space
+            return {0x2E}
         raise AssertionError("unhandled category %s" % cat)
 
     def walk(seq) -> bytes:
@@ -320,10 +326,12 @@ def slot_exemplar(slot, maximal: bool = False) -> bytes:
 
 def model_windows(model: GroupCircuitModel, data: bytes,
                   base: int = 0) -> Set[Window]:
-    """The model's window set for ``data`` (ring order is checked separately)."""
+    """The model's window set for ``data`` (ring order is checked
+    separately)."""
     entries, overflowed = model.scan(data, 0, 1 << 40)
     assert not overflowed, "out_cap unexpectedly exceeded in the oracle path"
-    return {Window(m.pattern_id, base + m.start, base + m.end) for m in entries}
+    return {Window(m.pattern_id, base + m.start, base + m.end)
+                   for m in entries}
 
 
 # --------------------------------------------------------------------------
@@ -540,7 +548,9 @@ def _port_holds(token: str, port: int) -> bool:
     if tok in PORT_VARS:
         return port in PORT_VARS[tok]
     if tok.startswith("$"):
-        raise KeyError("unknown port variable %r (SR13 table incomplete)" % tok)
+        raise KeyError(
+    "unknown port variable %r (SR13 table incomplete)" %
+     tok)
     neg = tok.startswith("!")
     body = tok[1:] if neg else tok
     body = body.strip("[]")
@@ -575,9 +585,14 @@ def header_holds(rule, flow: Flow) -> bool:
     """
     if rule.proto.lower() not in ("tcp", "ip", "http"):
         return False
-    fwd = (_net_holds(rule.src_net) and _port_holds(rule.src_port, flow.src_port)
-           and _net_holds(rule.dst_net)
-           and _port_holds(rule.dst_port, flow.dst_port))
+    fwd = (
+    _net_holds(
+        rule.src_net) and _port_holds(
+            rule.src_port,
+            flow.src_port) and _net_holds(
+                rule.dst_net) and _port_holds(
+                    rule.dst_port,
+                     flow.dst_port))
     if fwd:
         return True
     if rule.direction == "<>":
@@ -672,7 +687,8 @@ def _tcp(src, dst, sport, dport, seq, ack, flags, payload=b""):
     ip = struct.pack("!BBHHHBBH", 0x45, 0, 20 + len(tcp), 0x1234, 0, 64, 6,
                      0) + src + dst
     ip = ip[:10] + struct.pack("!H", _csum(ip)) + ip[12:]
-    eth = (SRV_MAC + CLI_MAC if src == CLI_IP else CLI_MAC + SRV_MAC) + b"\x08\x00"
+    eth = (SRV_MAC + CLI_MAC if src ==
+           CLI_IP else CLI_MAC + SRV_MAC) + b"\x08\x00"
     return eth + ip + tcp
 
 
@@ -703,10 +719,31 @@ def case_packets(case: Case) -> List[bytes]:
     """SYN / SYN-ACK / ACK then each client segment, each server-ACKed."""
     seq_c, seq_s = 1000, 5000
     pkts = [
-        _tcp(CLI_IP, SRV_IP, case.sport, case.dport, seq_c, 0, 0x02),
-        _tcp(SRV_IP, CLI_IP, case.dport, case.sport, seq_s, seq_c + 1, 0x12),
-        _tcp(CLI_IP, SRV_IP, case.sport, case.dport, seq_c + 1, seq_s + 1, 0x10),
-    ]
+    _tcp(
+        CLI_IP,
+        SRV_IP,
+        case.sport,
+        case.dport,
+        seq_c,
+        0,
+        0x02),
+        _tcp(
+            SRV_IP,
+            CLI_IP,
+            case.dport,
+            case.sport,
+            seq_s,
+            seq_c + 1,
+            0x12),
+            _tcp(
+                CLI_IP,
+                SRV_IP,
+                case.sport,
+                case.dport,
+                seq_c + 1,
+                seq_s + 1,
+                0x10),
+                 ]
     seq_c += 1
     seq_s += 1
     for seg in case.segments:
@@ -898,8 +935,8 @@ def adversarial_corpora(group, seed: int = 20260728) -> List[bytes]:
     out: List[bytes] = [b"".join(s.anchor for s in live[:40])]
 
     def perm(b: bytes) -> bytes:
-        return bytes((c ^ 0x20) if 65 <= (c & 0xDF) <= 90 and rnd.random() < 0.5
-                     else c for c in b)
+        return bytes((c ^ 0x20) if 65 <= (c & 0xDF) <=
+                     90 and rnd.random() < 0.5 else c for c in b)
 
     out.append(b"".join(perm(s.anchor) for s in live[:40]))
     buf = bytearray()
@@ -1035,7 +1072,8 @@ class Differential(NamedTuple):
     """The SR16 differential result — completeness diffs + counted FPs."""
 
     true_positives: int                       # alerted AND nominated
-    misses: Tuple[Tuple[str, int, int, str, str], ...]   # (case,gid,sid,subtier,buffer)
+    # (case,gid,sid,subtier,buffer)
+    misses: Tuple[Tuple[str, int, int, str, str], ...]
     fp_by_class: Dict[str, int]
     fp_rows: Tuple[Tuple[str, int, int, str], ...]       # (case,gid,sid,class)
     alerted_sids: FrozenSet[int]
@@ -1113,7 +1151,8 @@ def alerts_by_case(alerts: Sequence[Alert],
     for a in alerts:
         if a.src_ip != CLI_IP_S or a.src_port not in by_port:
             raise AssertionError(
-                "alert on an unexpected flow (server->client or unknown "
-                "port): %r — the C2S-only nomination path cannot see it" % (a,))
+    "alert on an unexpected flow (server->client or unknown "
+    "port): %r — the C2S-only nomination path cannot see it" %
+     (a,))
         out[by_port[a.src_port]].add((a.gid, a.sid))
     return out

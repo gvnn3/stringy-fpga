@@ -1,7 +1,8 @@
 # A5 working-set study — is prefilter coverage capacity- or latency-limited?
 
 - **Date:** 2026-07-29 · **Branch:** `a5-working-set-study`
-- **Tool:** `scripts/a5_working_set_study.py` · **Data:** `a5_working_set_data.json`
+- **Tool:** `scripts/a5_working_set_study.py` · **Data:**
+  `a5_working_set_data.json`
 - **Question:** OQ-1 deferred the A5 amendment (a loadable-table overlay
   engine, runtime table writes instead of re-synthesis) pending *"S3's
   measured swap cadence."* S3 measured it: **~16 s** per JTAG swap, **~60 min**
@@ -78,11 +79,12 @@ first time its *value* was measured rather than its *function*.
 
 **Assumed, and therefore swept rather than fixed:**
 
-| parameter | values |
-|---|---|
-| traffic skew (Zipf exponent over ports) | 0 (uniform), 1.2, 2.0 |
-| mix stationarity | stationary, 60 s phases, 300 s phases |
-| specificity weight `w` (port-specific rules valued `w`× generic ones) | 1, 3, 10 |
+- **traffic skew (Zipf exponent over ports)**
+  - values: 0 (uniform), 1.2, 2.0
+- **mix stationarity**
+  - values: stationary, 60 s phases, 300 s phases
+- **specificity weight `w` (port-specific rules valued `w`× generic ones)**
+  - values: 1, 3, 10
 
 The verdict is unchanged in all 27 combinations. The `w` sweep is the
 important one: it is the assumption most likely to overturn the result,

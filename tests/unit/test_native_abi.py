@@ -1,7 +1,8 @@
 """ABI-2.0.0 conformance + harness-contract tests driven via ctypes (R57/R58).
 
 These exercise the FULL native ABI surface (``src/pyro_rt.c`` /
-``include/pyro_rt.h``) against the in-library software model of the §7.4 harness,
+``include/pyro_rt.h``) against the in-library software model of the §7.4
+harness,
 the way AC-1-1 / AC-1-2 / AC-1-4 require: lifecycle, generate/synth/status/load,
 scan incl. overflow/resume and the ``PYRO_E_NOT_RESIDENT`` guard, caps, the R47a
 identity trust boundary, R47b manifest integrity/compatibility rejection, R49
@@ -37,7 +38,8 @@ _REPO = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(scope="session")
 def native():
-    """Build + load libpyro_rt.so; skip-with-reason if a C toolchain is absent."""
+    """Build + load libpyro_rt.so; skip-with-reason if a C toolchain is
+    absent."""
     import pyro._native as _n
 
     cc = shutil.which(os.environ.get("CC", "cc")) or shutil.which("gcc")
@@ -62,7 +64,8 @@ def native():
 # helpers
 # --------------------------------------------------------------------------
 def _write_artifact(art_dir: Path, pattern, flags=0):
-    """Generate a circuit, run the mock toolchain, write artifact.bin+manifest."""
+    """Generate a circuit, run the mock toolchain, write
+    artifact.bin+manifest."""
     circ = hdl.generate(pattern, flags)
     payload, manifest = MockToolchain().run(_job_from_circuit(circ))
     art_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +80,8 @@ def _descriptor(native, circ, art_dir: Path, hash_override: bytes = None):
 
 
 def _encode(subject):
-    return subject.encode("utf-8") if isinstance(subject, str) else bytes(subject)
+    return subject.encode("utf-8") if isinstance(subject,
+                          str) else bytes(subject)
 
 
 def _py_windows(circ, subject):
@@ -196,7 +200,15 @@ def test_identity_mismatch_refuses_load(native, tmp_path):
     circ = _write_artifact(tmp_path / "art", b"abc")
     ctx = native.NativeCtx("model://")
     wrong = bytes(16)  # not the baked hash
-    c = ctx.generate(_descriptor(native, circ, tmp_path / "art", wrong), 0, circ.enc)
+    c = ctx.generate(
+    _descriptor(
+        native,
+        circ,
+        tmp_path /
+        "art",
+        wrong),
+        0,
+         circ.enc)
     assert c.load() == native.PYRO_E_NOT_RESIDENT
     assert c.status() != native.PYRO_CIRC_RESIDENT
     ctx.close()
@@ -393,7 +405,13 @@ def test_concurrent_scans_serialize_correctly(native, tmp_path):
     def worker():
         for _ in range(50):
             rc, matches = c.scan(subject, 0, out_cap=64)
-            if rc != native.PYRO_OK or [(s, e) for (s, e, _p, _f) in matches] != expected:
+            if rc != native.PYRO_OK or [
+    (s,
+    e) for (
+        s,
+        e,
+        _p,
+         _f) in matches] != expected:
                 errors.append((rc, matches))
                 return
 
@@ -413,8 +431,22 @@ def test_second_load_evicts_first(native, tmp_path):
     circ_a = _write_artifact(tmp_path / "a", b"aaa")
     circ_b = _write_artifact(tmp_path / "b", b"bbb")
     ctx = native.NativeCtx("model://")
-    ca = ctx.generate(_descriptor(native, circ_a, tmp_path / "a"), 0, circ_a.enc)
-    cb = ctx.generate(_descriptor(native, circ_b, tmp_path / "b"), 0, circ_b.enc)
+    ca = ctx.generate(
+    _descriptor(
+        native,
+        circ_a,
+        tmp_path /
+        "a"),
+        0,
+         circ_a.enc)
+    cb = ctx.generate(
+    _descriptor(
+        native,
+        circ_b,
+        tmp_path /
+        "b"),
+        0,
+         circ_b.enc)
     assert ca.load() == native.PYRO_OK
     assert cb.load() == native.PYRO_OK            # evicts A (R64)
     assert cb.status() == native.PYRO_CIRC_RESIDENT
@@ -424,5 +456,6 @@ def test_second_load_evicts_first(native, tmp_path):
     assert rc == native.PYRO_E_NOT_RESIDENT       # A no longer resident
     rc, matches = cb.scan(b"bbb", 0, out_cap=8)
     assert rc == native.PYRO_OK
-    assert [(s, e) for (s, e, _p, _f) in matches] == _py_windows(circ_b, b"bbb")
+    assert [(s, e)
+             for (s, e, _p, _f) in matches] == _py_windows(circ_b, b"bbb")
     ctx.close()

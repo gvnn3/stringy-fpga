@@ -36,7 +36,8 @@ def routing(request, monkeypatch):
 
 @pytest.mark.parametrize("pat", [r".", r"x?", r"(.)", r"\w*", r".$"])
 def test_lone_surrogate_subject(routing, pat):
-    subj = "ab\ud800cd\udfffx"          # unpaired surrogates: not UTF-8 encodable
+    # unpaired surrogates: not UTF-8 encodable
+    subj = "ab\ud800cd\udfffx"
     p = pre.compile(pat)
     r = re.compile(pat)
     for op in OPS:

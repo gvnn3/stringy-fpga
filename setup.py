@@ -33,7 +33,8 @@ class build_ext(_build_ext):
 
         gen_route_config.main([
             "--src", os.path.join(HERE, "pyro", "_thresholds.py"),
-            "--out", os.path.join(HERE, "build", "include", "pyro_thresholds.h"),
+            "--out", os.path.join(HERE, "build", "include",
+                                  "pyro_thresholds.h"),
         ])
         super().run()
 

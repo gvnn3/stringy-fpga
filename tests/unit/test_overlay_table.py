@@ -270,15 +270,17 @@ def test_real_group_anchors_round_trip_through_the_image(corpus_group):
     load(eng, img, chunk=1474)               # R78-sized chunks
     subject = b"GET /view-source HTTP/1.0\r\n\r\n"
     hits, _ = eng.scan(subject, out_cap=1 << 16)
-    assert {(h.pattern_id, h.end) for h in hits} == occurrences(anchors, subject)
+    assert {(h.pattern_id, h.end)
+             for h in hits} == occurrences(anchors, subject)
 
 
 def test_overlay_is_sound_versus_the_lowered_circuits(corpus_group):
     """SR3: anchor-only AC must never MISS what the lowered chain circuits
     catch. Extra nominations are the price; missed ones would be a defect."""
-    for subject in (b"GET /view-source HTTP/1.0",
-                    b"POST /x \x00\x01\x86\xa0\x00\x00\x00\x00\x00\x00\x00\x03",
-                    b"benign traffic here"):
+    for subject in (
+    b"GET /view-source HTTP/1.0",
+    b"POST /x \x00\x01\x86\xa0\x00\x00\x00\x00\x00\x00\x00\x03",
+     b"benign traffic here"):
         d = T.precision_delta(corpus_group, subject)
         assert d["sound"], d
         assert d["missed"] == 0
@@ -360,7 +362,8 @@ def test_full_corpus_fits_the_rp_budget(full_corpus_table):
         return ((w * d) + (36 * 1024) - 1) // (36 * 1024)
 
     u = uram(256, n) + uram(64, n)                      # bitmap + oidx
-    b = bram(32, n) * 2 + bram(32, tr) + bram(32, outs)  # base/fail/dense/oflat
+    b = bram(32, n) * 2 + bram(32, tr) + \
+             bram(32, outs)  # base/fail/dense/oflat
     assert u <= 64, "URAM %d over the 64 budget" % u
     assert b <= 160, "BRAM36 %d over the 160 budget" % b
     # ...and the reason both had to move: bitmap alone in BRAM blows it.

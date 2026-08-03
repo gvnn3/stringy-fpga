@@ -47,10 +47,17 @@ import subprocess
 import sys
 import time
 
-from phase1_support import jsonify  # tuple->list canonicaliser (trap: JSON has no tuple)
+# tuple->list canonicaliser (trap: JSON has no tuple)
+from phase1_support import jsonify
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phase3_workers.py")
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
+WORKER = os.path.join(
+    os.path.dirname(
+        os.path.abspath(__file__)),
+         "phase3_workers.py")
 
 # Parent-side subprocess deadline.  The worker's own tier poll uses
 # PYRO_TEST_SYNTH_TIMEOUT (default 45 s, mock toolchain); allow the corpus
@@ -121,13 +128,16 @@ def run_corpus(program, mode, *, cache_dir, extra_env=None,
     )
     if proc.returncode != 0:
         raise AssertionError(
-            f"phase3 corpus worker ({program}, {mode}) failed rc={proc.returncode}\n"
-            f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+    f"phase3 corpus worker ({program}, {mode}) failed rc={
+        proc.returncode}\n" f"STDOUT:\n{
+            proc.stdout}\nSTDERR:\n{
+                proc.stderr}")
     try:
         return parse_records(proc.stdout)
     except json.JSONDecodeError:
         raise AssertionError(
-            f"phase3 corpus worker ({program}, {mode}) emitted non-JSON lines:\n"
+            f"phase3 corpus worker ({program}, {mode}) emitted non-JSON "
+            f"lines:\n"
             f"{proc.stdout}\n{proc.stderr}")
 
 
@@ -181,12 +191,14 @@ def assert_call_sequences_identical(stock_result, installed_result, label=""):
         f"[{label}] call-count mismatch: stock={len(sc)} installed={len(ic)}")
     for a, b in zip(sc, ic):
         assert a["label"] == b["label"], (
-            f"[{label}] call {a['i']}: label skew {a['label']!r} vs {b['label']!r}"
+            f"[{label}] call {a['i']}: label skew {a['label']!r} vs "
+            f"{b['label']!r}"
             " — corpus program is nondeterministic")
         ka = jsonify({"value": a.get("value"), "exc": a.get("exc")})
         kb = jsonify({"value": b.get("value"), "exc": b.get("exc")})
         assert ka == kb, (
-            f"[{label}] call {a['i']} ({a['label']}) diverged under install():\n"
+            f"[{label}] call {a['i']} ({a['label']}) diverged under "
+            f"install():\n"
             f"  stock    ={ka!r}\n  installed={kb!r}")
 
 

@@ -46,7 +46,8 @@ def test_manifest_declares_over_approx_classes_r19c():
 
 
 def test_exact_circuit_declares_empty_over_approx_r19c():
-    # A pure-ASCII byte pattern is exactly recognized: empty OA set, 0.0 FP rate.
+    # A pure-ASCII byte pattern is exactly recognized: empty OA set, 0.0 FP
+    # rate.
     _, m = MockToolchain().run(_job(rb"abc[0-9]+"))
     assert m.over_approx_classes == []
     assert m.estimated_fp_rate == 0.0

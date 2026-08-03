@@ -30,7 +30,8 @@ import pyro.re as pre
 import phase2_support
 import r3b_protocol
 
-# Short subject (< S_min = 64 KiB); each distinct pattern is called so per-pattern
+# Short subject (< S_min = 64 KiB); each distinct pattern is called so per-
+# pattern
 # reuse stays < N_reuse = 32 => every call is a genuine loss-regime routing
 # decision through §8 that ends in fallback.
 SUBJECT = "the quick brown fox jumps over the lazy dog " * 3
@@ -43,21 +44,25 @@ def _distinct_patterns(n):
 
 
 def test_hardware_throughput_on_device_skips():
-    """SKIP: resident-circuit throughput (R1) requires device_usable, FALSE (R71)."""
+    """SKIP: resident-circuit throughput (R1) requires device_usable, FALSE
+    (R71)."""
     ok, reason = phase2_support.device_usable()
     if not ok:
         pytest.skip(reason)
-    raise AssertionError("device_usable unexpectedly true — implement the >=1 GiB/s "
-                         "resident-circuit throughput assertion (R1)")
+    raise AssertionError(
+    "device_usable unexpectedly true — implement the >=1 GiB/s "
+    "resident-circuit throughput assertion (R1)")
 
 
 def test_short_oneshot_routes_to_fallback():
-    """R3/R29: a short (< S_min) one-shot (reuse < N_reuse) HW-eligible call routes
+    """R3/R29: a short (< S_min) one-shot (reuse < N_reuse) HW-eligible call
+    routes
     to fallback — observable as a genuine re.Match (R29)."""
     m = pre.search("ac25_uniq_needle", "find ac25_uniq_needle here")
     assert m is not None
     assert isinstance(m, stdre.Match), (
-        "short one-shot HW-eligible call must route to fallback (R51 step 4, R29)")
+        "short one-shot HW-eligible call must route to fallback (R51 step 4, "
+        "R29)")
 
 
 @pytest.mark.perf
@@ -66,7 +71,8 @@ def test_absolute_routing_overhead_median():
     pats = _distinct_patterns(N_PATTERNS)
     re_c = [stdre.compile(p) for p in pats]
     py_c = [pre.compile(p) for p in pats]
-    for i in range(len(pats)):          # prime classification caches (reuse->1)
+    for i in range(
+    len(pats)):          # prime classification caches (reuse->1)
         re_c[i].search(SUBJECT)
         py_c[i].search(SUBJECT)
     # R3b.4-style rotating warmup (the old single-pattern warmup crossed

@@ -73,8 +73,14 @@ if _MISSING_SEAMS:
         "(R51b-strict/R67)",
         allow_module_level=True)
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phase3_workers.py")
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
+WORKER = os.path.join(
+    os.path.dirname(
+        os.path.abspath(__file__)),
+         "phase3_workers.py")
 
 # Both runs: R67 gate on (await_synthesis must genuinely wait; the strict seam
 # must bind) and the R4a launch boundary pinned at 2 (R68) so the launch fires
@@ -141,9 +147,12 @@ def _classify(run):
     for i, rec in enumerate(run["records"]):
         cur = rec["stats"]
         d = {k: cur[k] - prev[k] for k in DISPATCH_COUNTERS}
-        tag = f"[{run['mode']}] record {i} ({rec['phase']}, tier_before={rec['tier_before']})"
-        assert d["total"] == 1, f"{tag}: expected exactly one dispatch, deltas={d}"
-        assert d["hardware"] == 0, f"{tag}: hardware moved with no device present: {d}"
+        tag = (f"[{run['mode']}] record {i} ({rec['phase']},"
+               f" tier_before={rec['tier_before']})")
+        assert d["total"] == 1, (
+            f"{tag}: expected exactly one dispatch, deltas={d}")
+        assert d["hardware"] == 0, (
+            f"{tag}: hardware moved with no device present: {d}")
         assert d["fallback_after_error"] == 0 and d["device_errors"] == 0, (
             f"{tag}: tier routing charged an ERROR counter (R51b-strict says "
             f"never fallback_after_error): {d}")
@@ -181,7 +190,8 @@ class TestUpgradeEdgeStrict:
             "isolated cache did not start cold: "
             f"{strict_run['records'][0]['tier_before']}")
 
-    def test_prelaunch_dispatches_fall_back_and_launch_fires_at_n_synth(self, strict_run):
+    def test_prelaunch_dispatches_fall_back_and_launch_fires_at_n_synth(
+        self, strict_run):
         """R4a/R51b-strict/R68: with N_synth pinned at 2, the first dispatch
         is a genuine fallback that launches NOTHING; the second is a genuine
         fallback AND fires exactly one background synthesis launch."""
@@ -193,9 +203,11 @@ class TestUpgradeEdgeStrict:
             f"pre-launch dispatches not served by fallback under strict "
             f"residency: {kinds[:2]} — is the R67 gate reaching the worker?")
         rec0, rec1 = strict_run["records"][:2]
-        assert rec0["stats"]["synth_launched"] - strict_run["baseline"]["synth_launched"] == 0, (
+        assert (rec0["stats"]["synth_launched"]
+                - strict_run["baseline"]["synth_launched"] == 0), (
             f"launch fired before N_synth=2: {rec0['stats']}")
-        assert rec1["stats"]["synth_launched"] - rec0["stats"]["synth_launched"] == 1, (
+        assert (rec1["stats"]["synth_launched"]
+                - rec0["stats"]["synth_launched"] == 1), (
             f"launch did not fire exactly at N_synth=2: {rec1['stats']}")
 
     def test_upgrade_is_a_single_monotone_flip(self, strict_run):
@@ -211,14 +223,16 @@ class TestUpgradeEdgeStrict:
             "completed on the mock toolchain")
         flip = kinds.index("model")
         assert kinds == ["fallback"] * flip + ["model"] * (len(kinds) - flip), (
-            f"classification interleaves — not a single silent upgrade: {kinds}")
+            f"classification interleaves — not a single silent upgrade: "
+            f"{kinds}")
         for rec in strict_run["records"][:flip]:
             assert rec["tier_before"] in NOT_RESIDENT_TIERS, (
                 f"a fallback-classified dispatch saw tier "
                 f"{rec['tier_before']!r} — fallback while resident violates "
                 "R51 step 5")
 
-    def test_await_synthesis_reports_resident_and_post_dispatches_are_model(self, strict_run):
+    def test_await_synthesis_reports_resident_and_post_dispatches_are_model(
+        self, strict_run):
         """R67: await_synthesis returned the terminal tier 'resident' (not a
         timeout's last-observed tier), and every dispatch made AFTER it
         returned — the 'post' phase — was served by the resident stand-in
@@ -229,7 +243,8 @@ class TestUpgradeEdgeStrict:
         kinds = _classify(strict_run)
         post = [(rec, kind) for rec, kind in
                 zip(strict_run["records"], kinds) if rec["phase"] == "post"]
-        assert len(post) == 3, f"expected 3 post-upgrade dispatches, got {len(post)}"
+        assert len(
+            post) == 3, f"expected 3 post-upgrade dispatches, got {len(post)}"
         for rec, kind in post:
             assert kind == "model", (
                 f"post-upgrade dispatch classified {kind!r}: the upgrade did "
@@ -274,7 +289,8 @@ class TestByteIdentity:
                 f"tier_before={rec['tier_before']}) diverged from stock re:\n"
                 f"  got     ={rec['value']!r}\n  expected={expected!r}")
 
-    def test_strict_and_default_runs_return_identical_values(self, strict_run, default_run):
+    def test_strict_and_default_runs_return_identical_values(
+        self, strict_run, default_run):
         """R67's own constraint: enabling the seam MUST NOT change any
         caller-visible result — only the counters and latency differ."""
         assert strict_run["expected"] == default_run["expected"]
@@ -318,7 +334,8 @@ class TestDefaultModeControl:
 # 4. Cold / fallback-only patterns are served by fallback (AC-3-2, sentence 2).
 # ==========================================================================
 class TestColdAndFallbackOnly:
-    def test_fallback_only_pattern_served_by_fallback_in_both_modes(self, strict_run, default_run):
+    def test_fallback_only_pattern_served_by_fallback_in_both_modes(
+        self, strict_run, default_run):
         """A never-HW-eligible pattern (backreference) is a plain fallback
         dispatch in BOTH modes — strict residency changes nothing for it —
         and launches no synthesis."""
@@ -331,9 +348,11 @@ class TestColdAndFallbackOnly:
             assert d["fallback_after_error"] == 0 and d["device_errors"] == 0
             assert d["synth_launched"] == 0, (
                 f"[{run['mode']}] a fallback-only pattern launched synthesis")
-            assert rec["circuit_status"] == "fallback_only", rec["circuit_status"]
+            assert rec["circuit_status"] == "fallback_only", (
+                rec["circuit_status"])
 
-    def test_cold_pattern_served_by_fallback_under_strict_routing(self, strict_run, default_run):
+    def test_cold_pattern_served_by_fallback_under_strict_routing(
+        self, strict_run, default_run):
         """A cold, below-threshold pattern: under strict routing (the
         hardware rule R51 step 5) it is served by fallback; under default
         R51b the model stands in.  Neither mode launches synthesis for it
@@ -357,7 +376,8 @@ class TestColdAndFallbackOnly:
 # 5. The counter-wedge canary (notebook 14 Jul 2026 20:26:10).
 # ==========================================================================
 class TestWedgeCanary:
-    def test_no_residency_consult_failures_across_tier_transition_runs(self, strict_run, default_run):
+    def test_no_residency_consult_failures_across_tier_transition_runs(
+        self, strict_run, default_run):
         """pyro._route._RESIDENCY_CONSULT_FAILURES == 0 across BOTH
         tier-transition runs.
 

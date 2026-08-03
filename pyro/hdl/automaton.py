@@ -18,7 +18,8 @@ Encoding modes (R14):
 
 Soundness contract (R19).  The automaton is built to be **sound and complete for
 group 0**: for every position where CPython ``re`` would begin a match, the NFA
-can begin an accepting run.  Where an exact byte-level encoding of a construct is
+can begin an accepting run.  Where an exact byte-level encoding of a construct
+is
 disproportionately complex (full-Unicode categories, cross-length case folds,
 Unicode word boundaries), the builder deliberately **over-approximates** — it
 accepts a *superset* of the real language, never a subset — because the host/
@@ -31,7 +32,8 @@ Every over-approximation site is marked with an ``OVER-APPROX`` comment.
 
 Determinism (R8/generator determinism).  State numbers are assigned in a fixed
 DFS order over the AST; byte sets are canonical ``frozenset``s; edge lists are
-emitted in a stable order.  The same ``(pattern, flags, enc)`` therefore yields a
+emitted in a stable order.  The same ``(pattern, flags, enc)`` therefore
+yields a
 byte-identical automaton and, in turn, byte-identical RTL.
 """
 
@@ -51,20 +53,25 @@ MAXREPEAT = _sre.MAXREPEAT
 # Edge kinds.
 E_BYTE = 0    # payload: frozenset[int] of matching byte values
 E_EPS = 1     # payload: None
-E_ASSERT = 2  # payload: int (an AT_* opcode, evaluated by position at run time)
+# payload: int (an AT_* opcode, evaluated by position at run time)
+E_ASSERT = 2
 
 # Over-approximation class names (R19c).  A generated circuit that recognizes a
 # *superset* of the true language (relying on host re-verification, R19a) MUST
 # declare which of these strategies it used so the manifest (R47b) can attribute
 # re-verification cost.  An exact circuit declares the empty set.
-OA_UNICODE_CATEGORY = "unicode_category"          # \d \w \s etc. over full Unicode
-OA_CROSS_LENGTH_CASEFOLD = "cross_length_casefold"  # simple fold across UTF-8 lengths
-OA_WORD_BOUNDARY_UTF8 = "word_boundary_utf8"       # \b/\B at UTF-8 code-point edges
+# \d \w \s etc. over full Unicode
+OA_UNICODE_CATEGORY = "unicode_category"
+# simple fold across UTF-8 lengths
+OA_CROSS_LENGTH_CASEFOLD = "cross_length_casefold"
+# \b/\B at UTF-8 code-point edges
+OA_WORD_BOUNDARY_UTF8 = "word_boundary_utf8"
 
 
 class Edge(NamedTuple):
     kind: int
-    payload: object  # frozenset[int] for E_BYTE, None for E_EPS, int for E_ASSERT
+    # frozenset[int] for E_BYTE, None for E_EPS, int for E_ASSERT
+    payload: object
     target: int
 
 
@@ -107,7 +114,8 @@ class Automaton:
         return sorted(self.edges[s], key=key)
 
     def byte_edges(self) -> List[Tuple[int, Tuple[Tuple[int, int], ...], int]]:
-        """All byte-consuming edges as ``(src, ranges, dst)`` (ranges canonical)."""
+        """All byte-consuming edges as ``(src, ranges, dst)`` (ranges
+        canonical)."""
         out = []
         for s in range(self.n_states):
             for e in self.sorted_edges(s):
@@ -125,7 +133,8 @@ _NEWLINE = 0x0A
 
 
 def byteset_to_ranges(bs: FrozenSet[int]) -> Tuple[Tuple[int, int], ...]:
-    """Collapse a byte set into canonical sorted ``(lo, hi)`` inclusive ranges."""
+    """Collapse a byte set into canonical sorted ``(lo, hi)`` inclusive
+    ranges."""
     out: List[Tuple[int, int]] = []
     lo = None
     prev = None
@@ -143,7 +152,8 @@ def byteset_to_ranges(bs: FrozenSet[int]) -> Tuple[Tuple[int, int], ...]:
 
 
 def _ascii_fold(cp: int) -> FrozenSet[int]:
-    """ASCII case-fold set of a byte value (bytes mode / str+ASCII flag, R15)."""
+    """ASCII case-fold set of a byte value (bytes mode / str+ASCII flag,
+    R15)."""
     if 0x41 <= cp <= 0x5A or 0x61 <= cp <= 0x7A:
         return frozenset({cp, cp ^ 0x20})
     return frozenset({cp})
@@ -152,7 +162,8 @@ def _ascii_fold(cp: int) -> FrozenSet[int]:
 # UTF-8 well-formed lead/continuation ranges per code-point length.  The
 # continuation byte range is the standard 0x80..0xBF.  Being restricted to the
 # canonical (non-overlong) lead ranges keeps the fragment tight; every *real*
-# UTF-8-encoded code point of the given length is still accepted (completeness).
+# UTF-8-encoded code point of the given length is still accepted
+# (completeness).
 _CONT = frozenset(range(0x80, 0xC0))
 _LEAD = {
     1: _ASCII,
@@ -180,7 +191,8 @@ class _Builder:
         self.flags = flags
         self.is_bytes = enc == ENC_BYTES
         self.edges: List[List[Edge]] = []
-        # OA_* class names hit during lowering (R19c); surfaced on the Automaton.
+        # OA_* class names hit during lowering (R19c); surfaced on the
+        # Automaton.
         self.over_approx: set = set()
 
     # -- state / edge primitives -------------------------------------------
@@ -206,7 +218,12 @@ class _Builder:
             cur = nxt
         return cur
 
-    def _anycp_fragment(self, entry: int, exit_: int, lengths, first_len1) -> None:
+    def _anycp_fragment(
+    self,
+    entry: int,
+    exit_: int,
+    lengths,
+     first_len1) -> None:
         """Add fragments matching any UTF-8 code point whose length is in
         ``lengths``.  ``first_len1`` is the byte set used for the (sole) byte of
         a length-1 code point; multi-byte lengths use canonical UTF-8 ranges.
@@ -237,7 +254,8 @@ class _Builder:
             self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
             return None
         if ignorecase and ascii_flag and cp < 0x80:
-            # ASCII-flag IGNORECASE folds within ASCII only (single byte, exact).
+            # ASCII-flag IGNORECASE folds within ASCII only (single byte,
+            # exact).
             fold = _ascii_fold(cp)
             if all(x < 0x80 for x in fold):
                 return [fold]  # all single-byte
@@ -261,20 +279,25 @@ class _Builder:
             excl = _ascii_fold(cp) if ignorecase else frozenset({cp & 0xFF})
             self.byte(entry, exit_, _ALL_BYTES - excl)
             return exit_
-        # str mode: any code point except cp (and, under IGNORECASE, its folds).
+        # str mode: any code point except cp (and, under IGNORECASE, its
+        # folds).
         excl_ascii = set()
         if cp >= 0x80:
             # A multibyte literal negation admits *all* multibyte code points,
             # wrongly re-admitting cp itself (removed by R19 re-verify).
             self.over_approx.add(OA_UNICODE_CATEGORY)
         if cp < 0x80:
-            excl_ascii = set(_ascii_fold(cp)) if (ignorecase and ascii_flag) else {cp}
+            excl_ascii = set(
+    _ascii_fold(cp)) if (
+        ignorecase and ascii_flag) else {cp}
             if ignorecase and not ascii_flag:
-                excl_ascii = {cp}  # OVER-APPROX: ignore cross-length folds here
+                # OVER-APPROX: ignore cross-length folds here
+                excl_ascii = {cp}
                 self.over_approx.add(OA_CROSS_LENGTH_CASEFOLD)
         # length-1 code points except the excluded ASCII ones (exact for the
         # common ASCII case); all multi-byte code points (OVER-APPROX: at most a
-        # single multibyte code point 'cp' is wrongly admitted, R19 removes it).
+        # single multibyte code point 'cp' is wrongly admitted, R19 removes
+        # it).
         len1 = _ASCII - excl_ascii
         self._anycp_fragment(entry, exit_, (1, 2, 3, 4), len1)
         return exit_
@@ -388,8 +411,10 @@ class _Builder:
                 if not ascii_flag:
                     # In str mode without the ASCII flag, a shorthand category
                     # matches Unicode code points (e.g. \\d admits Arabic-Indic
-                    # digits, \\w admits letters in any script, \\S/\\D/\\W admit
-                    # essentially all non-ASCII code points).  OVER-APPROX: admit
+                    # digits, \\w admits letters in any script, \\S/\\D/\\W
+                    # admit
+                    # essentially all non-ASCII code points).  OVER-APPROX:
+                    # admit
                     # any non-ASCII code point of length 2..4; R19 re-verifies.
                     multibyte_lengths |= {2, 3, 4}
                     self.over_approx.add(OA_UNICODE_CATEGORY)
@@ -435,8 +460,14 @@ class _Builder:
         }
         if cat in not_cats:
             if not_cats[cat] is None:
-                word = frozenset(b"0123456789") | frozenset(range(0x41, 0x5B)) \
-                    | frozenset(range(0x61, 0x7B)) | frozenset({0x5F})
+                word = frozenset(b"0123456789") | frozenset(
+    range(
+        0x41,
+        0x5B)) | frozenset(
+            range(
+                0x61,
+                0x7B)) | frozenset(
+                    {0x5F})
                 return _ALL_BYTES - word
             return _ALL_BYTES - not_cats[cat]
         return base
@@ -455,8 +486,10 @@ class _Builder:
 
         The parser emits ``AT_BEGINNING``/``AT_END`` for ``^``/``$`` regardless
         of MULTILINE (it defers line-vs-string semantics to the flag, as it does
-        for ``re.DOTALL`` and ``.``).  We resolve them to the LINE variants here,
-        per-edge, so a *scoped* ``(?m:^)`` is honored independently of the global
+        for ``re.DOTALL`` and ``.``).  We resolve them to the LINE variants
+        here,
+        per-edge, so a *scoped* ``(?m:^)`` is honored independently of the
+        global
         flag (R24/§6.5) in both the model and the emitted RTL.
         """
         if multiline:
@@ -483,7 +516,8 @@ class _Builder:
             if not self.is_bytes and av in (
                     _c.AT_BOUNDARY, _c.AT_NON_BOUNDARY,
                     _c.AT_UNI_BOUNDARY, _c.AT_UNI_NON_BOUNDARY):
-                # OVER-APPROX: \b/\B at UTF-8 code-point boundaries is not encoded
+                # OVER-APPROX: \b/\B at UTF-8 code-point boundaries is not
+                # encoded
                 # exactly in the byte datapath (the constraint is dropped to a
                 # superset); R19 re-verification restores exactness.
                 self.over_approx.add(OA_WORD_BOUNDARY_UTF8)
@@ -519,7 +553,8 @@ class _Builder:
     def _lower_repeat(self, av, entry, ignorecase, ascii_flag, dotall,
                       multiline) -> int:
         mn, mx, sub = av
-        # Greedy vs lazy (MAX_REPEAT vs MIN_REPEAT) do not change the *language*,
+        # Greedy vs lazy (MAX_REPEAT vs MIN_REPEAT) do not change the
+        # *language*,
         # only span selection, which R17/R18 reconcile via CPython.  We lower
         # both identically as a language recognizer.
         cur = entry

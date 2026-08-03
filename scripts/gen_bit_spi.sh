@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Re-emit a bitstream from a routed checkpoint WITH master-SPIx4 flash-boot config
+# Re-emit a bitstream from a routed checkpoint WITH master-SPIx4 flash-boot
+# config
 # (an683's known-good corundum AU250 recipe). No re-route; IP must already be
 # license-generated. write_cfgmem refuses bitstreams without SPI_BUSWIDTH 4, so
 # run this if .mcs generation errors with [Writecfgmem 68-20].
@@ -11,14 +12,18 @@
 set -o pipefail
 DCP="$1"
 OUT="$2"
-[ -n "$DCP" ] && [ -n "$OUT" ] || { echo "usage: $0 <routed.dcp> <out.bit>"; exit 1; }
+[ -n "$DCP" ] && [ -n "$OUT" ] || \
+  { echo "usage: $0 <routed.dcp> <out.bit>"; exit 1; }
 [ -f "$DCP" ] || { echo "ERROR: routed dcp not found: $DCP"; exit 1; }
 
-# Vivado + license. The zanetti paths (/home/gn262/.Xilinx/Xilinx.lic) do not exist
-# on nf-server06; the license here is node-locked to this host's ens9 MAC and lives
+# Vivado + license. The zanetti paths (/home/gn262/.Xilinx/Xilinx.lic) do not
+# exist
+# on nf-server06; the license here is node-locked to this host's ens9 MAC and
+# lives
 # in ~/.Xilinx. Override either via the environment.
 : "${PYRO_VIVADO_DIR:=/usr/local/cad/2025.2/Vivado}"
-[ -f "$PYRO_VIVADO_DIR/settings64.sh" ] || { echo "ERROR: no Vivado at $PYRO_VIVADO_DIR"; exit 1; }
+[ -f "$PYRO_VIVADO_DIR/settings64.sh" ] || \
+  { echo "ERROR: no Vivado at $PYRO_VIVADO_DIR"; exit 1; }
 export PYTHONPATH="${PYTHONPATH:-}"   # settings64.sh reads it unguarded
 source "$PYRO_VIVADO_DIR/settings64.sh"
 export TERM=xterm
@@ -39,6 +44,11 @@ puts "WBIT_DONE"
 TCL
 echo "Writing SPIx4 bitstream from routed dcp -> $OUT"
 vivado -nojournal -nolog -mode batch -source "$TCLF" 2>&1 | \
-  grep -iE 'write_bitstream|WBIT_DONE|ERROR|Critical|license|Bitstream gen' | tail -30
+  grep -iE 'write_bitstream|WBIT_DONE|ERROR|Critical|license|Bitstream gen' | \
+    tail -30
 rm -f "$TCLF"
-if [ -f "$OUT" ]; then ls -lh "$OUT"; echo "SPIX4_BIT_PRESENT"; else echo "NO_BIT"; exit 2; fi
+if [ -f "$OUT" ]; then
+  ls -lh "$OUT"; echo "SPIX4_BIT_PRESENT"
+else
+  echo "NO_BIT"; exit 2
+fi

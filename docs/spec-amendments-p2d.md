@@ -14,10 +14,20 @@ existing requirement, changes an AC number, or touches a frozen invariant
 (C ABI 2.0.0, `PYROART1`, `SHELL_VERSION 0x0A000001`, `PYRO_SHELL_SPEC16
 0x0202`, the R78 wire format itself).
 
-| # | Target | Kind | SemVer if adopted alone | One line |
-|---|--------|------|--------------------------|----------|
-| **B1** | F5, R68, R83, R86.7 (+§10.1 P2) | P2 transport binding made concrete | MINOR | The P2 performance transport is a QDMA ST char-dev carrying the **same eth-framed R78 AXIS payloads**; new `PYRO_QDMA_CHARDEV` knob (no-default, fail-closed); char-dev-mode R83 transport gate |
-| **B2** | AC-2-5, AC-3-3 (R1 hardware clause) | measurement shape made decidable | MINOR | The R1 floor binds on **windowed aggregate wall-clock throughput with zero loss** (the R59/P2a discipline), not on sequential per-frame RTT; sequential RTT stays informative |
+- **B1**
+  - Target: F5, R68, R83, R86.7 (+§10.1 P2)
+  - Kind: P2 transport binding made concrete
+  - SemVer if adopted alone: MINOR
+  - One line: The P2 performance transport is a QDMA ST char-dev carrying the
+    **same eth-framed R78 AXIS payloads**; new `PYRO_QDMA_CHARDEV` knob (no-
+    default, fail-closed); char-dev-mode R83 transport gate
+- **B2**
+  - Target: AC-2-5, AC-3-3 (R1 hardware clause)
+  - Kind: measurement shape made decidable
+  - SemVer if adopted alone: MINOR
+  - One line: The R1 floor binds on **windowed aggregate wall-clock throughput
+    with zero loss** (the R59/P2a discipline), not on sequential per-frame
+    RTT; sequential RTT stays informative
 
 Adopting either bumps the spec to **v2.7.0** (MINOR: added configuration and
 measurement protocol; no interface/AC break).

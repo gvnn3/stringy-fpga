@@ -2,7 +2,8 @@
 
 - **Spec ID:** `p2-dataplane`
 - **Version:** 0.1.0 (DRAFT — design track, not yet normative)
-- **Parent spec:** `python-regex-offload` v2.5.1 (P2, F5, R1, R76 lineage, R78, R85a)
+- **Parent spec:** `python-regex-offload` v2.5.1 (P2, F5, R1, R76 lineage,
+  R78, R85a)
 - **Date:** 2026-07-16
 - **Status:** measurement-driven plan; supersedes the assumption that P2 is
   primarily a *transport* (QDMA char-dev) problem
@@ -35,14 +36,26 @@ turnaround — all serialized with the scan by the harness FSM.
 
 ## 1. Constraint map — what lives where
 
-| Constraint | Location | Change vehicle |
-|---|---|---|
-| Harness FSM serialization (one frame at a time) | RM (child) | **partial bitstream only** (R79) |
-| Engine scan width (1 B/cyc today) | RM (child) | **partial bitstream only** (R79) |
-| `MAX_PKT_LEN = 1518` | static shell | shell rebuild + QSPI reflash + new locked DCP |
-| R78 `length` bound (1486 B payload, u16) | wire format | spec rev (R78 or a new R76-style data-plane format) |
-| `AF_PACKET` per-frame syscalls | host | `PACKET_MMAP` rings or QDMA char-devs (`dma_ip_drivers`, repo reachable) |
-| `onic` vs `qdma_pf` driver (single PF) | host | driver swap — mutually exclusive with the netdev control transport |
+- **Harness FSM serialization (one frame at a time)**
+  - Location: RM (child)
+  - Change vehicle: **partial bitstream only** (R79)
+- **Engine scan width (1 B/cyc today)**
+  - Location: RM (child)
+  - Change vehicle: **partial bitstream only** (R79)
+- **`MAX_PKT_LEN = 1518`**
+  - Location: static shell
+  - Change vehicle: shell rebuild + QSPI reflash + new locked DCP
+- **R78 `length` bound (1486 B payload, u16)**
+  - Location: wire format
+  - Change vehicle: spec rev (R78 or a new R76-style data-plane format)
+- **`AF_PACKET` per-frame syscalls**
+  - Location: host
+  - Change vehicle: `PACKET_MMAP` rings or QDMA char-devs (`dma_ip_drivers`,
+    repo reachable)
+- **`onic` vs `qdma_pf` driver (single PF)**
+  - Location: host
+  - Change vehicle: driver swap — mutually exclusive with the netdev control
+    transport
 
 Key consequence: **the two changes that matter first are partial-only** — they
 ride the now-working R85a load path (JTAG + in-band recovery, ~16 s/swap) and

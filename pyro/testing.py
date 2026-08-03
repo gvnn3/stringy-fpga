@@ -1,4 +1,5 @@
-"""Public test/verification seam — ``pyro.testing`` (spec §9.1 R67; extended v2.5.0).
+"""Public test/verification seam — ``pyro.testing`` (spec §9.1 R67; extended
+v2.5.0).
 
 R67 requires a public, spec-only-author-drivable test-hook namespace so that the
 AC-1-6 fault-injection behaviors (R52 device-error retry, R65 synthesis-failure
@@ -6,13 +7,16 @@ permanent fallback, R19 false-positive re-verification) — and, since v2.5.0, t
 AC-3-2 tier-upgrade edge — can be exercised WITHOUT reading or patching
 internals.  The seams here:
 
-  * ``inject_device_error(kind="device"|"timeout", count=1)`` — the next ``count``
+  * ``inject_device_error(kind="device"|"timeout", count=1)`` — the next
+  ``count``
     model/hardware dispatches raise the corresponding device error, driving the
     R52 fallback-retry path and its ``fallback_after_error`` counter (R66).
   * ``inject_synth_failure(pattern, flags=0)`` — the named pattern's next
-    synthesis fails (R65): permanent fallback, diagnostic, ``synth_failed`` (R66).
+    synthesis fails (R65): permanent fallback, diagnostic, ``synth_failed``
+    (R66).
   * ``inject_false_positive(pattern, flags=0, count=1)`` — the model emits
-    ``count`` spurious candidate windows for the pattern, re-verified away by the
+    ``count`` spurious candidate windows for the pattern, re-verified away by
+    the
     host (R19) so they never leak into results.
   * ``await_synthesis(pattern, flags=0, timeout=30.0)`` (v2.5.0) — block the
     CALLING test until the pattern's circuit reaches a terminal lifecycle tier
@@ -38,7 +42,8 @@ is deterministic and never alters caller-visible results relative to CPython
 strict-residency fallback returns the same bytes the model would have).
 
 This namespace is PYRO-specific and is NOT patched onto the standard ``re``
-module by :func:`pyro.install` (§7.2), mirroring ``explain``/``stats``/``prewarm``.
+module by :func:`pyro.install` (§7.2), mirroring
+``explain``/``stats``/``prewarm``.
 """
 
 from __future__ import annotations
@@ -57,8 +62,10 @@ __all__ = [
     "reset",
 ]
 
-# Terminal lifecycle tiers (R4/R31): synthesis has conclusively succeeded and the
-# circuit is loaded (resident) or conclusively failed (permanent fallback, R65).
+# Terminal lifecycle tiers (R4/R31): synthesis has conclusively succeeded and
+# the
+# circuit is loaded (resident) or conclusively failed (permanent fallback,
+# R65).
 _TERMINAL_TIERS = ("resident", "fallback_only")
 
 # await_synthesis polling cadence.  A modest fixed interval: the seam is a test
@@ -69,14 +76,16 @@ _AWAIT_POLL_INTERVAL_S = 0.02
 
 
 def inject_device_error(kind: str = "device", count: int = 1) -> None:
-    """Arm the next ``count`` model dispatches to raise a device error (R52/R67)."""
+    """Arm the next ``count`` model dispatches to raise a device error
+    (R52/R67)."""
     if not _route.test_hooks_enabled():
         return
     _model.get_model().inject_device_error(kind, count)
 
 
 def inject_synth_failure(pattern, flags: int = 0) -> None:
-    """Arm ``pattern``'s next synthesis to fail (R65 permanent fallback) (R67)."""
+    """Arm ``pattern``'s next synthesis to fail (R65 permanent fallback)
+    (R67)."""
     if not _route.test_hooks_enabled():
         return
     from .synth import residency as _res
@@ -84,7 +93,8 @@ def inject_synth_failure(pattern, flags: int = 0) -> None:
 
 
 def inject_false_positive(pattern, flags: int = 0, count: int = 1) -> None:
-    """Arm the model to emit ``count`` spurious windows for ``pattern`` (R19/R67).
+    """Arm the model to emit ``count`` spurious windows for ``pattern``
+    (R19/R67).
 
     The spurious windows fail host re-verification and never leak into results.
     """
@@ -148,7 +158,8 @@ def set_strict_residency(enabled: bool = True) -> None:
 def reset() -> None:
     """Clear all injected faults and disable strict residency (R67, v2.5.0).
 
-    Always safe — even when the gate is off (nothing is armed then).  Idempotent.
+    Always safe — even when the gate is off (nothing is armed then). 
+    Idempotent.
     """
     _model.get_model().clear_injections()
     _route.set_strict_residency(False)

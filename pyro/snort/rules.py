@@ -41,7 +41,8 @@ from typing import List, NamedTuple, Optional, Tuple
 class RuleParseError(ValueError):
     """A line is not a parseable Snort 3 rule.
 
-    Carries a ``.reason`` attribute (repo idiom, cf. ``pyro._classify._Reject``);
+    Carries a ``.reason`` attribute (repo idiom, cf.
+    ``pyro._classify._Reject``);
     callers at the boundary convert it to a result value, never leak it.
     """
 
@@ -300,7 +301,8 @@ def parse_pcre(value: str) -> Pcre:
     flags = inner[last + 1:]
     warnings: List[str] = []
     for letter in flags:
-        if letter in _LEGACY_PCRE_BUFFER_LETTERS and letter not in _KNOWN_PCRE_LETTERS:
+        if (letter in _LEGACY_PCRE_BUFFER_LETTERS
+                and letter not in _KNOWN_PCRE_LETTERS):
             warnings.append("legacy Snort 2 buffer flag %r ignored "
                             "(buffer comes from sticky-buffer state)" % letter)
         elif letter not in _KNOWN_PCRE_LETTERS:

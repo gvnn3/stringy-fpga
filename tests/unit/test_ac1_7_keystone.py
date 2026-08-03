@@ -26,7 +26,8 @@ CORPUS = [
     (r"\bword\b", "a word wordy word. word"),     # word_boundary over-approx
     (r"(?i)hello", "HELLO hello HeLLo world"),    # cross-length casefold OA
     (r"a*", "baaab aa"),                          # empty + greedy
-    (r"a??", "aa"),                               # lazy-empty (R22 must_advance)
+    # lazy-empty (R22 must_advance)
+    (r"a??", "aa"),
     (r".*?", "ab"),                               # lazy-empty preferring empty
     (r"x??", "xxy"),                              # lazy-optional empty
     (r"\d??", "12"),                              # lazy-optional empty class
@@ -46,7 +47,8 @@ def _model_path(pattern, subject):
     enc = ENC_UTF8 if isinstance(subject, str) else ENC_BYTES
     prog = ctx.compile(pattern, 0, enc)
     ctx.load(prog)
-    buf = subject.encode("utf-8") if isinstance(subject, str) else bytes(subject)
+    buf = subject.encode("utf-8") if isinstance(subject,
+                         str) else bytes(subject)
     windows, _ovf = ctx.scan(prog, buf, mode="finditer")
     prefix = utf8_prefix(subject) if isinstance(subject, str) else None
     out = []
@@ -80,7 +82,8 @@ def test_byte_identical_across_tiers(pattern, subject):
 
 
 def test_over_approx_windows_reverified_to_identical():
-    # An over-approximating circuit (\\w+ admits any non-ASCII cp) MUST re-verify
+    # An over-approximating circuit (\\w+ admits any non-ASCII cp) MUST re-
+    # verify
     # every candidate window; the returned result stays byte-identical (R19a).
     circuit = hdl.generate(r"\w+", 0)
     assert circuit.over_approx  # this circuit really does over-approximate

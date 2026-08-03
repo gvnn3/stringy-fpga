@@ -19,7 +19,8 @@ test-author discretion.
 > ## ⚠ HOST MOVE — 2026-07-13
 >
 > **The card is no longer in the host this guide was written for.** Everything
-> below was written against **zanetti** (Dell R740): U250 at `0000:af:00.0`/`.1`,
+> below was written against **zanetti** (Dell R740): U250 at
+`0000:af:00.0`/`.1`,
 > root port `ae:00.0`, PCIe Slot 4, netdevs `enp175s0f0`/`f1`, iDRAC9 at
 > 10.66.3.9, Vivado 2025.2 at `/usr/local/cad/2025.2/Vivado`, and the PYRO shell
 > build tree at `/usr/local/cad/gn262/pyro/open-nic-shell`.
@@ -140,13 +141,40 @@ produces a genuine loadable partial bitstream with a **passing** `pr_verify`
 (R82c/R82d). In terms of the concrete files that flow produces (standard
 Vivado DFX artifact-flow vocabulary, applied to this project's build):
 
-| Artifact | What it is | Spec grounding |
-|---|---|---|
-| Routed static DCP | The static shell (OpenNIC `open-nic-shell` @ `ce85c8d` + the `pyro` plugin) after synthesis, place, and route — the precursor to locking, before any `pyro_rp` child is fixed in place. | Standard Vivado DFX flow step preceding R82b. |
-| Locked static DCP | The routed static checkpoint with `pyro_rp` locked (`HD.RECONFIGURABLE`) — the **substrate every partial bitstream is implemented in-context against**, so the static region is bit-identical across every configuration. | R82b; part of the R82d conjunction |
-| Full flash `.bit`/`.mcs` | The complete initial image (static shell + whatever default `pyro_rp` child is baked in — the ID stub, R80) used for the one-time JTAG/flash bring-up described in §3. | R80 (default ID-stub child); standard Vivado bitstream/configuration-memory outputs |
-| ID-stub partial `.bit` | The R80 default child (ID stub) compiled as a **partial** bitstream for `pyro_rp` — used to (re)load just the stub without touching the static region, e.g. to return to a known-good baseline. | R80, R82 (partial implemented against the locked static DCP) |
-| Per-pattern partials + manifests | One partial bitstream per synthesized regex pattern, each with a manifest recording `payload_kind == "pr_bitstream"` (R72), the real shell/PR-region `SHELL_VERSION`, and the independent boolean field **`pr_verified`** (R47b/R82c) — `true` iff Vivado `pr_verify` actually ran and passed for that artifact. `pr_verified` MUST be consistent with `payload_kind` (`true` exactly when `payload_kind == "pr_bitstream"`); the `pyro.synth.Manifest` constructor and `from_json` both reject a manifest that violates this (R47b-consistency, v2.2.3), so a hand-edited or corrupt manifest cannot silently claim a bitstream is PR-verified when it isn't. | R47b, R72, R82c |
+- **Routed static DCP**
+  - What it is: The static shell (OpenNIC `open-nic-shell` @ `ce85c8d` + the
+    `pyro` plugin) after synthesis, place, and route — the precursor to
+    locking, before any `pyro_rp` child is fixed in place.
+  - Spec grounding: Standard Vivado DFX flow step preceding R82b.
+- **Locked static DCP**
+  - What it is: The routed static checkpoint with `pyro_rp` locked
+    (`HD.RECONFIGURABLE`) — the **substrate every partial bitstream is
+    implemented in-context against**, so the static region is bit-identical
+    across every configuration.
+  - Spec grounding: R82b; part of the R82d conjunction
+- **Full flash `.bit`/`.mcs`**
+  - What it is: The complete initial image (static shell + whatever default
+    `pyro_rp` child is baked in — the ID stub, R80) used for the one-time
+    JTAG/flash bring-up described in §3.
+  - Spec grounding: R80 (default ID-stub child); standard Vivado
+    bitstream/configuration-memory outputs
+- **ID-stub partial `.bit`**
+  - What it is: The R80 default child (ID stub) compiled as a **partial**
+    bitstream for `pyro_rp` — used to (re)load just the stub without touching
+    the static region, e.g. to return to a known-good baseline.
+  - Spec grounding: R80, R82 (partial implemented against the locked static
+    DCP)
+- **Per-pattern partials + manifests**
+  - What it is: One partial bitstream per synthesized regex pattern, each with
+    a manifest recording `payload_kind == "pr_bitstream"` (R72), the real
+    shell/PR-region `SHELL_VERSION`, and the independent boolean field
+    **`pr_verified`** (R47b/R82c) — `true` iff Vivado `pr_verify` actually ran
+    and passed for that artifact. `pr_verified` MUST be consistent with
+    `payload_kind` (`true` exactly when `payload_kind == "pr_bitstream"`); the
+    `pyro.synth.Manifest` constructor and `from_json` both reject a manifest
+    that violates this (R47b-consistency, v2.2.3), so a hand-edited or corrupt
+    manifest cannot silently claim a bitstream is PR-verified when it isn't.
+  - Spec grounding: R47b, R72, R82c
 
 Two rules govern all of the above and are worth internalizing before
 touching any of these files by hand: (1) `pr_verify` is **mandatory** — a
@@ -311,10 +339,20 @@ Two device-specific environment knobs round out the configuration surface
 (R68, sampled at the R35a points, carried on `DeviceConfig` — R86.6, never
 read ad hoc):
 
-| Variable | Default | Effect |
-|---|---|---|
-| `PYRO_DEVICE_IFACE` | `enp175s0f0` | The `onic` netdev name the device transport binds for the `AF_PACKET` path. **On nf-server06 this default is wrong and MUST be overridden** — the card is on PCI bus `02`, so the netdev is `enp2s0f0` (or `enp2s0f1` for the second port), not the bus-`af` name the spec's F3 fact declares. Set `PYRO_DEVICE_IFACE=enp2s0f0`. The library default still follows spec F3 (`pyro/device.py`), which has not been re-declared for the new host. |
-| `PYRO_HW_SERVER` | `TCP:localhost:3121` | The Vivado `hw_server` URL the JTAG loader connects to (R85/R86.5). Override if `hw_server` is not running on the default port, or is reached via a different host. |
+- **`PYRO_DEVICE_IFACE`**
+  - Default: `enp175s0f0`
+  - Effect: The `onic` netdev name the device transport binds for the
+    `AF_PACKET` path. **On nf-server06 this default is wrong and MUST be
+    overridden** — the card is on PCI bus `02`, so the netdev is `enp2s0f0`
+    (or `enp2s0f1` for the second port), not the bus-`af` name the spec's F3
+    fact declares. Set `PYRO_DEVICE_IFACE=enp2s0f0`. The library default still
+    follows spec F3 (`pyro/device.py`), which has not been re-declared for the
+    new host.
+- **`PYRO_HW_SERVER`**
+  - Default: `TCP:localhost:3121`
+  - Effect: The Vivado `hw_server` URL the JTAG loader connects to
+    (R85/R86.5). Override if `hw_server` is not running on the default port,
+    or is reached via a different host.
 
 Everything else device-related — the expected `PYRO_SHELL_SPEC16`
 (`0x0202`), the probe/JTAG timeouts, and every R78 frame constant — is
@@ -332,7 +370,8 @@ to 3 times (`PYRO_PROBE_TIMEOUT = 500 ms` each, R84), validates the
 the R83 canonical enumeration — a fixed-order, comma-separated list of
 exactly the unmet conditions, drawn from:
 
-1. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or static_shell_id SPEC16 mismatch)`
+1. `probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, or
+   static_shell_id SPEC16 mismatch)`
 2. `transport: CAP_NET_RAW absent`
 
 On this host, **before** the PR shell is flashed and before `CAP_NET_RAW`

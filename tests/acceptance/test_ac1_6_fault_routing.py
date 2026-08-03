@@ -1,7 +1,8 @@
 """AC-1-6: fault injection via the public seams (R67) & routing-vs-error
 accounting.  (R19, R44, R52, R61, R67, R14a, R51a, R66)
 
-Uses the v2.0.5 `pyro.testing` seams (R67), gated behind PYRO_ENABLE_TEST_HOOKS=1
+Uses the v2.0.5 `pyro.testing` seams (R67), gated behind
+PYRO_ENABLE_TEST_HOOKS=1
 sampled at an R35a point (here: refresh_env in-process):
   * inject_device_error → R52 fallback-retry, CPython-identical result,
     fallback_after_error incremented;
@@ -40,14 +41,23 @@ def _reset(model=False):
 
 
 def test_stats_has_all_lifecycle_counters():
-    """R66: stats() reports the dispatch + circuit-lifecycle counters, all ints."""
+    """R66: stats() reports the dispatch + circuit-lifecycle counters, all
+    ints."""
     s = pre.stats()
     required = {
-        "hardware", "model", "fallback", "fallback_after_error", "device_errors",
-        "synth_launched", "synth_succeeded", "synth_failed",
-        "circuits_synthesizing", "circuits_resident", "circuits_evicted",
-        "pr_loads",
-    }
+    "hardware",
+    "model",
+    "fallback",
+    "fallback_after_error",
+    "device_errors",
+    "synth_launched",
+    "synth_succeeded",
+    "synth_failed",
+    "circuits_synthesizing",
+    "circuits_resident",
+    "circuits_evicted",
+    "pr_loads",
+     }
     assert required.issubset(s.keys()), required - set(s.keys())
     for k in required:
         assert isinstance(s[k], int) and s[k] >= 0, (k, s[k])
@@ -66,28 +76,34 @@ def test_routing_never_counts_as_fallback_after_error():
         pre.search(f"needle{i}", f"a needle{i} z")
     # R51a gates
     pre.search(rb"\w+", bytearray(b"hello world"))          # subject-type gate
-    pre.search("abc", "x\ud800 abc")                        # surrogate gate (R14a)
+    # surrogate gate (R14a)
+    pre.search("abc", "x\ud800 abc")
     pat = pre.compile(r"\d+")
     pat.search("a 12 b 34", 2, 7)                           # pos/endpos gate
 
     s1 = pre.stats()
-    assert s1["fallback_after_error"] == fae0, "routing must not bump fallback_after_error"
-    assert s1["device_errors"] == de0, "no device error may occur on device-free host"
+    assert s1["fallback_after_error"] == fae0, (
+        "routing must not bump fallback_after_error")
+    assert s1["device_errors"] == de0, (
+        "no device error may occur on device-free host")
 
 
 def test_over_approximation_classes_reverified_byte_identical():
-    """R19/R19a: over-approximation-class constructs (full Unicode categories via
+    """R19/R19a: over-approximation-class constructs (full Unicode categories
+    via
     \\w on non-ASCII, cross-length case fold ß, \\b at UTF-8 boundaries) return
     byte-identical results — false positives are re-verified away (R19)."""
     _reset(model=True)
     cases = [
         (r"\w+", 0, "café_naïve Ω12 δوд"),          # unicode word categories
         ("ß", pre.IGNORECASE, "straße STRASSE ss ß"),  # cross-length casefold
-        (r"\bword\b", 0, "wörd word wордy word"),      # \b at multibyte boundaries
+        # \b at multibyte boundaries
+        (r"\bword\b", 0, "wörd word wордy word"),
         (r"\w+", pre.ASCII, "café Ω ascii_only"),      # ASCII-restricted \w
     ]
     for pattern, flags, subject in cases:
-        oracle.assert_equivalent(pre, pattern, subject, flags, label="overapprox")
+        oracle.assert_equivalent(
+    pre, pattern, subject, flags, label="overapprox")
 
 
 def test_false_positive_never_leaks_via_differential():
@@ -96,19 +112,26 @@ def test_false_positive_never_leaks_via_differential():
     corpus on the model path (a superset-recognizer would leak here)."""
     _reset(model=True)
     for label, pattern, flags, subject in oracle.SUPPORTED:
-        oracle.assert_equivalent(pre, pattern, subject, flags, label=f"noleak/{label}")
+        oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"noleak/{label}")
 
 
 def test_testing_seam_namespace_present():
     """R67: the pyro.testing seam namespace exposes the required functions."""
     for fn in ("inject_device_error", "inject_synth_failure",
                "inject_false_positive", "reset"):
-        assert callable(getattr(pyro.testing, fn, None)), f"missing pyro.testing.{fn}"
+        assert callable(getattr(pyro.testing, fn, None)
+                        ), f"missing pyro.testing.{fn}"
 
 
 def test_hooks_are_inert_when_gate_off():
     """R67: with PYRO_ENABLE_TEST_HOOKS unset/sampled-off the seam functions are
-    importable no-op that raise nothing and do NOT perturb results or routing."""
+    importable no-op that raise nothing and do NOT perturb results or
+    routing."""
     os.environ.pop("PYRO_ENABLE_TEST_HOOKS", None)
     os.environ["PYRO_FORCE_MODEL"] = "1"
     pyro.refresh_env()
@@ -121,7 +144,8 @@ def test_hooks_are_inert_when_gate_off():
     pyro.testing.reset()
     subj = "z abc z"
     assert pre.search("abc", subj).span() == stdre.search("abc", subj).span()
-    assert pre.stats()["fallback_after_error"] == fae0, "gate-off hook perturbed routing"
+    assert pre.stats()["fallback_after_error"] == fae0, (
+        "gate-off hook perturbed routing")
 
 
 @pytest.mark.parametrize("kind", ["device", "timeout"])
@@ -142,7 +166,8 @@ def test_inject_device_error_fallback_retry_identical(kind):
             assert m.span() == stdre.search("needle_dev", subj).span()
         s = pre.stats()
         assert s["fallback_after_error"] - fae0 == n, (
-            f"expected +{n} fallback_after_error, got {s['fallback_after_error'] - fae0}")
+            f"expected +{n} fallback_after_error, got "
+            f"{s['fallback_after_error'] - fae0}")
         assert s["device_errors"] - de0 == n
     finally:
         pyro.testing.reset()
@@ -153,11 +178,13 @@ def test_inject_false_positive_never_leaks():
     return — they MUST NOT leak into results.  The airtight, spec-guaranteed
     property (AC-1-6: "re-verified and never leak"; R19a: a false positive that
     survives re-verification into a returned result is a defect) is that results
-    stay byte-identical to stock re across all eight APIs despite a large injected
+    stay byte-identical to stock re across all eight APIs despite a large
+    injected
     false-positive count.
 
     Note (§13): R52 groups "result fails re-verification" with device errors and
-    does not pin WHICH stats counter moves, and the implementation is observed to
+    does not pin WHICH stats counter moves, and the implementation is observed
+    to
     route re-verification through the R52 path (bumping device_errors /
     fallback_after_error) for some APIs but not others; this test therefore
     asserts only the no-leak invariant, not a specific counter."""
@@ -185,5 +212,10 @@ def test_reset_restores_clean_state():
     pyro.testing.reset()
     fae0 = pre.stats()["fallback_after_error"]
     subj = "z clean_pat z"
-    assert pre.search("clean_pat", subj).span() == stdre.search("clean_pat", subj).span()
-    assert pre.stats()["fallback_after_error"] == fae0, "reset() did not clear injected faults"
+    assert pre.search(
+    "clean_pat",
+    subj).span() == stdre.search(
+        "clean_pat",
+         subj).span()
+    assert pre.stats()["fallback_after_error"] == fae0, (
+        "reset() did not clear injected faults")

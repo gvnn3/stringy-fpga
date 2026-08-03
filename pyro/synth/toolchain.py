@@ -1,20 +1,25 @@
 """Mock synthesis toolchain (spec §7.5 R63b).
 
-R63b requires that, when no real Vivado flow is present (F5) and **in all tests**,
+R63b requires that, when no real Vivado flow is present (F5) and **in all
+tests**,
 the synthesis service run a **mock toolchain** that consumes the generator's RTL
 + metadata and emits a **stub PR artifact + manifest** (R47b) for the software
 model (R7), so every phase is testable without Vivado.
 
-The mock is a pure, deterministic function of its :class:`SynthJob`: the same job
-yields a byte-identical stub artifact and an identical manifest.  It supports two
+The mock is a pure, deterministic function of its :class:`SynthJob`: the same
+job
+yields a byte-identical stub artifact and an identical manifest.  It supports
+two
 fault modes for the R65 failure-semantics tests:
 
-  * ``"error"``   — the toolchain raises :class:`SynthesisFailed` (does-not-fit /
+  * ``"error"``   — the toolchain raises :class:`SynthesisFailed`
+  (does-not-fit /
     timing-fail / tool-error), and
   * ``"timeout"`` — the toolchain reports a timeout outcome (R63e per-job
     timeout fired).
 
-A configurable ``latency`` (default **0.0**, near-zero for fast tests) models the
+A configurable ``latency`` (default **0.0**, near-zero for fast tests) models
+the
 minutes-long real flow without actually waiting.
 """
 
@@ -55,26 +60,33 @@ SHELL_VERSION = 0x0A000001       # OpenNIC target shell / PR-region id (opaque)
 # R75/R70a-pin: the vivado toolchain's toolchain_version encodes the actual
 # Vivado version, packed (YY << 24) | (RR << 16) | build.  For the pinned
 # **Vivado 2025.2** (R70a-pin, v2.2.1) this is 0x19020000 (YY=25=0x19, RR=2,
-# build=0).  Used as the R4/R47b cache-key component for the vivado kind, keeping
+# build=0).  Used as the R4/R47b cache-key component for the vivado kind,
+# keeping
 # mock (0x00000100) and vivado artifacts on distinct keys (R75a).  The adapter
-# re-derives the concrete value from the tool's own `vivado -version` at run time,
+# re-derives the concrete value from the tool's own `vivado -version` at run
+# time,
 # but the host-side key needs a static pin, so this constant records the pinned
-# install (2025.2).  (The prior 2023.1 pin 0x17010000 is retired: 2023.1 segfaults
+# install (2025.2).  (The prior 2023.1 pin 0x17010000 is retired: 2023.1
+# segfaults
 # at batch-process exit on this host's Ubuntu 24.04 / glibc 2.39, corrupting the
 # exit-code integrity R77 relies on — see R70a-pin and the v2.2.1 changelog.)
 VIVADO_TOOLCHAIN_VERSION = 0x19020000
 
-# R70a-pin: the pinned Vivado 2025.2 install directory (normative, v2.2.1).  This
-# records the pinned location for documentation/`load_partial` (R86.5); it is NOT
+# R70a-pin: the pinned Vivado 2025.2 install directory (normative, v2.2.1).
+# This
+# records the pinned location for documentation/`load_partial` (R86.5); it is
+# NOT
 # a resolution default for the vivado synth adapter — R70 forbids library-side
 # defaulting/scanning of PYRO_VIVADO, so the adapter still resolves its install
 # dir from the sampled ToolchainConfig.vivado_dir (None => unavailable).
 PINNED_VIVADO_DIR = "/usr/local/cad/2025.2/Vivado"
 
-# R77: default per-job Vivado timeout (30 min, OOC); overridable via ToolchainConfig.
+# R77: default per-job Vivado timeout (30 min, OOC); overridable via
+# ToolchainConfig.
 VIVADO_JOB_TIMEOUT = 1800.0
 
-# R84 (v2.2.2): the per-job timeout for a **pr_bitstream** job (60 min).  A PR job
+# R84 (v2.2.2): the per-job timeout for a **pr_bitstream** job (60 min).  A PR
+# job
 # includes a full in-context place-and-route link against the locked static plus
 # pr_verify, and is heavier than the OOC-only job governed by R77 — hence the
 # distinct, larger default.  The R77 kill-the-process-tree discipline applies to
@@ -83,7 +95,8 @@ VIVADO_PR_JOB_TIMEOUT = 3600.0
 
 
 class SynthesisFailed(Exception):
-    """The (mock) toolchain could not produce a fitting/timing-clean artifact."""
+    """The (mock) toolchain could not produce a fitting/timing-clean
+    artifact."""
 
 
 class ConfigurationError(Exception):
@@ -136,7 +149,8 @@ class SynthJob:
     # Serialized automaton body (Task-7 extension) — the state/edge tables the
     # native C model (src/pyro_rt.c) executes, from
     # :func:`pyro.synth.artifact.serialize_automaton_body`.  Empty for a job
-    # built without a live automaton (the artifact then carries only its header).
+    # built without a live automaton (the artifact then carries only its
+    # header).
     automaton_table: bytes = b""
     # P2b widened datapath (R42): bytes/cycle of the engine in `rtl`.  The PR
     # flow emits the matching wrapper (generate_rp_child datapath_bytes); 1 =
@@ -155,35 +169,48 @@ class SynthJob:
 class ToolchainConfig:
     """Behavioral configuration for the synthesis toolchain (frozen, picklable).
 
-    R70a: the selected toolchain kind + its parameters cross the process boundary
-    to the out-of-process worker (R63) inside this dataclass.  The Phase-2 fields
-    are **additive with mock-preserving defaults**, so a ``ToolchainConfig()`` with
-    no overrides is byte-identical to the pre-2.1.0 default (kind ``"mock"``) and
+    R70a: the selected toolchain kind + its parameters cross the process
+    boundary
+    to the out-of-process worker (R63) inside this dataclass.  The Phase-2
+    fields
+    are **additive with mock-preserving defaults**, so a ``ToolchainConfig()``
+    with
+    no overrides is byte-identical to the pre-2.1.0 default (kind ``"mock"``)
+    and
     Phase-0/1 behavior is unchanged.
     """
 
     # -- mock behavioral knobs (R63b; test-tunable) -------------------------
-    latency: float = 0.0              # seconds to model the (minutes-long) flow
+    # seconds to model the (minutes-long) flow
+    latency: float = 0.0
     fail_mode: str = "ok"             # "ok" | "error" | "timeout"
     fmax_mhz: float = 300.0           # achieved Fmax the mock reports
     met_timing: bool = True
     # -- toolchain selection + real-flow parameters (R70a, additive) --------
     kind: str = "mock"                # "mock" | "vivado"
-    vivado_dir: Optional[str] = None  # Vivado install dir (PYRO_VIVADO); None=absent
+    # Vivado install dir (PYRO_VIVADO); None=absent
+    vivado_dir: Optional[str] = None
     part: str = "xcu250-figd2104-2L-e"    # target U250 part (R71)
     target_clock_mhz: float = 250.0   # OOC clock constraint (R73 proxy)
     job_timeout_s: float = VIVADO_JOB_TIMEOUT  # per-job OOC timeout (R77)
-    # -- PR (pr_bitstream) mode + its R82d substrate (v2.2.3/v2.2.4, additive) --
+    # -- PR (pr_bitstream) mode + its R82d substrate (v2.2.3/v2.2.4, additive)
+    # --
     # R88 (v2.2.4) blesses this mechanism: `pr_bitstream` is the explicit,
-    # construction-pinned (R70b) request for the R82 PR link flow.  When True the
-    # adapter REQUIRES the R82d substrate paths below — an absent/unresolvable path
+    # construction-pinned (R70b) request for the R82 PR link flow.  When True
+    # the
+    # adapter REQUIRES the R82d substrate paths below — an absent/unresolvable
+    # path
     # is a loud SynthesisFailed (R88/R82c/R65), NEVER a silent fall-back to
-    # ooc_metrics (R88/R70a honesty).  static_dcp/reference_dcp are populated from
-    # the R68 env knobs PYRO_PR_STATIC_DCP/PYRO_PR_REFERENCE_DCP (v2.2.4), sampled
+    # ooc_metrics (R88/R70a honesty).  static_dcp/reference_dcp are populated
+    # from
+    # the R68 env knobs PYRO_PR_STATIC_DCP/PYRO_PR_REFERENCE_DCP (v2.2.4),
+    # sampled
     # at the R35a points and passed through by the residency service.
     pr_bitstream: bool = False        # R88: request the R82 pr_bitstream flow
-    static_dcp: Optional[str] = None  # R82b/R88 locked static DCP (linking substrate)
-    reference_dcp: Optional[str] = None  # R82c/R82d/R88 reference routed DCP for pr_verify
+    # R82b/R88 locked static DCP (linking substrate)
+    static_dcp: Optional[str] = None
+    # R82c/R82d/R88 reference routed DCP for pr_verify
+    reference_dcp: Optional[str] = None
     # R78.9a (v2.6.0/P2c): wrapper frame-buffer size for the PR flow.  Coupled
     # to the SUBSTRATE (the shell the static DCP was built from): 1536 for a
     # MAX_PKT_LEN=1518 shell (default, pre-P2c-identical), 9600 for a jumbo
@@ -199,9 +226,12 @@ class ToolchainConfig:
     # pr_flow_present availability predicate, never by a synthesis job; absence
     # keeps the report false rather than failing anything.
     pr_evidence_manifest: Optional[str] = None
-    rp_cell: str = "pyro_rp"          # reconfigurable-partition cell name (R80 boundary)
-    # R84 (v2.2.4) names BOTH per-job timeout fields: job_timeout_s (OOC, 1800 s,
-    # R77) above and pr_job_timeout_s (PR, 3600 s) here; the adapter selects the PR
+    # reconfigurable-partition cell name (R80 boundary)
+    rp_cell: str = "pyro_rp"
+    # R84 (v2.2.4) names BOTH per-job timeout fields: job_timeout_s (OOC, 1800
+    # s,
+    # R77) above and pr_job_timeout_s (PR, 3600 s) here; the adapter selects
+    # the PR
     # field when pr_bitstream == True (R88), else the OOC field.
     pr_job_timeout_s: float = VIVADO_PR_JOB_TIMEOUT  # per-job PR timeout (R84)
     # -- PR timing-closure strategy (additive; None/False = the exact
@@ -229,7 +259,8 @@ class MockToolchain:
     def run(self, job: SynthJob) -> Tuple[bytes, Manifest]:
         """Synthesize ``job`` to a stub artifact + manifest, or raise.
 
-        Deterministic: the payload is a hash-derived stub over the RTL + identity,
+        Deterministic: the payload is a hash-derived stub over the RTL +
+        identity,
         so the same job always yields byte-identical output.  Honors the
         configured latency and fault mode (R63b/R65/R63e).
         """
@@ -237,7 +268,8 @@ class MockToolchain:
         if cfg.latency:
             time.sleep(cfg.latency)
         if cfg.fail_mode == "error":
-            raise SynthesisFailed("mock toolchain: RTL does not fit / fails timing")
+            raise SynthesisFailed(
+                "mock toolchain: RTL does not fit / fails timing")
         if cfg.fail_mode == "timeout":
             raise SynthesisFailed("mock toolchain: per-job timeout (R63e)")
 
@@ -270,7 +302,8 @@ def _stub_payload(job: SynthJob) -> bytes:
     """The deterministic PR bitstream artifact payload (``artifact.bin``).
 
     Not a real Xilinx bitstream — a real Phase-2 flow replaces this — but a
-    **self-describing binary artifact** (:mod:`pyro.synth.artifact`) that carries
+    **self-describing binary artifact** (:mod:`pyro.synth.artifact`) that
+    carries
     the R47a/R47b header (baked identity, target shell/harness, CRC-32 integrity
     trailer) plus the serialized automaton the native C model executes.  Stable
     for a fixed job, so the mock toolchain stays deterministic (R63b).
@@ -298,14 +331,18 @@ def _stub_payload(job: SynthJob) -> bytes:
 # to the same `run(job) -> (payload, Manifest)` contract as MockToolchain and is
 # selected at the service seam (service.py) when config.kind == "vivado".
 #
-# Honesty (R72): no PR bitstream can be produced on this host (pr_flow_present ==
-# false), so the payload is the SAME model-exec PYROART1 container the mock emits
-# (the software model executes it, R51b/R72); only the manifest metrics are real,
+# Honesty (R72): no PR bitstream can be produced on this host (pr_flow_present
+# ==
+# false), so the payload is the SAME model-exec PYROART1 container the mock
+# emits
+# (the software model executes it, R51b/R72); only the manifest metrics are
+# real,
 # and the manifest is tagged payload_kind="ooc_metrics" so nothing claims a
 # device load (R72a/R72b).
 #
 # Fail-safe (R70/R71): if PYRO_VIVADO does not resolve to a runnable vivado, the
-# adapter is *unavailable* — run() raises SynthesisFailed, which the service maps
+# adapter is *unavailable* — run() raises SynthesisFailed, which the service
+# maps
 # to permanent fallback (R65).  The mock is NEVER silently substituted (that
 # would serve a mock stub under a vivado cache key, R75a).
 #
@@ -316,8 +353,12 @@ def _stub_payload(job: SynthJob) -> bytes:
 # 2025.2 renders the row as "CLB LUTs*" (footnote asterisk) in both flat and
 # -cells-scoped reports (verified empirically on this host, W3-b); the marker
 # is absent in other configurations, so it is optional here.
-_RE_CLB_LUTS = _stock_compile(r"^\|\s*CLB LUTs\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
-_RE_CLB_FFS = _stock_compile(r"^\|\s*CLB Registers\*?\s*\|\s*(\d+)\s*\|", re.MULTILINE)
+_RE_CLB_LUTS = _stock_compile(
+    r"^\|\s*CLB LUTs\*?\s*\|\s*(\d+)\s*\|",
+     re.MULTILINE)
+_RE_CLB_FFS = _stock_compile(
+    r"^\|\s*CLB Registers\*?\s*\|\s*(\d+)\s*\|",
+     re.MULTILINE)
 # WNS marker emitted by the flow tcl.  Vivado's `format %.4f` guarantees a plain
 # fixed-point decimal ("PYRO_METRIC:WNS:2.4050"), so no exponent/odd formatting
 # can slip past this regex; the sentinel "NONE" (no setup timing paths) is
@@ -328,21 +369,29 @@ _RE_WNS_NONE = _stock_compile(r"^PYRO_METRIC:WNS:NONE\s*$", re.MULTILINE)
 # post-route WNS, taken over exactly the reconfigurable module's paths
 # (startpoint and/or endpoint in the pyro_rp cell, axis_aclk domain).  Same
 # fixed-point `format %.4f` guarantee as the whole-design WNS marker above.
-_RE_RP_WNS = _stock_compile(r"^PYRO_METRIC:RP_WNS:(-?\d+\.\d+)\s*$", re.MULTILINE)
+_RE_RP_WNS = _stock_compile(
+    r"^PYRO_METRIC:RP_WNS:(-?\d+\.\d+)\s*$",
+     re.MULTILINE)
 # R73a.3: an EMPTY scoped path set is a job failure, not a pass.
 _RE_RP_WNS_NONE = _stock_compile(r"^PYRO_METRIC:RP_WNS:NONE\s*$", re.MULTILINE)
-# R82c: emitted only after pr_verify -full_check passes (the PR flow's hard gate).
-_RE_PR_VERIFY_PASS = _stock_compile(r"^PYRO_METRIC:PR_VERIFY:PASS\s*$", re.MULTILINE)
+# R82c: emitted only after pr_verify -full_check passes (the PR flow's
+# hard gate).
+_RE_PR_VERIFY_PASS = _stock_compile(
+    r"^PYRO_METRIC:PR_VERIFY:PASS\s*$", re.MULTILINE)
 # `vivado -version` first line: "vivado v2025.2 (64-bit)" (R70a-pin).  The
-# regex is release-agnostic (major.minor), so it also parses the retired 2023.1.
+# regex is release-agnostic (major.minor), so it also parses the retired
+# 2023.1.
 _RE_VIVADO_VER = _stock_compile(r"v(\d+)\.(\d+)")
 
 
 # NOTE (R70a-pin, v2.2.1): the pinned **Vivado 2025.2** officially supports this
 # host OS (Ubuntu 24.04 / glibc 2.39) and starts cleanly with **no libtinfo.so.5
-# shim** — verified on this host.  The prior ``_libtinfo5_shim`` helper (needed by
-# the retired 2023.1 pin, which dlopen'd the missing ``libtinfo.so.5`` SONAME) is
-# therefore removed and no shim is applied to the 2025.2 subprocess environment.
+# shim** — verified on this host.  The prior ``_libtinfo5_shim`` helper
+# (needed by
+# the retired 2023.1 pin, which dlopen'd the missing ``libtinfo.so.5`` SONAME)
+# is
+# therefore removed and no shim is applied to the 2025.2 subprocess
+# environment.
 
 
 class VivadoToolchain:
@@ -353,7 +402,8 @@ class VivadoToolchain:
     # as a machine-readable marker while the enumerated report files are still
     # written for the audit trail (report_utilization / report_timing_summary).
     # NB: use a @PART@ sentinel + str.replace (NOT str.format): the tcl body
-    # contains literal Tcl braces ({llength ...}) that str.format would misparse.
+    # contains literal Tcl braces ({llength ...}) that str.format would
+    # misparse.
     _FLOW_TCL = (
         "read_verilog design.v\n"
         "synth_design -top pyro_circuit -part @PART@ -mode out_of_context\n"
@@ -374,7 +424,8 @@ class VivadoToolchain:
     )
 
     # R82 DFX partial-bitstream (pr_bitstream) link flow.  Substitution uses
-    # @SENTINEL@ + str.replace (NOT str.format): the Tcl body has literal braces.
+    # @SENTINEL@ + str.replace (NOT str.format): the Tcl body has literal
+    # braces.
     #   1. OOC-synth the wrapped RP child (pyro_rp instantiating the engine).
     #   2. Open the LOCKED static DCP (R82b substrate); black-box + read the RM
     #      into the reconfigurable cell (R80), implement in-context.
@@ -396,7 +447,8 @@ class VivadoToolchain:
         "open_checkpoint @STATIC_DCP@\n"
         # In the LOCKED static DCP (R82b) the RP cell is already a black box, so
         # REF_NAME/ORIG_REF_NAME no longer read "@RPCELL@" — the property that
-        # survives lock_design is HD.RECONFIGURABLE (empirically verified against
+        # survives lock_design is HD.RECONFIGURABLE (empirically verified
+        # against
         # this host's locked DCP; the finish-lock flow locates the cell the same
         # way).  Fall back to the ref-name match for a non-blackboxed substrate.
         "set _rp [get_cells -hierarchical -filter {HD.RECONFIGURABLE == 1}]\n"
@@ -405,7 +457,8 @@ class VivadoToolchain:
         "{ORIG_REF_NAME == \"@RPCELL@\" || REF_NAME == \"@RPCELL@\"}]\n"
         "}\n"
         "if {[llength $_rp] != 1} {\n"
-        "    error \"PYRO_PR: expected exactly one @RPCELL@ cell, found: $_rp\"\n"
+        "    error \"PYRO_PR: expected exactly one @RPCELL@ cell, found: "
+        "$_rp\"\n"
         "}\n"
         # Netlist mutations invalidate cached cell objects (and glob chars like
         # g_intf[0] break bare get_cells patterns), so keep the immutable NAME
@@ -429,8 +482,10 @@ class VivadoToolchain:
         "@POST_PLACE_PHYS_OPT@"
         "route_design@ROUTE_DIRECTIVE@\n"
         "@POST_ROUTE_PHYS_OPT@"
-        # W3: scope utilization to the RM cell so PR manifests report the PATTERN's
-        # resources (consistent with the OOC path / R74), not static+RM whole-device.
+        # W3: scope utilization to the RM cell so PR manifests report the
+        # PATTERN's
+        # resources (consistent with the OOC path / R74), not static+RM whole-
+        # device.
         "report_utilization -cells [_rp_cell] -file util.rpt\n"
         "report_timing_summary -file timing.rpt\n"
         # R73a.1: the DECISIVE post-route timing query is scoped to the
@@ -441,7 +496,8 @@ class VivadoToolchain:
         #
         # NB (2026-07-15, first real HW partial): a hierarchical cell's own pins
         # are timing *through* points, not start/endpoints, so
-        # `get_timing_paths -from/-to [_rp_cell]` returns ZERO paths — it must be
+        # `get_timing_paths -from/-to [_rp_cell]` returns ZERO paths — it must
+        # be
         # scoped over the RP's LEAF cells (-from/-to) plus its boundary pins
         # (-through) to capture intra-RM and static<->RM boundary paths.  The RP
         # is single-clock (the axis_aclk user-box 250 MHz domain, F4), so every
@@ -509,10 +565,12 @@ class VivadoToolchain:
         "|\\mfailed\\M(?!\\s*:\\s*0)"
         "|^\\s*ERROR[: ]|(?:differences|mismatches)[^:\\n]*:\\s*[1-9]} "
         "$_rpt]} {\n"
-        "    error \"PYRO_PR: pr_verify report has failure/critical tokens (R82c)\"\n"
+        "    error \"PYRO_PR: pr_verify report has failure/critical tokens "
+        "(R82c)\"\n"
         "}\n"
         "if {![regexp -nocase {\\mcompatible\\M|\\mpassed\\M} $_rpt]} {\n"
-        "    error \"PYRO_PR: pr_verify report lacks compatibility confirmation (R82c)\"\n"
+        "    error \"PYRO_PR: pr_verify report lacks compatibility "
+        "confirmation (R82c)\"\n"
         "}\n"
         "puts \"PYRO_METRIC:PR_VERIFY:PASS\"\n"
         "write_bitstream -force -cell [_rp_cell] pyro_rp_partial.bit\n"
@@ -535,7 +593,8 @@ class VivadoToolchain:
         exe = os.path.join(d, "bin", "vivado")
         if not (os.path.isfile(exe) and os.access(exe, os.X_OK)):
             raise SynthesisFailed(
-                f"vivado toolchain unavailable: no executable at {exe} (R70/R71)")
+                f"vivado toolchain unavailable: no executable at {exe} "
+                f"(R70/R71)")
         return exe
 
     # -- actual Vivado version (R75) ---------------------------------------
@@ -568,7 +627,8 @@ class VivadoToolchain:
 
         NEVER lets an exception other than SynthesisFailed escape (R63e/R65).
 
-        Mode (R72/R82): ``config.pr_bitstream`` selects the R82 partial-bitstream
+        Mode (R72/R82): ``config.pr_bitstream`` selects the R82
+        partial-bitstream
         link flow (real device artifact); otherwise the OOC honest-metrics flow
         (R72 ``ooc_metrics``) runs.  The mode is fixed on the config the manager
         pinned at construction (R70b).
@@ -580,8 +640,10 @@ class VivadoToolchain:
         except SynthesisFailed:
             raise
         except Exception as exc:          # contain ordinary failures (R63e)
-            # KeyboardInterrupt / SystemExit are BaseException (not Exception) and
-            # deliberately propagate untouched so an operator interrupt or worker
+            # KeyboardInterrupt / SystemExit are BaseException (not Exception)
+            # and
+            # deliberately propagate untouched so an operator interrupt or
+            # worker
             # shutdown is never masked as a synthesis failure.
             raise SynthesisFailed(f"vivado toolchain error: {exc!r}") from exc
 
@@ -593,7 +655,8 @@ class VivadoToolchain:
             # 1. Materialize inputs: generated Verilog + generated XDC (R73).
             with open(os.path.join(workdir, "design.v"), "w") as f:
                 f.write(job.rtl)
-            period_ns = 1000.0 / float(cfg.target_clock_mhz)   # 250 MHz -> 4.000
+            # 250 MHz -> 4.000
+            period_ns = 1000.0 / float(cfg.target_clock_mhz)
             with open(os.path.join(workdir, "constrs.xdc"), "w") as f:
                 # R73: constrain the OOC circuit clock to the target period.
                 f.write(f"create_clock -period {period_ns:.3f} "
@@ -609,14 +672,17 @@ class VivadoToolchain:
             # R75/R75a: the manifest records the *probed* Vivado version, while
             # the R4 cache key uses the *pinned* VIVADO_TOOLCHAIN_VERSION
             # (residency.bitstream_key).  Assert they agree so key and manifest
-            # can never diverge: a mismatch (e.g. PYRO_VIVADO points at a version
+            # can never diverge: a mismatch (e.g. PYRO_VIVADO points at a
+            # version
             # other than the recorded 2025.2 pin) fails synthesis with a clear
-            # diagnostic rather than silently keying an artifact under one version
+            # diagnostic rather than silently keying an artifact under one
+            # version
             # while labelling it another.
             tool_ver = self._resolve_toolchain_version(exe, env)
             if tool_ver != VIVADO_TOOLCHAIN_VERSION:
                 raise SynthesisFailed(
-                    f"vivado version 0x{tool_ver:08x} does not match the pinned "
+                    f"vivado version 0x{tool_ver:08x} does not match the "
+                    f"pinned "
                     f"toolchain_version 0x{VIVADO_TOOLCHAIN_VERSION:08x} "
                     f"(cache-key/manifest consistency, R75/R75a)")
 
@@ -669,7 +735,8 @@ class VivadoToolchain:
                 # registered paths).  Fail safe (R65) rather than fabricate a
                 # met-timing verdict from an absent WNS.
                 raise SynthesisFailed(
-                    "no post-route setup timing paths — cannot verify timing (R65)")
+                    "no post-route setup timing paths — cannot verify timing "
+                    "(R65)")
             m = _RE_WNS.search(out)
             if m is None:
                 raise SynthesisFailed(
@@ -678,8 +745,10 @@ class VivadoToolchain:
 
             # 5. Timing verdict (R73): 250 MHz proxy.
             met_timing = wns >= 0.0
-            # Achieved Fmax at the target period.  Guard the denominator: WNS can
-            # approach (never exceed, physically) the period for a near-zero-delay
+            # Achieved Fmax at the target period.  Guard the denominator: WNS
+            # can
+            # approach (never exceed, physically) the period for a near-zero-
+            # delay
             # path; the 1e-6 floor keeps fmax finite (JSON-serializable) instead
             # of dividing by zero.
             fmax_mhz = 1000.0 / max(period_ns - wns, 1e-6)
@@ -701,7 +770,8 @@ class VivadoToolchain:
                 generator_version=job.generator_version,
                 harness_version=job.harness_version,
                 toolchain_version=tool_ver,          # R75: real Vivado version
-                shell_version=SHELL_VERSION,          # R75a: unchanged model value
+                # R75a: unchanged model value
+                shell_version=SHELL_VERSION,
                 luts=luts,                            # R72c: genuine post-route
                 ffs=ffs,                              # R72c: genuine post-route
                 # R72c enumerates luts/ffs/fmax_mhz/met_timing as the genuine
@@ -718,7 +788,8 @@ class VivadoToolchain:
                 estimated_fp_rate=job.estimated_fp_rate,
                 integrity_hash=payload_crc32(payload),
                 payload_len=len(payload),
-                payload_kind="ooc_metrics",           # R72a: honest, not a bitstream
+                # R72a: honest, not a bitstream
+                payload_kind="ooc_metrics",
             )
             return payload, manifest
         finally:
@@ -727,13 +798,17 @@ class VivadoToolchain:
     # -- R82 partial-bitstream (pr_bitstream) link flow --------------------
     def _run_pr(self, job: SynthJob) -> Tuple[bytes, Manifest]:
         """Drive the R82 DFX partial-bitstream flow for ``job`` and return
-        (partial .bit bytes, ``pr_bitstream`` manifest), or raise SynthesisFailed.
+        (partial .bit bytes, ``pr_bitstream`` manifest), or raise
+        SynthesisFailed.
 
         Fail-loud (R70a/R82): the R82d substrate paths (locked static DCP + the
         reference routed DCP) are REQUIRED.  An absent or non-existent path is a
-        SynthesisFailed — NEVER a silent fall-back to ``ooc_metrics`` (that would
-        serve a non-device artifact under a device-loadable claim).  pr_verify is
-        a HARD GATE (R82c): if it does not pass, no partial is written and the job
+        SynthesisFailed — NEVER a silent fall-back to ``ooc_metrics`` (that
+        would
+        serve a non-device artifact under a device-loadable claim).  pr_verify
+        is
+        a HARD GATE (R82c): if it does not pass, no partial is written and the
+        job
         fails (permanent fallback, R65).
 
         Timing (R73a, v2.5.0): ``met_timing``/``fmax_mhz`` are decided by the
@@ -751,19 +826,24 @@ class VivadoToolchain:
         if not cfg.static_dcp:
             raise SynthesisFailed(
                 "pr_bitstream requested but static_dcp (R82b locked static "
-                "substrate) is unset — refusing to fall back to ooc_metrics (R82)")
+                "substrate) is unset — refusing to fall back to ooc_metrics "
+                "(R82)")
         if not cfg.reference_dcp:
             raise SynthesisFailed(
                 "pr_bitstream requested but reference_dcp (R82c/R82d pr_verify "
-                "reference) is unset — refusing to fall back to ooc_metrics (R82)")
+                "reference) is unset — refusing to fall back to ooc_metrics "
+                "(R82)")
         if not os.path.isfile(cfg.static_dcp):
             raise SynthesisFailed(
-                f"pr_bitstream: static_dcp not found: {cfg.static_dcp!r} (R82b)")
+    f"pr_bitstream: static_dcp not found: {
+        cfg.static_dcp!r} (R82b)")
         if not os.path.isfile(cfg.reference_dcp):
             raise SynthesisFailed(
-                f"pr_bitstream: reference_dcp not found: {cfg.reference_dcp!r} (R82c)")
+    f"pr_bitstream: reference_dcp not found: {
+        cfg.reference_dcp!r} (R82c)")
 
-        # The RP-child wrapper is the same for every pattern (params differ); the
+        # The RP-child wrapper is the same for every pattern (params differ);
+        # the
         # engine RTL is job.rtl.  Import lazily to keep the OOC path light.
         from ..hdl.rp_wrapper import (
             check_engine_pairing, generate_rp_child, _declares_in_ready)
@@ -791,7 +871,8 @@ class VivadoToolchain:
         preserved: Optional[str] = None
         try:
             with open(os.path.join(workdir, "design.v"), "w") as f:
-                f.write(job.rtl)                       # generated engine (pyro_circuit)
+                # generated engine (pyro_circuit)
+                f.write(job.rtl)
             # RP-child wrapper (R80); width must match the engine (P2b),
             # frame buffer must match the substrate shell (R78.9a/P2c).
             wrapper = generate_rp_child(
@@ -819,7 +900,8 @@ class VivadoToolchain:
                     .replace("@RPCELL@", cfg.rp_cell)
                     .replace("@PART@", cfg.part)
                     .replace("@STATIC_DCP@", os.path.abspath(cfg.static_dcp))
-                    .replace("@REFERENCE_DCP@", os.path.abspath(cfg.reference_dcp))
+                    .replace("@REFERENCE_DCP@",
+                             os.path.abspath(cfg.reference_dcp))
                     .replace("@PLACE_DIRECTIVE@",
                              " -directive %s" % cfg.pr_place_directive
                              if cfg.pr_place_directive else "")
@@ -835,14 +917,17 @@ class VivadoToolchain:
 
             # R75/R75a: same pinned-version consistency guard as the OOC flow —
             # a partial and the static it links against MUST be the same release
-            # (R82a); a mismatch fails rather than key an artifact under the wrong
+            # (R82a); a mismatch fails rather than key an artifact under the
+            # wrong
             # toolchain_version.
             tool_ver = self._resolve_toolchain_version(exe, env)
             if tool_ver != VIVADO_TOOLCHAIN_VERSION:
                 raise SynthesisFailed(
-                    f"vivado version 0x{tool_ver:08x} does not match the pinned "
+                    f"vivado version 0x{tool_ver:08x} does not match the "
+                    f"pinned "
                     f"toolchain_version 0x{VIVADO_TOOLCHAIN_VERSION:08x} "
-                    f"(same-release rule R82a; cache-key/manifest consistency R75)")
+                    f"(same-release rule R82a; cache-key/manifest consistency "
+                    f"R75)")
 
             # R84: PR jobs use VIVADO_PR_JOB_TIMEOUT (3600 s) not R77's 1800 s;
             # the R77 kill-the-process-tree discipline applies verbatim.
@@ -863,23 +948,30 @@ class VivadoToolchain:
                     out = ""
                 raise SynthesisFailed(
                     f"vivado pr_bitstream job exceeded per-job timeout "
-                    f"({cfg.pr_job_timeout_s:g}s); process tree killed (R84/R77)")
+                    f"({cfg.pr_job_timeout_s:g}s); process tree killed "
+                    f"(R84/R77)")
             out = out or ""
             if proc.returncode != 0:
-                # A pr_verify failure raises `error` in Tcl → non-zero exit → here.
+                # A pr_verify failure raises `error` in Tcl → non-zero exit →
+                # here.
                 raise SynthesisFailed(
-                    f"vivado pr_bitstream flow failed (exit {proc.returncode}): "
+                    f"vivado pr_bitstream flow failed (exit "
+                    f"{proc.returncode}): "
                     f"synth/link/pr_verify error — see log (R82c/R65)")
 
-            # R82c HARD GATE: the partial is honest only if pr_verify passed.  The
+            # R82c HARD GATE: the partial is honest only if pr_verify passed.
+            # The
             # marker is emitted solely on a passing pr_verify; its absence (even
             # with exit 0) means we MUST NOT claim pr_bitstream.
             if _RE_PR_VERIFY_PASS.search(out) is None:
                 raise SynthesisFailed(
-                    "pr_verify did not pass (no PR_VERIFY:PASS marker) — refusing "
+                    "pr_verify did not pass (no PR_VERIFY:PASS marker) — "
+                    "refusing "
                     "to claim payload_kind=pr_bitstream (R82c/R72c honesty)")
-            # W6 defense-in-depth: independently re-read the pr_verify report and
-            # require an explicit compatibility statement with no failure/critical
+            # W6 defense-in-depth: independently re-read the pr_verify report
+            # and
+            # require an explicit compatibility statement with no
+            # failure/critical
             # token, so a false PASS cannot slip past the marker alone.
             _validate_pr_verify_report(os.path.join(workdir, "pr_verify.rpt"))
 
@@ -890,15 +982,15 @@ class VivadoToolchain:
             # A3.5: read the partial bitstream payload IMMEDIATELY — before any
             # metric-parse or timing-gate failure can raise — so the artifact
             # can never again be destroyed unread on a post-verify failure.
-            # Payload = the REAL partial bitstream bytes (R72/R85 device artifact).
+            # Payload = the REAL partial bitstream bytes (R72/R85 device
+            # artifact).
             bit_path = os.path.join(workdir, "pyro_rp_partial.bit")
             try:
                 with open(bit_path, "rb") as f:
                     payload = f.read()
             except OSError as exc:
                 raise SynthesisFailed(
-                    f"pr_verify passed but no partial bitstream was written: {exc} "
-                    f"(R82c)")
+     f"pr_verify passed but no partial bitstream was written: {exc} " f"(R82c)")
             if not payload:
                 raise SynthesisFailed("partial bitstream is empty (R82c)")
 
@@ -909,12 +1001,14 @@ class VivadoToolchain:
                     util_txt = f.read()
             except OSError as exc:
                 raise SynthesisFailed(
-                    f"vivado pr_bitstream produced no utilization report: {exc}")
+                    f"vivado pr_bitstream produced no utilization report: "
+                    f"{exc}")
             luts = _parse_first_int(_RE_CLB_LUTS, util_txt)
             ffs = _parse_first_int(_RE_CLB_FFS, util_txt)
             if luts is None or ffs is None:
                 raise SynthesisFailed(
-                    "could not parse CLB LUTs / CLB Registers from PR util report")
+                    "could not parse CLB LUTs / CLB Registers from PR util "
+                    "report")
             period_ns = 1000.0 / float(cfg.target_clock_mhz)
 
             # R73a.6: the whole-design WNS is job diagnostics ONLY.  It MUST
@@ -932,7 +1026,8 @@ class VivadoToolchain:
                 # R73a.3: an empty scoped path set is a FAILURE, not a pass — a
                 # narrower gate must not degrade into no gate.
                 raise SynthesisFailed(
-                    f"R73a.3: the RP-scoped post-route timing query returned NO "
+                    f"R73a.3: the RP-scoped post-route timing query returned "
+                    f"NO "
                     f"setup paths — refusing to pass an ungated partial "
                     f"(whole-design WNS={whole_wns}, diagnostics only) (R65)")
             m = _RE_RP_WNS.search(out)
@@ -962,7 +1057,8 @@ class VivadoToolchain:
                 generator_version=job.generator_version,
                 harness_version=job.harness_version,
                 toolchain_version=tool_ver,          # R75/R82a: pinned 2025.2
-                shell_version=SHELL_VERSION,          # unchanged (R75a/R81 note)
+                # unchanged (R75a/R81 note)
+                shell_version=SHELL_VERSION,
                 luts=luts,                            # R72c: genuine post-route
                 ffs=ffs,
                 bram_kb=job.bram_kb,
@@ -971,10 +1067,13 @@ class VivadoToolchain:
                 met_timing=met_timing,                # R73
                 over_approx_classes=list(job.over_approx_classes),
                 estimated_fp_rate=job.estimated_fp_rate,
-                integrity_hash=payload_crc32(payload),  # over the real .bit (R47b)
+                # over the real .bit (R47b)
+                integrity_hash=payload_crc32(payload),
                 payload_len=len(payload),
-                payload_kind="pr_bitstream",          # R72: device-loadable artifact
-                pr_verified=True,                     # R47b/R82c: pr_verify passed
+                # R72: device-loadable artifact
+                payload_kind="pr_bitstream",
+                # R47b/R82c: pr_verify passed
+                pr_verified=True,
             )
             return payload, manifest
         except Exception as exc:
@@ -1010,7 +1109,8 @@ def _preserve_pr_workdir(workdir: str) -> str:
         return workdir
 
 
-# W6: pr_verify report failure/critical tokens and the required compatibility token.
+# W6: pr_verify report failure/critical tokens and the required compatibility
+# token.
 # W6-b: failure tokens are word/line-anchored so that a PASSING report's
 # benign phrasing ("Number of differences found: 0", "No mismatches found",
 # "pr_verify: PASSED") is not rejected, while any real failure statement,
@@ -1019,7 +1119,8 @@ def _preserve_pr_workdir(workdir: str) -> str:
 # boundary inside "incompatible".)  Final phrasing check against live
 # pr_verify output remains a release gate for the first real PR job.
 _RE_PR_VERIFY_FAIL = _stock_compile(
-    r"critical\s+warning|\bnot\s+compatible\b|\bincompatible\b|\bfailed\b(?!\s*:\s*0\b)"
+    r"critical\s+warning|\bnot\s+compatible\b|\bincompatible\b"
+    r"|\bfailed\b(?!\s*:\s*0\b)"
     r"|^\s*ERROR[: ]|(?:differences|mismatches)[^:\n]*:\s*[1-9]",
     re.IGNORECASE | re.MULTILINE)
 _RE_PR_VERIFY_OK = _stock_compile(r"\bcompatible\b|\bpassed\b", re.IGNORECASE)
@@ -1028,9 +1129,12 @@ _RE_PR_VERIFY_OK = _stock_compile(r"\bcompatible\b|\bpassed\b", re.IGNORECASE)
 def _validate_pr_verify_report(path: str) -> None:
     """W6: independently confirm ``pr_verify`` success from its report file.
 
-    Raises :class:`SynthesisFailed` unless the report exists, contains an explicit
-    compatibility statement, and carries no failure/critical-warning token — so a
-    non-raising ``pr_verify`` failure value can never yield a false ``pr_bitstream``
+    Raises :class:`SynthesisFailed` unless the report exists, contains an
+    explicit
+    compatibility statement, and carries no failure/critical-warning token —
+    so a
+    non-raising ``pr_verify`` failure value can never yield a false
+    ``pr_bitstream``
     claim (R82c honesty), independent of the in-Tcl gate.
     """
     try:

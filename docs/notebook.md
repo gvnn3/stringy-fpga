@@ -35,7 +35,8 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 16. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
-# EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon :complete:
+# EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
+R1 Floor Crossed, AC-3-3 PASSES on Silicon :complete:
 
 ## 1. Hypothesis
 
@@ -138,7 +139,8 @@ carry v2.7.0-draft markers, the spec file itself is untouched.
 
 ---
 
-# EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched :complete:
+# EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s
+Pipelined (4.7× over 1518), Two onic MTU Defects Patched :complete:
 
 ## 1. Hypothesis
 
@@ -149,7 +151,8 @@ pipelined MATCH throughput well past the 121 MiB/s plateau by amortizing the
 
 ## 2. How
 
-Power-cycled nf-server06, then: verify PCIe enumeration → `pyro_wedge_recover.sh`
+Power-cycled nf-server06, then: verify PCIe enumeration →
+`pyro_wedge_recover.sh`
 → probe → `load` the `becf73e8` partial → `pyro_pipeline_bench.py` at both
 payload bounds (`PYRO_BENCH_JUMBO=1` for 9568 B).
 
@@ -166,7 +169,8 @@ PYRO_BENCH_JUMBO=1 PYRO_DEVICE_IFACE=ens2 \
 
 ## 3. Observations
 
-- Card enumerated at 0000:02:00.0 after power-on with `build_timestamp=0x07170514`
+- Card enumerated at 0000:02:00.0 after power-on with
+  `build_timestamp=0x07170514`
   — the 17 Jul 05:14 jumbo build. **QSPI multiboot of the jumbo shell works.**
   Shell ID `0x0202c318` pre-load; BUILD16 reads `0x0000` once a partial is
   resident (SPEC16, the validated half, unchanged).
@@ -182,10 +186,16 @@ PYRO_BENCH_JUMBO=1 PYRO_DEVICE_IFACE=ens2 \
   only H2C carries corpus; replies are small.
 - Pipelined MATCH, 4 MiB corpus per window size, zero loss at every W:
 
-  | payload bound | W=1 | plateau | best | µs/frame |
-  |---------------|-----|---------|------|----------|
-  | 1486 B (1518 shell bound) | 66.2 MiB/s | ~121 MiB/s (W≥2) | 121.6 (W=64) | 11.6 |
-  | 9568 B (jumbo, R78.9a)    | 282.4 MiB/s | ~560 MiB/s (W≥2) | **567.1 (W=32)** | 16.1 |
+- **1486 B (1518 shell bound)**
+  - W=1: 66.2 MiB/s
+  - plateau: ~121 MiB/s (W≥2)
+  - best: 121.6 (W=64)
+  - µs/frame: 11.6
+- **9568 B (jumbo, R78.9a)**
+  - W=1: 282.4 MiB/s
+  - plateau: ~560 MiB/s (W≥2)
+  - best: **567.1 (W=32)**
+  - µs/frame: 16.1
 
 ## 4. Data analysis
 
@@ -213,7 +223,8 @@ data plane is where the next multiple lives.
 
 ---
 
-# EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz :complete:
+# EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at
+1.97 GB/s On-Chip, Timing Closed at 251.9 MHz :complete:
 
 ## 1. Hypothesis
 
@@ -306,7 +317,9 @@ now a 30-second regression for every future engine/harness change.
 
 ---
 
-# EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2 :complete:
+# EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial,
+Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2
+:complete:
 
 ## 1. Hypothesis
 
@@ -413,7 +426,8 @@ the host's scheduler, not the device.
 
 ---
 
-# EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon :complete:
+# EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA
+Soft-Reset Sequence, and the First R45a Counter Read on Silicon :complete:
 
 ## 1. Hypothesis
 
@@ -518,7 +532,9 @@ the last model-only claims in the perf story are gone.
 
 ---
 
-# EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP :complete:
+# EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial
+— R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP
+:complete:
 
 ## 1. Hypothesis
 
@@ -634,7 +650,8 @@ counters are one working reconfig handshake away, and no closer.
 
 ---
 
-# EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed :complete:
+# EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import
+Corpse, and Why the Workaround Failed :complete:
 
 ## 1. Hypothesis
 
@@ -719,7 +736,8 @@ after, which is behaviourally invisible at any realistic `PYRO_N_SYNTH`.
 
 ---
 
-# EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found :complete:
+# EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified
+Suites, and a Counter-Wedge Bug Found :complete:
 
 ## 1. Hypothesis
 
@@ -825,7 +843,8 @@ to hold pre-install references (exactly what the oracle fix did for tests).
 
 ---
 
-# EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe :complete:
+# EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b
+Reachable at ~1.09×, Warmup Defect Found in the Recipe :complete:
 
 ## 1. Hypothesis
 
@@ -942,7 +961,8 @@ never single shots.
 
 ---
 
-# EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true :complete:
+# EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06
+— New Card, New Flash, device_usable=true :complete:
 
 ## 1. Hypothesis
 
@@ -1086,10 +1106,12 @@ PYRO_FLASH_ALLOW_LIVE_PCIE=1 scripts/flash_u250.sh flash \
 
 - Protocol round-trip on real silicon:
 
-  | request | reply | spec |
-  |---|---|---|
-  | `ID_REQUEST` | `ID_REPLY` (0x02), `SPEC16=0x0202`, **`rp_child_id = 0`** | R80/R81 |
-  | `MATCH_REQUEST` | `STATUS/ERROR` (0x05), **code 7 = `PYRO_E_NOT_RESIDENT`** | R78.8 |
+- **`ID_REQUEST`**
+  - reply: `ID_REPLY` (0x02), `SPEC16=0x0202`, **`rp_child_id = 0`**
+  - spec: R80/R81
+- **`MATCH_REQUEST`**
+  - reply: `STATUS/ERROR` (0x05), **code 7 = `PYRO_E_NOT_RESIDENT`**
+  - spec: R78.8
 
 **Defect found and fixed: `BUILD16` is ASCII garbage in the flashed shell.**
 
@@ -1101,7 +1123,8 @@ PYRO_FLASH_ALLOW_LIVE_PCIE=1 scripts/flash_u250.sh flash \
   `Parameter BUILD16 bound to: 8A - type: string` and **does not warn**.
   `'8'=0x38`, `'A'=0x41` → `0x3841`. Exactly what the card reports.
 - Fixed: pass BUILD16 as a **decimal** integer. Verified —
-  `Parameter BUILD16 bound to: 16'b1011001100101110` (= `0xB32E`). `dfx_build.sh`
+  `Parameter BUILD16 bound to: 16'b1011001100101110` (= `0xB32E`).
+  `dfx_build.sh`
   now hard-fails if the parameter ever binds as a string again.
 
 ## 4. Data analysis
@@ -1168,7 +1191,8 @@ when the kernel has moved under a driver tree.
 **`ens2` breaks the shape of F3, not just its value.** The spec's F3 fact names
 a netdev (`enp175s0f0`) as though it were derivable from the card. It is not:
 systemd chose *slot-based* naming here, so the interface is `ens2` — a name that
-encodes the physical slot, not the BDF. No amount of re-deriving `enp<bus>s<slot>f<fn>`
+encodes the physical slot, not the BDF. No amount of re-deriving
+`enp<bus>s<slot>f<fn>`
 from `02:00.0` would have produced it. A netdev name is a property of the host's
 naming policy, and the spec should treat it as configuration, not as a fact.
 
@@ -1188,7 +1212,8 @@ produced them was committed. It is all now under `hw/` and
   default `PYRO_DEVICE_IFACE` to `enp175s0f0`. On this host the card is
   `02:00.0` and the netdev is **`ens2`** — so *all three* are false and the
   library default cannot reach the device. Everything above only works with an
-  explicit `PYRO_DEVICE_IFACE=ens2`. This needs a spec decision (re-declare F2/F3,
+  explicit `PYRO_DEVICE_IFACE=ens2`. This needs a spec decision (re-declare
+  F2/F3,
   or demote them from facts to per-host configuration), not a silent code edit.
   Note `ens2` also falsifies the *shape* of F3, not just its value: systemd's
   slot-based naming means the netdev name is not derivable from the BDF.
@@ -1203,7 +1228,8 @@ produced them was committed. It is all now under `hw/` and
 - Load the ID-stub **partial** (`hw/dfx/build/partials/id_stub.bit`) over JTAG
   against the locked static — the cheapest possible exercise of `load_partial`
   (R86.5), and the first live PR reconfiguration. It should be a no-op
-  observationally (same child), which is exactly what makes it a safe first test.
+  observationally (same child), which is exactly what makes it a safe first
+  test.
 - Then a **real pattern child**: generate via `pyro.hdl.rp_wrapper`, build the
   partial against `static_routed_locked.dcp`, load it, and confirm `ID_REPLY`
   flips `rp_child_id` to the non-zero R78.5a value and `MATCH_REQUEST` returns
@@ -1216,7 +1242,8 @@ produced them was committed. It is all now under `hw/` and
 
 ---
 
-# EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image :complete:
+# EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image
+:complete:
 
 ## 1. Hypothesis
 
@@ -1313,7 +1340,8 @@ recorded above. The stock image would report its own, older build time.
 
 ---
 
-# EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial :complete:
+# EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First
+pr_bitstream Partial :complete:
 
 ## 1. Hypothesis
 
@@ -1324,14 +1352,19 @@ R71/R83a `pr_flow_present` predicate true on honest, host-observable evidence?
 
 ## 2. How
 
-- **Equipment:** Alveo U250 (xcu250-figd2104-2L-e), owner's board at PCI af:00.0;
+- **Equipment:** Alveo U250 (xcu250-figd2104-2L-e), owner's board at PCI
+  af:00.0;
   host 72-core, 376 GB RAM, Ubuntu 24.04 / glibc 2.39.
-- **Software:** Vivado **2025.2** (`/usr/local/cad/2025.2/Vivado`, re-pinned from
-  2023.1 which segfaults at batch exit on this glibc — spec v2.2.1); open-nic-shell
+- **Software:** Vivado **2025.2** (`/usr/local/cad/2025.2/Vivado`, re-pinned
+  from
+  2023.1 which segfaults at batch exit on this glibc — spec v2.2.1); open-nic-
+  shell
   @ ce85c8d + `pyro` plugin (reconfigurable partition `pyro_rp`, Pblock
   `CLOCKREGION_X5Y7:X5Y8`); CMAC license permanent through 2027.06.
-- **Flow:** full DFX — baseline shell build, then static synth + `link` (opt/place/
-  route → routed + **locked** static DCP, full flash `.bit`/`.mcs`, ID-stub partial),
+- **Flow:** full DFX — baseline shell build, then static synth + `link`
+  (opt/place/
+  route → routed + **locked** static DCP, full flash `.bit`/`.mcs`, ID-stub
+  partial),
   then the `VivadoToolchain` `pr_bitstream` mode against the locked substrate.
 
 ### Key commands
@@ -1366,11 +1399,21 @@ PR shell (ID-stub reference config) and first pattern partial (`ab+c`):
 
 RP-child wrapper size, before vs after the RAM reworks:
 
-| Version | LUT | FF | OOC synth | Routes? |
-|---------|-----|-----|-----------|---------|
-| Byte-array buffers | ~7204 | ~13709 | **50+ min (timeout)** | no |
-| Beat-wide RAM buffers | 7204 | 13709 | 59 s | plateau ~34k overlaps |
-| + match store → BRAM, hdr snapshot | **3131** | **1592** | **45 s** | **0 overlaps, closes** |
+- **Byte-array buffers**
+  - LUT: ~7204
+  - FF: ~13709
+  - OOC synth: **50+ min (timeout)**
+  - Routes?: no
+- **Beat-wide RAM buffers**
+  - LUT: 7204
+  - FF: 13709
+  - OOC synth: 59 s
+  - Routes?: plateau ~34k overlaps
+- **+ match store → BRAM, hdr snapshot**
+  - LUT: **3131**
+  - FF: **1592**
+  - OOC synth: **45 s**
+  - Routes?: **0 overlaps, closes**
 
 ## 4. Data analysis
 
@@ -1463,7 +1506,8 @@ gmake lib abi-check
 | `[A-Za-z0-9]{200}` | 202 | **410** | 1464 | **626** | 650 | — |
 
 - The mock-era estimator (base 2000 LUTs/2000 FFs) violated the pre-registered
-  R74 margin on 3 of 4 initial patterns (est/real up to **10.6×** > 10× ceiling);
+  R74 margin on 3 of 4 initial patterns (est/real up to **10.6×** > 10×
+  ceiling);
   recalibrated constants: **256 LUTs + 4/state + 2/edge; 448 FFs + 1/state**.
 - Full verification: **1045 passed, 6 skipped, 0 failed** (63:41). ABI 2.0.0
   intact. All 6 skips are R71-mandated, each naming its absent prerequisite.
@@ -1503,7 +1547,8 @@ AC-3-3 (R3c).
 
 ---
 
-# EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI :complete:
+# EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits,
+Synthesis Service, C ABI :complete:
 
 ## 1. Hypothesis
 
@@ -1586,7 +1631,8 @@ not yet on the dispatch path.
 - Benchmark suite (R59) on real corpora to validate R1/R2 win regime and
   R19b false-positive-rate bounds
 
-# EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model :complete:
+# EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier,
+Model :complete:
 
 ## 1. Hypothesis
 
@@ -1673,7 +1719,8 @@ and can its dynamic region host a regex-matching engine reachable from Python?
 
 ## 2. How
 
-- **Equipment:** Intel C620-chipset x86_64 server, Ubuntu (Linux 6.8.0-124-generic)
+- **Equipment:** Intel C620-chipset x86_64 server, Ubuntu (Linux
+  6.8.0-124-generic)
 - **Software:** lspci, lsmod, sysfs inspection (no FPGA vendor tools assumed)
 - **Benchmarks:** none — discovery only
 
@@ -1689,14 +1736,19 @@ command -v vivado v++ xbutil
 
 ## 3. Observations
 
-| Property | Value |
-|----------|-------|
-| PCIe functions | **af:00.0** (10ee:903f), **af:00.1** (10ee:913f), subsystem 10ee:0007 |
-| PCI class | Network controller |
-| Kernel driver | **onic** (AMD/Xilinx OpenNIC) |
-| Network interfaces | enp175s0f0, enp175s0f1 |
-| FPGA char devices | none (`/dev/xdma*`, `/dev/qdma*` absent) |
-| Vendor tools on PATH | none (vivado, v++, xbutil all missing) |
+- **PCIe functions**
+  - Value: **af:00.0** (10ee:903f), **af:00.1** (10ee:913f), subsystem
+    10ee:0007
+- **PCI class**
+  - Value: Network controller
+- **Kernel driver**
+  - Value: **onic** (AMD/Xilinx OpenNIC)
+- **Network interfaces**
+  - Value: enp175s0f0, enp175s0f1
+- **FPGA char devices**
+  - Value: none (`/dev/xdma*`, `/dev/qdma*` absent)
+- **Vendor tools on PATH**
+  - Value: none (vivado, v++, xbutil all missing)
 
 ## 4. Data analysis
 
@@ -1753,19 +1805,28 @@ runs look catastrophically worse until a reset + fresh queues.
 
 Evidence matrix (all on silicon today):
 
-| Config                            | Result |
-|-----------------------------------|--------|
-| 1 queue — every window, any core  | 0 loss (repeated, incl. MAXFETCH=0) |
-| ≥2 queues, x4 core, jumbo         | lossy |
-| ≥2 queues, N=8 core, jumbo        | lossy (same stack was 0-loss Jul 20) |
-| ≥2 queues, small frames (1-desc)  | lossy → not multi-desc interleave |
-| Direct-intr / auto / poll mode    | all lossy → not the IRQ re-arm race |
-| hw_server killed                  | lossy → not JTAG/TAP interference |
-| WB_ACC_INT 5→0                    | lossy (no change) |
-| MAXFETCH 2→0                      | ~100× worse → fetch-latency dose-response |
-| MAXFETCH 0, 1 queue               | 0 loss → multi-queue is the trigger |
-| Sysmon                            | 58.8 °C, VCCINT 0.844 V — not thermal |
-| PCIe                              | Gen3 x16, no AER — not the link |
+- **1 queue — every window, any core**
+  - Result: 0 loss (repeated, incl. MAXFETCH=0)
+- **≥2 queues, x4 core, jumbo**
+  - Result: lossy
+- **≥2 queues, N=8 core, jumbo**
+  - Result: lossy (same stack was 0-loss Jul 20)
+- **≥2 queues, small frames (1-desc)**
+  - Result: lossy → not multi-desc interleave
+- **Direct-intr / auto / poll mode**
+  - Result: all lossy → not the IRQ re-arm race
+- **hw_server killed**
+  - Result: lossy → not JTAG/TAP interference
+- **WB_ACC_INT 5→0**
+  - Result: lossy (no change)
+- **MAXFETCH 2→0**
+  - Result: ~100× worse → fetch-latency dose-response
+- **MAXFETCH 0, 1 queue**
+  - Result: 0 loss → multi-queue is the trigger
+- **Sysmon**
+  - Result: 58.8 °C, VCCINT 0.844 V — not thermal
+- **PCIe**
+  - Result: Gen3 x16, no AER — not the link
 
 Drop point: `qdma_subsystem_h2c.sv` ("Drop error packets") silently discards
 H2C packets the EQDMA5.0 Soft IP flags with `tuser_err`. char-dev write()
@@ -1833,7 +1894,8 @@ measurement of IP-corrupted packets for the AMD case.
 
 ---
 
-# 2026-07-26 — cold boot: instrumented shell live, counter decode dead, re-baseline results
+# 2026-07-26 — cold boot: instrumented shell live, counter decode dead, re-
+baseline results
 
 ## Cold boot (04:18) and bring-up
 
@@ -1860,12 +1922,16 @@ nothing had ever exercised the base-strip path on silicon.
 
 ## Re-baseline benches (current silicon, x4 child, jumbo)
 
-| Run | Result |
-|---|---|
-| 1q, 4 MiB/window | 0 loss, peak 2.75 GiB/s @ W=32 |
-| 4q, 4 MiB/window (first mq traffic since boot) | RETX 1–3 per 438-frame window (~1/340), peak 3.09 GiB/s @ W=64 |
-| 4q, 32 MiB/window | heavily degraded: RETX=417 @ W=4, RETX=681 @ W=64, throughput collapse to 31/171 MiB/s in those windows |
-| 1q, 32 MiB/window (AFTER the degraded 4q runs) | 0 RETX in 24.6k frames, 2.56 GiB/s — 1q path untouched by the degraded state |
+- **1q, 4 MiB/window**
+  - Result: 0 loss, peak 2.75 GiB/s @ W=32
+- **4q, 4 MiB/window (first mq traffic since boot)**
+  - Result: RETX 1–3 per 438-frame window (~1/340), peak 3.09 GiB/s @ W=64
+- **4q, 32 MiB/window**
+  - Result: heavily degraded: RETX=417 @ W=4, RETX=681 @ W=64, throughput
+    collapse to 31/171 MiB/s in those windows
+- **1q, 32 MiB/window (AFTER the degraded 4q runs)**
+  - Result: 0 RETX in 24.6k frames, 2.56 GiB/s — 1q path untouched by the
+    degraded state
 
 Conclusions that revise yesterday's picture:
 
@@ -1885,7 +1951,8 @@ AMD case doc updated with the cold-boot re-baseline evidence
 (symptom §4). Next concrete step stays: counter-fixed shell → flash →
 cold cycle → err-count deltas for the case.
 
-## 2026-07-26 morning — counter-fixed shell built and flashed; awaiting cold cycle
+## 2026-07-26 morning — counter-fixed shell built and flashed; awaiting cold
+cycle
 
 Full DFX rebuild with the decode fix (46186bf): PR_VERIFY_ALL_OK, 0 errors,
 ~2h40m. Static WNS -0.015 ns — single violated path, entirely inside the
@@ -1904,7 +1971,8 @@ dead to PCIe until the next cold boot. **Next cold power cycle activates
 the counter-fixed shell; then `h2cstats` before/after a 4q bench gives the
 direct tuser_err packet count for the AMD case.**
 
-## 2026-07-26 afternoon — cold cycle done; counters live; tuser_err is NEVER asserted
+## 2026-07-26 afternoon — cold cycle done; counters live; tuser_err is NEVER
+asserted
 
 Cold power cycle at ~16:50 activated the counter-fixed shell
 (`build_timestamp=0x07260427`). Bring-up was textbook: enumerated at
@@ -1914,11 +1982,21 @@ clean, x4 partial loaded in 44.7 s, control-path MATCH good.
 `h2cstats` now reads real values (decode fix 46186bf verified on
 silicon). Counter accounting, all runs jumbo, x4 child, same boot:
 
-| Run | frames+probe+retx sent | pkts delta | err delta | missing |
-|---|---|---|---|---|
-| 4q, 4 MiB/w (first mq traffic) | 3066+1+5 = 3072 | 3067 | **0** | 5 = exactly the 5 RETX'd originals |
-| 1q, 4 MiB/w (control) | 3066+1+0 = 3067 | 3067 | **0** | 0 — exact to the packet |
-| 4q, 32 MiB/w (degraded) | 24577+1+3630 = 28208 | 24481 | **0** | 3727 (13.2%) |
+- **4q, 4 MiB/w (first mq traffic)**
+  - frames+probe+retx sent: 3066+1+5 = 3072
+  - pkts delta: 3067
+  - err delta: **0**
+  - missing: 5 = exactly the 5 RETX'd originals
+- **1q, 4 MiB/w (control)**
+  - frames+probe+retx sent: 3066+1+0 = 3067
+  - pkts delta: 3067
+  - err delta: **0**
+  - missing: 0 — exact to the packet
+- **4q, 32 MiB/w (degraded)**
+  - frames+probe+retx sent: 24577+1+3630 = 28208
+  - pkts delta: 24481
+  - err delta: **0**
+  - missing: 3727 (13.2%)
 
 (The +1 is the bench's `probe_device` round-trip; the 1q run pins the
 counter as exact, which makes the 4q shortfalls trustworthy.)
@@ -2105,7 +2183,8 @@ the next build.**
 
 Acceptance suite after the 2.3.0 bump: 724 passed, 10 skipped, 1 failed in
 1:04:52. The single failure is ENVIRONMENTAL, not a regression:
-tests/acceptance/test_ac2b2_probe.py::test_probe_privilege_free_exact_canonical_reason
+tests/acceptance/test_ac2b2_probe.py::test_probe_privilege_free_exact_canonica
+l_reason
 asserts its own precondition `not has_cap_net_raw()` (line 67) — it is
 written for a dev host WITHOUT the capability, and this host's
 .venv-pyro/bin/python3 carries the cap_net_raw xattr on purpose so the
@@ -2155,7 +2234,8 @@ as SF21; spec bumped to 1.0.2. Next: JTAG load + on-silicon AC-S2-2
 verification (and AC-S1-2 re-establishment — the 2.3.0 bump staled the
 flashed S1 child).
 
-## 2026-07-28 (cont.) — on-silicon: AC-S2-2 group resident; AC-S1-2 re-established at 2.3.0
+## 2026-07-28 (cont.) — on-silicon: AC-S2-2 group resident; AC-S1-2 re-
+established at 2.3.0
 
 The 253-slot group partial loaded over JTAG in 14.1 s (in-band recovery
 clean), probe good. Live MATCH on `GET /view-source HTTP/1.0` returns one
@@ -2263,7 +2343,8 @@ hysteresis), content-chain lowering, and the weekly-diff incremental
 rebuild path. S4 (ROM-baked shared trie, suppression pilot) is gated on
 owner review.
 
-## 2026-07-28 — S3 day 1: chain lowering, daemon, scheduler, drill; full build launched
+## 2026-07-28 — S3 day 1: chain lowering, daemon, scheduler, drill; full build
+launched
 
 **AC-S3-2 landed first, deliberately** — the lowering changes every
 group's canonical bytes (the SR9 cache key), so it had to precede the
@@ -2328,7 +2409,8 @@ max floating span − 1; A2 the SR3 admission conditions (raw-only chains,
 PDU-aligned prefixes with the sid-509 evidence, 255/384 bounds); A3 the
 measured 21-group count; A4 the `\A`-overflow daemon obligation.
 
-## 2026-07-29 — S3 day 2: all 21 groups on silicon-ready bitstreams; chain slot verified on hardware; AC-S3-1 green
+## 2026-07-29 — S3 day 2: all 21 groups on silicon-ready bitstreams; chain
+slot verified on hardware; AC-S3-1 green
 
 **The build: 21/21 verified** (`pr_verified`, `met_timing`, fmax
 250.69–258.80, median 253.61 MHz; 22.6 h of Vivado over ~17 h wall at
@@ -2701,7 +2783,8 @@ a slow run until it cost a 25-minute timeout.
 916 unit tests green; wide RTL differential passes (5 subjects, 85
 matches, CRC 0x9c8f7ce9).
 
-## 2026-07-30 (cont.) — Overlay engine on silicon; the road, and a defect it found
+## 2026-07-30 (cont.) — Overlay engine on silicon; the road, and a defect it
+found
 
 The engine is resident on the U250 and matching. `TABLE_CAPS` reads
 40960, so this is genuinely the full-corpus build; a 2,564 B table loads
@@ -2745,7 +2828,8 @@ attested **perfectly**, and matched nothing, because the wrapper commits
 a beat before it can observe `in_ready` and the engine dropped nearly
 every byte. Everything that reports success reported success.
 
-## 2026-07-30 (cont.) — How the overlay gets used, and where the programs come from
+## 2026-07-30 (cont.) — How the overlay gets used, and where the programs come
+from
 
 The owner asked the right orienting question — *where do the programs
 come from?* — and the answer is worth recording because it is the whole
@@ -2799,7 +2883,8 @@ would let a swap overlap serving), ~8 cycles/byte scan rate, and
 anchor-only matching (costs precision, never completeness — 6 extra
 nominations on one group, zero misses anywhere, measured).
 
-## 2026-07-31 — R45a perf counters: the overlay child's throughput is now wire-readable
+## 2026-07-31 — R45a perf counters: the overlay child's throughput is now
+wire-readable
 
 Closed the one telemetry gap worth fabric changes. `PERF_REQUEST` against
 the overlay child had returned constant garbage from two stacked
@@ -2836,7 +2921,8 @@ it was match-heavy. The band is now [4.9, 20] with the FSM-derived floor
 written next to it. A measurement that can surprise the person who built
 the pipeline is exactly what telemetry is for.
 
-## 2026-07-31 (cont.) — Demo and dashboard end to end; one honest gap and one growing box
+## 2026-07-31 (cont.) — Demo and dashboard end to end; one honest gap and one
+growing box
 
 Ran the whole telemetry surface against the card, both modes.
 
@@ -2876,7 +2962,8 @@ old but keeps being true: anything that runs per-tick must be a fixed
 point, and "read what you just wrote" is how a renderer becomes a
 feedback loop.
 
-## 2026-07-31 (cont.) — An unplanned endurance result: ~2,700 swaps, identity intact
+## 2026-07-31 (cont.) — An unplanned endurance result: ~2,700 swaps, identity
+intact
 
 Re-ran the scripted demo on request and the first line of the narrative
 was the result: the card answered the opening status read at **epoch

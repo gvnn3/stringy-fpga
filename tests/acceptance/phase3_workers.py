@@ -51,7 +51,10 @@ import sys
 
 # Repo root importable when run as a script or re-imported by a spawn /
 # forkserver worker of the synthesis service (R63).
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -101,15 +104,23 @@ def _canon_match(m):
     groups = m.groups()
     ng = len(groups)
     return {
-        "__match__": True,
-        "span": list(m.span()),
-        "group0": _json_safe(m.group(0)),
-        "groups": _json_safe(groups),
-        "spans": [list(m.span(i)) for i in range(ng + 1)],
-        "lastindex": m.lastindex,
-        "lastgroup": m.lastgroup,
-        "groupdict": {k: _json_safe(x) for k, x in sorted(m.groupdict().items())},
-    }
+    "__match__": True,
+    "span": list(
+        m.span()),
+        "group0": _json_safe(
+            m.group(0)),
+            "groups": _json_safe(groups),
+            "spans": [
+                list(
+                    m.span(i)) for i in range(
+                        ng + 1)],
+                        "lastindex": m.lastindex,
+                        "lastgroup": m.lastgroup,
+                        "groupdict": {
+                            k: _json_safe(x) for k,
+                            x in sorted(
+                                m.groupdict().items())},
+                                 }
 
 
 def _canon_exc(e):
@@ -142,7 +153,8 @@ _LOG_STANZA = ("GET /index.html 200 12ms\n"
 BIG_LOG = _LOG_STANZA * 800
 assert len(BIG_LOG) >= S_MIN, "BIG_LOG must be >= 64 KiB (R51 step 4 by size)"
 
-LOG_KEY_PATTERN = r"(GET|POST) (/\S*)"          # 2 groups -> findall yields tuples
+# 2 groups -> findall yields tuples
+LOG_KEY_PATTERN = r"(GET|POST) (/\S*)"
 FIELD_KEY_PATTERN = r"(?P<key>\w+)=(?P<val>\d+)"  # named groups
 FIELD_SUBJECT = "a=1 bb=22 ccc=333 dd=4 tail x=9 y=not z=77"
 
@@ -366,12 +378,15 @@ TIER_UPGRADE_PATTERN = r"tierupg\d+"
 # >= 64 KiB subject: every dispatch crosses R51 step 4 by SIZE, so each one
 # reaches the residency consultation and ticks the R4a launch policy.
 TIER_UPGRADE_SUBJECT = ("x" * S_MIN) + " tierupg7 mid tierupg88 end"
-SIDE_BACKREF_PATTERN = r"(tier)\1"      # backreference: never HW-eligible (R65/R31)
+# backreference: never HW-eligible (R65/R31)
+SIDE_BACKREF_PATTERN = r"(tier)\1"
 SIDE_BACKREF_SUBJECT = "xx tiertier yy"
-SIDE_COLD_PATTERN = r"coldupg\d+"       # eligible, dispatched ONCE (< N_synth): stays cold
+# eligible, dispatched ONCE (< N_synth): stays cold
+SIDE_COLD_PATTERN = r"coldupg\d+"
 SIDE_COLD_SUBJECT = ("x" * S_MIN) + " coldupg5"
 
-TERMINAL_TIERS = ("resident", "fallback_only")  # R4/R31 terminal lifecycle tiers
+# R4/R31 terminal lifecycle tiers
+TERMINAL_TIERS = ("resident", "fallback_only")
 
 
 def cmd_tier_upgrade(mode):
@@ -388,7 +403,8 @@ def cmd_tier_upgrade(mode):
     import time
 
     assert mode in ("strict", "default"), mode
-    import pyro  # noqa: F401  R35a: env knobs were sampled here (parent set them)
+    # noqa: F401  R35a: env knobs were sampled here (parent set them)
+    import pyro
     import pyro.re as pre
     import pyro.testing as pt
 

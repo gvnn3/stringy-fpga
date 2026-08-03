@@ -1,7 +1,8 @@
 """Spec-named configuration knob PYRO_N_SYNTH (spec §9.1 R68).
 
 PYRO_N_SYNTH overrides the R4a launch threshold, is validated (positive int; an
-invalid value is ignored), is sampled only at the R35a points, and pins the exact
+invalid value is ignored), is sampled only at the R35a points, and pins the
+exact
 launch boundary deterministically.  All env mutation is via monkeypatch +
 refresh_env so the cached snapshot is clean for the next test.
 """
@@ -48,13 +49,15 @@ def test_nonpositive_value_ignored(monkeypatch, temp_cache):
     assert res.get_manager()._n_synth == res.N_SYNTH_DEFAULT
 
 
-def test_override_pushed_to_live_manager_at_sampling_point(monkeypatch, temp_cache):
+def test_override_pushed_to_live_manager_at_sampling_point(
+    monkeypatch, temp_cache):
     pyro.refresh_env()
     res.reset_manager()
     mgr = res.get_manager()
     assert mgr._n_synth == res.N_SYNTH_DEFAULT
     monkeypatch.setenv("PYRO_N_SYNTH", "7")
-    pyro.refresh_env()                       # R35a sampling point -> live update
+    # R35a sampling point -> live update
+    pyro.refresh_env()
     assert mgr._n_synth == 7
 
 
@@ -71,8 +74,10 @@ def test_override_pins_launch_boundary(monkeypatch, temp_cache):
     mgr.drain(10.0)
 
 
-def test_mid_process_change_deferred_until_sampling_point(monkeypatch, temp_cache):
-    # R35a/R68: mutating PYRO_N_SYNTH WITHOUT a sampling point must not change the
+def test_mid_process_change_deferred_until_sampling_point(
+    monkeypatch, temp_cache):
+    # R35a/R68: mutating PYRO_N_SYNTH WITHOUT a sampling point must not change
+    # the
     # in-force threshold.
     monkeypatch.setenv("PYRO_N_SYNTH", "9")
     pyro.refresh_env()

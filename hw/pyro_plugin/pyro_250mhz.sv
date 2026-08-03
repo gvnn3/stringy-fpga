@@ -18,9 +18,11 @@
 // nothing else -- the AXI-Lite MMIO window is terminated in this box and is
 // deliberately NOT routed into the RP (R80).
 //
-// The CMAC datapath is tied off in Phase 2b: adap_tx is held idle and adap_rx is
+// The CMAC datapath is tied off in Phase 2b: adap_tx is held idle and adap_rx
+// is
 // sunk. Adding a signal across the RP boundary, or un-tying the CMAC path, is a
-// static-shell change (new flash, new locked DCP); changing what happens *inside*
+// static-shell change (new flash, new locked DCP); changing what happens
+// *inside*
 // pyro_rp is a partial-bitstream-only change (R79).
 // *************************************************************************
 `include "open_nic_shell_macros.vh"
@@ -177,7 +179,8 @@ module pyro_250mhz #(
       .m_axis_tready (m_axis_qdma_c2h_tready[i])
     );
 
-    // C2H tuser back out. `dst` is forced to the PF bitmask exactly as the stock
+    // C2H tuser back out. `dst` is forced to the PF bitmask exactly as the
+    // stock
     // p2p box does -- the QDMA adapter uses it to select the destination queue,
     // so it is the shell's to set, not the RP's.
     assign m_axis_qdma_c2h_tuser_size[`getvec(16, i)] = c2h_tuser[0+:16];

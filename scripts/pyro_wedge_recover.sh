@@ -17,7 +17,9 @@
 set -euo pipefail
 
 BDF="${PYRO_BDF:-0000:02:00.0}"
-KO="${ONIC_KO:-/home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko}"
+KO="${ONIC_KO:-}"
+[ -n "$KO" ] || \
+  KO=/home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko
 IFACE="${PYRO_DEVICE_IFACE:-ens2}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -53,7 +55,8 @@ with open(path, "r+b") as f:
     m = mmap.mmap(f.fileno(), 4096)
     ts = rd(m, REGS["build_ts"])
     if ts in (0x0, 0xFFFFFFFF):
-        sys.exit(f"    ABORT: build timestamp {ts:#010x} — BAR dead, not poking")
+        sys.exit(f"    ABORT: build timestamp {ts:#010x}"
+                 " — BAR dead, not poking")
     print(f"    build_timestamp={ts:#010x}")
     pulse(m, REGS["user_rst"], REGS["user_status"], "user[0]  (pyro box+RP)")
     pulse(m, REGS["shell_rst"], REGS["shell_status"], "shell[0] (QDMA soft)")
@@ -68,11 +71,14 @@ ip link set "$IFACE" up
 # the driver's max_mtu. Falls back gracefully under a pre-jumbo onic.ko.
 MTU="${PYRO_DEVICE_MTU:-9586}"
 if ! ip link set "$IFACE" mtu "$MTU" 2>/dev/null; then
-  echo "    WARN: mtu $MTU refused (pre-jumbo onic.ko?) — staying at $(cat /sys/class/net/$IFACE/mtu)"
+  cur_mtu="$(cat /sys/class/net/$IFACE/mtu)"
+  echo "    WARN: mtu $MTU refused (pre-jumbo onic.ko?)"
+  echo "          staying at $cur_mtu"
 fi
 sleep 1
 ip -br link show "$IFACE"
 
 echo
 echo "WEDGE_RECOVER_DONE — now probe as your normal user:"
-echo "    PYRO_DEVICE_IFACE=$IFACE .venv-pyro/bin/python3 scripts/pyro_hw.py probe"
+echo "  PYRO_DEVICE_IFACE=$IFACE .venv-pyro/bin/python3" \
+     "scripts/pyro_hw.py probe"

@@ -8,7 +8,8 @@ the CHILD's end-to-end frame-processing ceiling once transport latency is
 hidden — the number that decides how much a P2 char-dev data plane can buy
 without new child RTL.
 
-Run:  PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_pipeline_bench.py
+Run:  PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3
+scripts/pyro_pipeline_bench.py
 """
 import os
 import statistics
@@ -25,7 +26,8 @@ MATCH_PREFIX = struct.Struct(">QHH")
 MAX_PAYLOAD = (pdev.MAX_PAYLOAD_JUMBO if os.environ.get("PYRO_BENCH_JUMBO")
                else pdev.MAX_PAYLOAD)
 CHUNK = MAX_PAYLOAD - MATCH_PREFIX.size               # corpus bytes per frame
-TOTAL_BYTES = int(os.environ.get("PYRO_BENCH_TOTAL_MB") or 4) << 20  # per window
+TOTAL_BYTES = int(os.environ.get("PYRO_BENCH_TOTAL_MB")
+                  or 4) << 20  # per window
 SLOT = 1
 WINDOWS = (1, 2, 4, 8, 16, 32, 64)
 TIMEOUT_S = 2.0
@@ -52,7 +54,8 @@ def run_window(cfg, transport, window):
             sent += 1
         raw = transport.recv(deadline_slack)
         if raw is None:
-            break                                       # timed out — report loss
+            # timed out — report loss
+            break
         if len(raw) < 14 + pdev.PYRO_HEADER_LEN:
             continue
         if raw[12:14] != struct.pack(">H", pdev.ETHERTYPE):

@@ -7,15 +7,18 @@ skeleton around the **mock toolchain** (R63b):
   * **R63a job queue + dedup.** Jobs are keyed by the R4 bitstream-cache key; a
     key that is already cached, already failed, or already in flight is not
     re-run.
-  * **R63b toolchain.** Each job runs :class:`pyro.synth.toolchain.MockToolchain`
+  * **R63b toolchain.** Each job runs
+  :class:`pyro.synth.toolchain.MockToolchain`
     (a real Vivado flow substitutes here in Phase 2).
   * **R63c concurrency.** The service MAY run several workers; loading into the
-    single-tenant PR region is serialized elsewhere (R64).  Default is one worker.
+    single-tenant PR region is serialized elsewhere (R64).  Default is one
+    worker.
   * **R63d cache population.** On success the worker writes the artifact +
     manifest to the persistent :class:`pyro.synth.cache.BitstreamCache`, so a
     later run (including after restart) finds the key **warm**.
   * **R63e isolation + timeout.** A job that raises, hangs, or overruns the
-    per-job timeout is contained: the key is marked a permanent-fallback negative
+    per-job timeout is contained: the key is marked a permanent-fallback
+    negative
     entry (R65) and the caller is never affected — callers keep running on
     fallback (R51/R52).
 
@@ -60,7 +63,8 @@ def _pick_context():
 
 
 def _make_toolchain(config: ToolchainConfig):
-    """Construct the toolchain the worker runs, selected by ``config.kind`` (R70).
+    """Construct the toolchain the worker runs, selected by ``config.kind``
+    (R70).
 
     ``vivado`` selects the real OOC adapter (R70-R77); anything else selects the
     mock (R63b) — the Phase-0/1 default.  Note (R70/R71 fail-safe): when
@@ -75,7 +79,8 @@ def _make_toolchain(config: ToolchainConfig):
     return MockToolchain(config)
 
 
-def _worker_main(job_q, result_q, cache_root: str, config: ToolchainConfig) -> None:
+def _worker_main(job_q, result_q, cache_root: str,
+                 config: ToolchainConfig) -> None:
     """Worker-process entry point (top-level so it is picklable under 'spawn').
 
     Consumes ``(key, job)`` items, runs the mock toolchain, populates the cache
@@ -121,17 +126,21 @@ class SynthesisService:
         # 'forkserver': workers are forked from a clean, single-threaded server
         # process.  This avoids (a) the 'spawn' re-import of __main__ (which
         # breaks under pytest / -c / stdin entry points) and (b) the
-        # fork-in-a-multithreaded-process hazard flagged on 3.12 (the parent runs
-        # a Queue feeder thread).  ``_worker_main`` is a top-level function, so it
+        # fork-in-a-multithreaded-process hazard flagged on 3.12 (the parent
+        # runs
+        # a Queue feeder thread).  ``_worker_main`` is a top-level function,
+        # so it
         # is picklable for forkserver.  Falls back to fork, then the default.
         self._ctx = _pick_context()
         self._job_q = self._ctx.Queue()
         self._result_q = self._ctx.Queue()
         self._procs = []
         # digest -> (key, submit monotonic timestamp) for R63e timeout + dedup.
-        # The full key is kept so a timeout reap can write a negative cache entry.
+        # The full key is kept so a timeout reap can write a negative cache
+        # entry.
         self._inflight: Dict[str, Tuple[BitstreamKey, float]] = {}
-        self._done_cb: Optional[Callable[[BitstreamKey, str, str], None]] = None
+        self._done_cb: Optional[Callable[[
+            BitstreamKey, str, str], None]] = None
         for _ in range(max(1, int(workers))):
             p = self._ctx.Process(
                 target=_worker_main,
@@ -142,7 +151,8 @@ class SynthesisService:
             self._procs.append(p)
 
     # -- completion callback (residency manager wires this) ----------------
-    def set_done_callback(self, cb: Callable[[BitstreamKey, str, str], None]) -> None:
+    def set_done_callback(
+        self, cb: Callable[[BitstreamKey, str, str], None]) -> None:
         self._done_cb = cb
 
     # -- R63a submit + dedup ------------------------------------------------
@@ -198,9 +208,11 @@ class SynthesisService:
                    if now - t0 > self._timeout]
         for dig, key in expired:
             self._inflight.pop(dig, None)
-            reason = f"synthesis per-job timeout ({self._timeout:g}s) exceeded (R63e)"
+            reason = f"synthesis per-job timeout ({
+    self._timeout:g}s) exceeded (R63e)"
             try:
-                self._cache.put_failure(key, reason)     # R65 permanent fallback
+                self._cache.put_failure(
+    key, reason)     # R65 permanent fallback
             except OSError:
                 pass
             if self._done_cb is not None:

@@ -33,7 +33,10 @@ import time
 
 # Repo root importable when run as a script or re-imported by a spawn /
 # forkserver worker of the synthesis service (R63).
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -105,18 +108,21 @@ def cmd_stats_lifecycle():
     pyro.prewarm(pat_a)
     snap("after_prewarm_a")
     reached_a = poll_synth(
-        lambda s: s["synth_succeeded"] >= 1 or s["synth_failed"] >= 1, "poll_a")
+    lambda s: s["synth_succeeded"] >= 1 or s["synth_failed"] >= 1,
+     "poll_a")
     snap("synth_a_done")
 
     # Dispatch A: warm artifact -> mock PR load -> resident (R64), model serve.
     dispatch("resident_a", pat_a, "z acc34hotA z")
     snap("after_resident_a")
 
-    # Pattern B: synthesize, then dispatch -> single-tenant eviction of A (R64).
+    # Pattern B: synthesize, then dispatch -> single-tenant eviction of A
+    # (R64).
     pyro.prewarm(pat_b)
     snap("after_prewarm_b")
     reached_b = poll_synth(
-        lambda s: s["synth_succeeded"] >= 2 or s["synth_failed"] >= 1, "poll_b")
+    lambda s: s["synth_succeeded"] >= 2 or s["synth_failed"] >= 1,
+     "poll_b")
     snap("synth_b_done")
     dispatch("resident_b", pat_b, "z acc34hotB z")
     snap("after_evict")

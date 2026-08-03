@@ -51,11 +51,15 @@ Three consequences for scheduling:
 
 Scheduling efficiency is `q/(q+s)`. At the measured `s = 13.6 s`:
 
-| target efficiency | required quantum (PR) | required quantum (overlay, s≈0.5 ms) |
-|---|---|---|
-| 50% | 13.6 s | 0.5 ms |
-| 90% | 122 s | 4.5 ms |
-| 99% | 22 min | 50 ms |
+- **50%**
+  - required quantum (PR): 13.6 s
+  - required quantum (overlay, s≈0.5 ms): 0.5 ms
+- **90%**
+  - required quantum (PR): 122 s
+  - required quantum (overlay, s≈0.5 ms): 4.5 ms
+- **99%**
+  - required quantum (PR): 22 min
+  - required quantum (overlay, s≈0.5 ms): 50 ms
 
 That table is the whole argument for overlays, stated in scheduling terms
 rather than coverage terms. **At 13.6 s per switch you cannot implement a
@@ -73,12 +77,34 @@ workload of identical jobs cannot tell one policy from another.
 
 `pyro/sched/tenants.py` defines four **heterogeneous** tenants:
 
-| tenant | kind | input view | slots | est LUTs | value driven by | latency |
-|---|---|---|---|---|---|---|
-| `pyro-regex` | regex | host buffers | 1 | 12 | pending scan bytes | batch |
-| `ip-match/src` | ip-match | full frame | 8 | 597 | packets | per-packet |
-| `header-match` | header | full frame | 94 | 7,898 | packets | per-packet |
-| `snortpf/<group>` | pattern-set | L4 payload | 2–256 | 102–10,323 | rules × port mix | per-flow |
+- **`pyro-regex`**
+  - kind: regex
+  - input view: host buffers
+  - slots: 1
+  - est LUTs: 12
+  - value driven by: pending scan bytes
+  - latency: batch
+- **`ip-match/src`**
+  - kind: ip-match
+  - input view: full frame
+  - slots: 8
+  - est LUTs: 597
+  - value driven by: packets
+  - latency: per-packet
+- **`header-match`**
+  - kind: header
+  - input view: full frame
+  - slots: 94
+  - est LUTs: 7,898
+  - value driven by: packets
+  - latency: per-packet
+- **`snortpf/<group>`**
+  - kind: pattern-set
+  - input view: L4 payload
+  - slots: 2–256
+  - est LUTs: 102–10,323
+  - value driven by: rules × port mix
+  - latency: per-flow
 
 **Tenants 3 and 4 needed no new RTL.** AC-S3-2's `\A.{n}` fixed-offset
 lowering means "the 4 bytes at frame offset 26" is just
@@ -189,12 +215,26 @@ worthless late.
 
 Standard periodic parameters, from **measured** engine rates:
 
-| scenario | period | WCET | U | schedulable? |
-|---|---|---|---|---|
-| inline 1 GbE, dpb=1 *(modelled)* | 12.00 µs | 5.99 µs | 0.499 | yes |
-| inline 10 GbE, dpb=1 *(modelled)* | 1.20 µs | 5.99 µs | **4.99** | **no — engine cannot keep up** |
-| inline 10 GbE, dpb=8 *(modelled)* | 1.20 µs | 0.72 µs | 0.599 | yes |
-| host-path R78 *(measured)* | 100 ms | 43.8 ms | 0.438 | yes |
+- **inline 1 GbE, dpb=1 *(modelled)**
+  - period: 12.00 µs
+  - WCET: 5.99 µs
+  - U: 0.499
+  - schedulable?: yes
+- **inline 10 GbE, dpb=1 *(modelled)**
+  - period: 1.20 µs
+  - WCET: 5.99 µs
+  - U: **4.99**
+  - schedulable?: **no — engine cannot keep up**
+- **inline 10 GbE, dpb=8 *(modelled)**
+  - period: 1.20 µs
+  - WCET: 0.72 µs
+  - U: 0.599
+  - schedulable?: yes
+- **host-path R78 *(measured)**
+  - period: 100 ms
+  - WCET: 43.8 ms
+  - U: 0.438
+  - schedulable?: yes
 
 The 10 GbE row is an admission result that follows from silicon fmax, not
 from policy: **line rate needs the 8 B/cycle datapath**, and no scheduler

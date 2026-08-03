@@ -326,7 +326,8 @@ def _legacy(anchor: Anchor, dropped: Tuple[str, ...],
     )
 
 
-def _rule_dropped(rule: Rule, lowered_indexes: Sequence[int]) -> Tuple[str, ...]:
+def _rule_dropped(
+    rule: Rule, lowered_indexes: Sequence[int]) -> Tuple[str, ...]:
     """SR4 per-rule dropped-conjunct list: every detection option not
     realized in the circuit (metadata and buffer selectors excluded)."""
     lowered = set(lowered_indexes)

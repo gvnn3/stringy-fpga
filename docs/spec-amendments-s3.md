@@ -13,12 +13,31 @@ record what AC-S3-2's implementation *had to decide* to keep SR3's
 completeness absolute, and the measured defect that forced one of those
 decisions.
 
-| # | Target | Kind | SemVer | One line |
-|---|--------|------|--------|----------|
-| **A1** | SR12 | generalization of a derived constant | MINOR | Overlap tail = max **floating lowered span** − 1 (was max anchor − 1); recorded per group in the manifest (`max_tail_span`) |
-| **A2** | SR3 | admission conditions made normative | MINOR | Chain windows only in RAW buffers; `\A` offset/depth prefixes only for PDU-aligned rules (measured sid-509 miss); span cap 384; gap bound 255 |
-| **A3** | SR6 | informative count corrected | PATCH | "~16 groups" → measured **21 groups over 8 classes** (literal-class coalescing; raw-token keying would give 190) |
-| **A4** | SR11 (+R78.7 inheritance) | daemon obligation added | MINOR | On a buffer-aligned request that overflows, the daemon MUST nominate every `\A` slot's rules (the resume trim cannot recover them) |
+- **A1**
+  - Target: SR12
+  - Kind: generalization of a derived constant
+  - SemVer: MINOR
+  - One line: Overlap tail = max **floating lowered span** − 1 (was max anchor
+    − 1); recorded per group in the manifest (`max_tail_span`)
+- **A2**
+  - Target: SR3
+  - Kind: admission conditions made normative
+  - SemVer: MINOR
+  - One line: Chain windows only in RAW buffers; `\A` offset/depth prefixes
+    only for PDU-aligned rules (measured sid-509 miss); span cap 384; gap
+    bound 255
+- **A3**
+  - Target: SR6
+  - Kind: informative count corrected
+  - SemVer: PATCH
+  - One line: "~16 groups" → measured **21 groups over 8 classes** (literal-
+    class coalescing; raw-token keying would give 190)
+- **A4**
+  - Target: SR11 (+R78.7 inheritance)
+  - Kind: daemon obligation added
+  - SemVer: MINOR
+  - One line: On a buffer-aligned request that overflows, the daemon MUST
+    nominate every `\A` slot's rules (the resume trim cannot recover them)
 
 ---
 
@@ -116,7 +135,8 @@ therefore A2-inadmissible).
 
 ---
 
-## Open finding OF-1 — the two marginal static boundary flops (evidence, no text proposed)
+## Open finding OF-1 — the two marginal static boundary flops (evidence, no
+text proposed)
 
 Six of 21 group links (2026-07-29 sweep) missed R73a.1 by −0.005…−0.120
 ns; **every** violating path ends (or starts) at one of two flops in the

@@ -158,7 +158,8 @@ class TestTransparencyRegression:
         assert stock["done"]["n_calls"] == installed["done"]["n_calls"] > 0
         p3.assert_call_sequences_identical(stock, installed, label=name)
 
-    def test_installed_side_actually_dispatched_through_pyro(self, corpus_pairs):
+    def test_installed_side_actually_dispatched_through_pyro(
+        self, corpus_pairs):
         """Positive evidence the equality above is not comparing stock against
         stock: every installed run's R52 dispatch counters ticked."""
         for name, (_, installed) in corpus_pairs.items():
@@ -166,7 +167,8 @@ class TestTransparencyRegression:
             assert stats["total"] > 0, (
                 f"{name}: installed run made no pyro dispatches: {stats}")
 
-    def test_multigroup_findall_crossed_json_boundary_as_lists(self, corpus_pairs):
+    def test_multigroup_findall_crossed_json_boundary_as_lists(
+        self, corpus_pairs):
         """Trap 3 evidence: the corpus produces multi-group findall tuples and
         they were compared as lists on BOTH sides."""
         stock, installed = corpus_pairs["r60_finditer_dispatch"]
@@ -185,7 +187,8 @@ class TestMidRunTierTransition:
         p3.assert_call_sequences_identical(stock, installed,
                                            label="r60_log_scan")
 
-    def test_transition_positively_observed_from_test_code(self, transition_pair):
+    def test_transition_positively_observed_from_test_code(
+        self, transition_pair):
         """cold at call 0 -> warm/resident strictly mid-run, synthesis
         launched AND completed (mock toolchain), calls on both sides of the
         flip — all asserted HERE, never from inside the corpus program."""
@@ -200,12 +203,14 @@ class TestMidRunTierTransition:
         # The worker's own await-poll agreed the mock synthesis completed.
         assert installed["done"]["transition_reached"] is True
         # And the final public surfaces concur (R31/R52/R66).
-        assert installed["done"]["explain_key"]["circuit_status"] in p3.HOT_TIERS
+        assert (installed["done"]["explain_key"]["circuit_status"]
+                in p3.HOT_TIERS)
         stats = installed["done"]["stats"]
         assert stats["synth_launched"] > 0
         assert stats["synth_succeeded"] > 0
 
-    def test_outputs_identical_before_AND_after_the_transition(self, transition_pair):
+    def test_outputs_identical_before_AND_after_the_transition(
+        self, transition_pair):
         """AC-3-1's mid-run clause, made explicit: split both call sequences
         at the first warm/resident snapshot and require non-empty, identical
         halves on each side of it."""
@@ -222,16 +227,19 @@ class TestMidRunTierTransition:
                 {"calls": sub_stock}, {"calls": sub_inst},
                 label=f"r60_log_scan.{phase}-transition")
 
-    def test_post_transition_engine_actually_left_fallback(self, transition_pair):
+    def test_post_transition_engine_actually_left_fallback(
+        self, transition_pair):
         """The transition was consequential, not cosmetic: dispatches were
         served by the model/hardware engine, not 100% fallback (R51/R52)."""
         _, installed = transition_pair
         stats = installed["done"]["stats"]
         served_accelerated = stats.get("hardware", 0) + stats.get("model", 0)
         assert served_accelerated > 0, (
-            f"every dispatch fell back — the tier flip changed nothing: {stats}")
+            f"every dispatch fell back — the tier flip changed nothing: "
+            f"{stats}")
 
-    def test_multigroup_findall_over_big_subject_matches(self, transition_pair):
+    def test_multigroup_findall_over_big_subject_matches(
+        self, transition_pair):
         """Trap 3 on the transition vehicle itself: the 3-group findall over
         the >= 64 KiB log matched, pre AND post transition."""
         stock, installed = transition_pair

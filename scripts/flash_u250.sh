@@ -5,8 +5,10 @@
 # golden multiboot loads this user image at power-on, and a bad user image is
 # still JTAG-recoverable. Nothing can be bricked.
 #
-#   flash_u250.sh mcs   [bit] [mcs]  -> generate .mcs/.prm only (fast, no hardware)
-#   flash_u250.sh flash [bit] [mcs]  -> generate (if needed) AND write QSPI over JTAG (~18 min)
+# flash_u250.sh mcs   [bit] [mcs]  -> generate .mcs/.prm only (fast, no
+# hardware)
+# flash_u250.sh flash [bit] [mcs]  -> generate (if needed) AND write QSPI over
+# JTAG (~18 min)
 #
 # ---------------------------------------------------------------------------
 # HOST RETARGET, 2026-07-13: this script was written for `zanetti` (Dell R740),
@@ -86,8 +88,10 @@ if [ "$MODE" = "flash" ] && [ -e "/sys/bus/pci/devices/$BDF" ]; then
   echo "!!! WARNING: $BDF is LIVE on PCIe and PYRO_FLASH_ALLOW_LIVE_PCIE=1."
   echo "!!! Proceeding. If the zanetti crash was not R740-specific, this host"
   echo "!!! will take an uncorrectable PCIe fatal and reset mid-erase."
-  echo "!!! A reset during QSPI erase leaves an invalid user image -- recoverable"
-  echo "!!! (golden at 0x0 is untouched), but you will be re-flashing from JTAG."
+  echo "!!! A reset during QSPI erase leaves an invalid user image"
+  echo "!!! -- recoverable"
+  echo "!!! (golden at 0x0 is untouched), but you will be re-flashing"
+  echo "!!! from JTAG."
   sleep 5
 fi
 
@@ -102,7 +106,8 @@ source "$VIVADO_DIR/settings64.sh"
 export TERM=xterm
 
 if [ ! -f "$MCS" ] || [ "$BIT" -nt "$MCS" ]; then
-  echo "=== STEP 1: generate .mcs/.prm (SPIx4, size 128, user image @0x01002000) ==="
+  echo "=== STEP 1: generate .mcs/.prm (SPIx4, size 128, user image"
+  echo "  @0x01002000) ==="
   TCLF=$(mktemp --suffix=.tcl)
   cat > "$TCLF" <<TCL
 write_cfgmem -force -format mcs -size 128 -interface SPIx4 \\
@@ -111,20 +116,25 @@ TCL
   vivado -nojournal -nolog -mode batch -source "$TCLF" 2>&1 | \
     grep -iE 'cfgmem|ERROR|Writing|Bitstream|overflow|size' | head -20
   rm -f "$TCLF"
-  if [ ! -f "$MCS" ]; then echo "MCS_FAILED (bitstream missing SPIx4 config? see gen_bit_spi.sh)"; exit 2; fi
+  if [ ! -f "$MCS" ]; then
+    echo "MCS_FAILED (bitstream missing SPIx4 config? see gen_bit_spi.sh)"
+    exit 2
+  fi
 else
   echo "=== STEP 1: existing .mcs is newer than .bit; reusing it ==="
 fi
 echo "MCS_OK: $(ls -lh "$MCS" | awk '{print $5}')  $MCS"
 
 if [ "$MODE" != "flash" ]; then
-  echo "=== mcs-only mode; NOT writing flash. Re-run with 'flash' to program QSPI. ==="
+  echo "=== mcs-only mode; NOT writing flash. Re-run with 'flash' to program"
+  echo "  QSPI. ==="
   exit 0
 fi
 
 [ -f "$PRM" ] || { echo "ERROR: prm not found next to mcs: $PRM"; exit 1; }
 
-echo "=== STEP 2: write QSPI over JTAG (erase+program+verify, user image @0x01002000) ==="
+echo "=== STEP 2: write QSPI over JTAG (erase+program+verify, user image"
+echo "  @0x01002000) ==="
 TCLF=$(mktemp --suffix=.tcl)
 cat > "$TCLF" <<TCL
 open_hw_manager
@@ -133,8 +143,10 @@ current_hw_target [lindex [get_hw_targets] 0]
 open_hw_target
 current_hw_device [lindex [get_hw_devices] 0]
 refresh_hw_device -update_hw_probes false [current_hw_device]
-create_hw_cfgmem -hw_device [current_hw_device] [lindex [get_cfgmem_parts {mt25qu01g-spi-x1_x2_x4}] 0]
-current_hw_cfgmem -hw_device [current_hw_device] [get_property PROGRAM.HW_CFGMEM [current_hw_device]]
+create_hw_cfgmem -hw_device [current_hw_device] [lindex [get_cfgmem_parts \
+  {mt25qu01g-spi-x1_x2_x4}] 0]
+current_hw_cfgmem -hw_device [current_hw_device] [get_property \
+  PROGRAM.HW_CFGMEM [current_hw_device]]
 set_property PROGRAM.FILES [list "$MCS"] [current_hw_cfgmem]
 set_property PROGRAM.PRM_FILES [list "$PRM"] [current_hw_cfgmem]
 set_property PROGRAM.ERASE 1 [current_hw_cfgmem]
@@ -143,7 +155,8 @@ set_property PROGRAM.VERIFY 1 [current_hw_cfgmem]
 set_property PROGRAM.CHECKSUM 0 [current_hw_cfgmem]
 set_property PROGRAM.ADDRESS_RANGE {use_file} [current_hw_cfgmem]
 set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} [current_hw_cfgmem]
-create_hw_bitstream -hw_device [current_hw_device] [get_property PROGRAM.HW_CFGMEM_BITFILE [current_hw_device]]
+create_hw_bitstream -hw_device [current_hw_device] [get_property \
+  PROGRAM.HW_CFGMEM_BITFILE [current_hw_device]]
 program_hw_devices [current_hw_device]
 refresh_hw_device [current_hw_device]
 program_hw_cfgmem -hw_cfgmem [current_hw_cfgmem]
@@ -152,10 +165,14 @@ close_hw_target
 disconnect_hw_server
 TCL
 vivado -nojournal -nolog -mode batch -source "$TCLF" 2>&1 | \
-  grep -iE 'Program|Erasing|Erase|Writing|Verify|FLASH_DONE|ERROR|WARNING.*cfgmem|Flash' | tail -40
+  grep -iE \
+    -e 'Program|Erasing|Erase|Writing|Verify|FLASH_DONE|ERROR' \
+    -e 'WARNING.*cfgmem|Flash' | tail -40
 rc=$?
 rm -f "$TCLF"
 echo "=== flash step finished (rc=$rc) ==="
-echo "NEXT: COLD power cycle the host (full AC-off power cycle, not a warm reboot)."
-echo "      The QSPI image must load before BIOS enumeration for the new endpoint"
+echo "NEXT: COLD power cycle the host (full AC-off power cycle, not a warm"
+echo "  reboot)."
+echo "      The QSPI image must load before BIOS enumeration for the new"
+echo "  endpoint"
 echo "      to be present at bus scan. Then confirm:  lspci -d 10ee: -nn"

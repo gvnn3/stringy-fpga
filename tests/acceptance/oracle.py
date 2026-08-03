@@ -56,7 +56,8 @@ def stock(name):
 
 S_MIN = 64 * 1024          # R2: 64 KiB
 N_REUSE = 32               # R2: N_reuse
-ABI_EXPECTED = 0x00010000  # R37 / AC-0-8: ABI 1.0.0 packed MAJOR<<16|MINOR<<8|PATCH
+# R37 / AC-0-8: ABI 1.0.0 packed MAJOR<<16|MINOR<<8|PATCH
+ABI_EXPECTED = 0x00010000
 
 
 # --------------------------------------------------------------------------
@@ -122,27 +123,38 @@ def assert_equivalent(pyro_mod, pattern, subject, flags=0, label=""):
     for name in ("search", "match", "fullmatch"):
         exp = canon_match(_STOCK[name](pattern, subject, flags))
         act = canon_match(getattr(pyro_mod, name)(pattern, subject, flags))
-        assert act == exp, f"{name} mismatch {tag}\n  expected={exp}\n  actual  ={act}"
+        assert act == exp, (
+            f"{name} mismatch {tag}\n  expected={exp}\n  actual  ={act}")
 
     exp_fa = _STOCK["findall"](pattern, subject, flags)
     act_fa = pyro_mod.findall(pattern, subject, flags)
-    assert act_fa == exp_fa, f"findall mismatch {tag}\n  expected={exp_fa}\n  actual={act_fa}"
+    assert act_fa == exp_fa, (
+        f"findall mismatch {tag}\n  expected={exp_fa}\n  actual={act_fa}")
 
     exp_fi = canon_iter(_STOCK["finditer"](pattern, subject, flags))
     act_fi = canon_iter(pyro_mod.finditer(pattern, subject, flags))
-    assert act_fi == exp_fi, f"finditer mismatch {tag}\n  expected={exp_fi}\n  actual={act_fi}"
+    assert act_fi == exp_fi, (
+        f"finditer mismatch {tag}\n  expected={exp_fi}\n  actual={act_fi}")
 
     for repl in _repls(subject):
         exp_s = _STOCK["sub"](pattern, repl, subject, 0, flags)
         act_s = pyro_mod.sub(pattern, repl, subject, 0, flags)
-        assert act_s == exp_s, f"sub mismatch {tag} repl={repl!r}\n  expected={exp_s!r}\n  actual={act_s!r}"
+        assert act_s == exp_s, f"sub mismatch {tag} repl={
+    repl!r}\n  expected={
+        exp_s!r}\n  actual={
+            act_s!r}"
         exp_sn = _STOCK["subn"](pattern, repl, subject, 0, flags)
         act_sn = pyro_mod.subn(pattern, repl, subject, 0, flags)
-        assert act_sn == exp_sn, f"subn mismatch {tag} repl={repl!r}\n  expected={exp_sn!r}\n  actual={act_sn!r}"
+        assert act_sn == exp_sn, f"subn mismatch {tag} repl={
+    repl!r}\n  expected={
+        exp_sn!r}\n  actual={
+            act_sn!r}"
 
     exp_sp = _STOCK["split"](pattern, subject, 0, flags)
     act_sp = pyro_mod.split(pattern, subject, 0, flags)
-    assert act_sp == exp_sp, f"split mismatch {tag}\n  expected={exp_sp!r}\n  actual={act_sp!r}"
+    assert act_sp == exp_sp, f"split mismatch {tag}\n  expected={
+    exp_sp!r}\n  actual={
+        act_sp!r}"
 
 
 # --------------------------------------------------------------------------
@@ -241,7 +253,8 @@ EMPTY = [
 
 # R22 must_advance: lazy / empty-preferring quantifiers that match empty at a
 # position and then, on the finditer/findall/sub/split retry, must advance to a
-# NON-empty match at the SAME start (CPython 3.7+ must_advance semantics).  These
+# NON-empty match at the SAME start (CPython 3.7+ must_advance semantics).
+# These
 # stress the post-empty-match retry path that greedy `a*` does not, incl.
 # empty-preferring quantifiers followed by a matchable atom and empty-branch
 # alternations (§5.1-legal).  Oracle facts verified against stock re, e.g.
@@ -295,20 +308,23 @@ ASTRAL = [
     ("astral.class", r"[\U0001F600-\U0001F610]+", 0, "a\U0001F600\U0001F605b"),
     ("astral.findall", r"\w", 0, "a\U0001F600b\U0001F601c"),
     ("astral.span", r"b", 0, "\U0001F600\U0001F601b"),
-    ("astral.emoji_between", r"start(.*?)end", _re.DOTALL, "start\U0001F600\U0001F601end"),
+    ("astral.emoji_between", r"start(.*?)end", _re.DOTALL,
+     "start\U0001F600\U0001F601end"),
 ]
 
 # Group-differentiating alternations with anchors, where the anchored branch
 # fails mid-string so a DIFFERENT capturing branch must win (R9 anchors + R16
 # groups/lastindex/lastgroup + R17/R18 leftmost-greedy reconciliation).  This is
 # the class that exposed an end-context group-reconstruction bug on the model
-# path; each subject is chosen so the trailing anchor fails at the first branch.
+# path; each subject is chosen so the trailing anchor fails at the first
+# branch.
 ANCHOR_ALT = [
     ("altanchor.dollar.mid", r"(?P<a>foo)$|(?P<b>foo)", 0, "foobar"),
     ("altanchor.dollar.end", r"(?P<a>foo)$|(?P<b>foo)", 0, "foo"),
     ("altanchor.dollar.nl", r"(?P<a>foo)$|(?P<b>foo)", 0, "foo\nbar"),
     ("altanchor.dollar.finditer", r"(?P<a>foo)$|(?P<b>foo)", 0, "foobar foo"),
-    ("altanchor.dollar.ml", r"(?P<a>foo)$|(?P<b>foo)", _re.MULTILINE, "foo\nfoobar"),
+    ("altanchor.dollar.ml", r"(?P<a>foo)$|(?P<b>foo)", _re.MULTILINE,
+     "foo\nfoobar"),
     ("altanchor.wordb.mid", r"(?P<a>foo)\b|(?P<b>foo)", 0, "foobar"),
     ("altanchor.wordb.sep", r"(?P<a>foo)\b|(?P<b>foo)", 0, "foo bar"),
     ("altanchor.wordb.finditer", r"(?P<a>foo)\b|(?P<b>foo)", 0, "foobar foo"),
@@ -349,7 +365,18 @@ _ATOMS = [
 # itself unbounded-quantified.  This prevents nested unbounded repetition
 # (e.g. (a*)* / (a+)+) that causes catastrophic backtracking in the stock-re
 # oracle — the equivalence property is unaffected, only ReDoS is avoided.
-_ATOM_QUANTS = ["", "*", "+", "?", "*?", "+?", "??", "{2}", "{1,3}", "{2,}", "{0,2}?"]
+_ATOM_QUANTS = [
+    "",
+    "*",
+    "+",
+    "?",
+    "*?",
+    "+?",
+    "??",
+    "{2}",
+    "{1,3}",
+    "{2,}",
+     "{0,2}?"]
 _GROUP_QUANTS = ["", "?", "{2}", "{1,3}", "{0,2}"]
 
 # §5.1 anchors (R9).  Emitted as zero-width leaf atoms and NEVER given a
@@ -402,11 +429,13 @@ _SUBJ_ALPHABET = "abcd012_ .\n\txyz"
 
 
 def gen_subject(rng, maxlen=12):
-    return "".join(rng.choice(_SUBJ_ALPHABET) for _ in range(rng.randint(0, maxlen)))
+    return "".join(rng.choice(_SUBJ_ALPHABET)
+                   for _ in range(rng.randint(0, maxlen)))
 
 
 _ARBITRARY_ALPHABET = "abc012()[]{}|*+?.\\^$-,: "
 
 
 def gen_arbitrary_pattern(rng, maxlen=12):
-    return "".join(rng.choice(_ARBITRARY_ALPHABET) for _ in range(rng.randint(1, maxlen)))
+    return "".join(rng.choice(_ARBITRARY_ALPHABET)
+                   for _ in range(rng.randint(1, maxlen)))

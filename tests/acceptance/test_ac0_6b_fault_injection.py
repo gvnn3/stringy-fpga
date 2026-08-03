@@ -30,7 +30,8 @@ def test_r61_device_error_injection_fallback_retry(request):
     pyro.testing.inject_device_error("device", 1)
     subj = "z r61pat z"
     m = pre.search("r61pat", subj)
-    assert m.span() == stdre.search("r61pat", subj).span()  # result unchanged (R52)
+    # result unchanged (R52)
+    assert m.span() == stdre.search("r61pat", subj).span()
     assert pre.stats()["fallback_after_error"] - fae0 == 1  # counted (R66)
 
 

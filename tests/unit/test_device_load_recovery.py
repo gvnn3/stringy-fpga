@@ -68,7 +68,8 @@ def test_recover_cmd_none_disables_recovery(tmp_path):
 
 
 def test_recovery_nonzero_rc_raises_load_error(tmp_path):
-    runner = _RecordingRunner([(0, "programmed"), (1, "sudo: a password is required")])
+    runner = _RecordingRunner(
+        [(0, "programmed"), (1, "sudo: a password is required")])
     cfg = pdev.DeviceConfig(load_runner=runner, recover_cmd=("r",))
     with pytest.raises(pdev.PyroLoadError) as ei:
         pdev.load_partial(cfg, _bitfile(tmp_path))

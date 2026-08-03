@@ -226,7 +226,8 @@ def test_manifest_carries_sidecar_identity_and_sr12_tail():
     assert man["group_hash"] == g.group_hash(GEN, HARN).hex()
     assert man["rp_child_id"] == g.rp_child_id(GEN, HARN)
     assert man["max_anchor_len"] == 5 and man["overlap_tail"] == 4
-    assert [r["key"] for s in man["slots"] for r in s["rules"]] == ["1:1", "1:2"]
+    assert [r["key"] for s in man["slots"]
+        for r in s["rules"]] == ["1:1", "1:2"]
 
 
 # --- tombstones (SR6/SR9) -------------------------------------------------
@@ -320,8 +321,13 @@ def test_tombstoned_slot_has_no_automaton():
 # --- corpus reproducibility (AC-S2-2 group, pinned) -----------------------
 
 CORPUS = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "third_party", "snort3-community-rules", "snort3-community.rules")
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(__file__)))),
+                "third_party",
+                "snort3-community-rules",
+                 "snort3-community.rules")
 
 
 @pytest.fixture(scope="module")
@@ -405,7 +411,8 @@ def test_corpus_group_hashes_are_unique_and_stable(corpus_groups):
     assert len(set(hashes)) == len(hashes)
     again = G.pack_groups(T.triage_file(CORPUS))
     assert [g.group_hash(GEN, HARN) for g in again] == hashes
-    assert len({g.rp_child_id(GEN, HARN) for g in corpus_groups}) == len(hashes)
+    assert len({g.rp_child_id(GEN, HARN)
+               for g in corpus_groups}) == len(hashes)
 
 
 def test_new_rule_joins_an_existing_slot_with_the_same_anchor():

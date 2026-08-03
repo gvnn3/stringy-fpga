@@ -39,8 +39,12 @@ def _est_val(est, key):
     return int(est[key])
 
 
-@pytest.mark.parametrize("pattern", [p for p, _f, _s in phase2_support.CALIBRATION_PATTERNS])
-def test_estimator_within_calibration_margin_per_pattern(vivado_corpus, pattern):
+@pytest.mark.parametrize("pattern",
+    [p for p,
+    _f,
+     _s in phase2_support.CALIBRATION_PATTERNS])
+def test_estimator_within_calibration_margin_per_pattern(
+    vivado_corpus, pattern):
     """LIVE (R74): the four per-pattern calibration clauses hold for every
     successfully-synthesized calibration pattern."""
     entry = vivado_corpus[pattern]
@@ -51,13 +55,15 @@ def test_estimator_within_calibration_margin_per_pattern(vivado_corpus, pattern)
     if man is None or man.get("payload_kind") != "ooc_metrics":
         pytest.skip(f"pattern {pattern!r} did not synthesize on the real path "
                     "(no ooc_metrics manifest); R74 is evaluated only over "
-                    "successfully-synthesized patterns, and an empty success set "
+                    "successfully-synthesized patterns, and an empty success "
+                    "set "
                     "records a SKIP, never a FAIL (R74, v2.1.1)")
     # R74a: calibration is toolchain-bound.  A PASS may be keyed ONLY to the
-    # current pinned toolchain_version (2025.2, 0x19020000); a 2023.1 (0x17010000)
+    # current pinned toolchain_version (2025.2, 0x19020000); a 2023.1
+    # (0x17010000)
     # artifact is NOT evidence for the 2025.2 pin and must not yield a PASS.
-    if "toolchain_version" in man and \
-            int(man["toolchain_version"]) != phase2_support.VIVADO_TOOLCHAIN_VERSION:
+    if "toolchain_version" in man and int(
+    man["toolchain_version"]) != phase2_support.VIVADO_TOOLCHAIN_VERSION:
         pytest.skip(
             f"pattern {pattern!r} manifest toolchain_version "
             f"{int(man['toolchain_version']):#010x} != pinned 2025.2 "
@@ -69,7 +75,8 @@ def test_estimator_within_calibration_margin_per_pattern(vivado_corpus, pattern)
 
     # Clauses 1-2: conservative (never under-count).
     assert real_luts <= est_luts, (
-        f"[{pattern!r}] real_luts {real_luts} > est_luts {est_luts} — estimator "
+        f"[{pattern!r}] real_luts {real_luts} > est_luts {est_luts} — "
+        f"estimator "
         "under-counted LUTs (R74 clause 1)")
     assert real_ffs <= est_ffs, (
         f"[{pattern!r}] real_ffs {real_ffs} > est_ffs {est_ffs} — estimator "
@@ -83,7 +90,8 @@ def test_estimator_within_calibration_margin_per_pattern(vivado_corpus, pattern)
         "(R74 clause 4)")
 
 
-@pytest.mark.parametrize("entry", oracle.OVERCAP, ids=[e[0] for e in oracle.OVERCAP])
+@pytest.mark.parametrize("entry", oracle.OVERCAP,
+                         ids=[e[0] for e in oracle.OVERCAP])
 def test_max_repeat_over_bound_is_fallback_only(entry):
     """Always-LIVE (model): a bounded repeat expanding beyond MAX_REPEAT is
     estimator-rejected to fallback (no Vivado needed) yet stays byte-identical
@@ -100,13 +108,21 @@ def test_max_repeat_over_bound_is_fallback_only(entry):
     import os
     os.environ["PYRO_FORCE_MODEL"] = "1"
     pyro.refresh_env()
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"maxrepeat/{label}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"maxrepeat/{label}")
 
 
 def test_estimate_pass_then_synth_fail_permanent_fallback():
-    """Always-LIVE (R65/R67): an injected synthesis failure drives a pattern that
-    passed the estimate to PERMANENT fallback — synth_failed counted, no exception
-    to the caller, byte-identical results, NOT counted as fallback_after_error."""
+    """Always-LIVE (R65/R67): an injected synthesis failure drives a pattern
+    that
+    passed the estimate to PERMANENT fallback — synth_failed counted, no
+    exception
+    to the caller, byte-identical results, NOT counted as
+    fallback_after_error."""
     with tempfile.TemporaryDirectory(prefix="pyro_ac24_sf_") as cache:
         res, _o, _e = phase1_support.run_worker(
             "synth_failure", "ac24_estpass_synthfail", cache_dir=cache,

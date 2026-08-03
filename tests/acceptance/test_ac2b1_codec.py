@@ -1,15 +1,19 @@
-"""AC-2b-1: host-side control-frame codec — pyro.device.encode_frame / decode_frame.
+"""AC-2b-1: host-side control-frame codec — pyro.device.encode_frame /
+decode_frame.
 
 LIVE (no hardware, pure host code): the R78 control-frame codec is exercised
-strictly from the spec — R78 (frame format), R78.10 (normative hex test vectors),
+strictly from the spec — R78 (frame format), R78.10 (normative hex test
+vectors),
 and R86.2/R86.3 (public encode_frame/decode_frame contract + PyroFrameError
-taxonomy).  Every assertion is byte-exact against the spec's normative vectors on
+taxonomy).  Every assertion is byte-exact against the spec's normative vectors
+on
 their PYRO-header-onward portion (frame offset 14+); the 14-byte Ethernet L2
 header, FCS, and 60-byte zero-padding are the transport/NIC's concern and are
 deliberately NOT this codec's output (R86.2, R78.9/R78.10).
 
 Derived ONLY from the spec.  No implementation source is read.  These tests are
-pending until pyro.device lands (coder is in parallel); a missing module marks the
+pending until pyro.device lands (coder is in parallel); a missing module marks
+the
 device-codec tests xfail (pending-implementation), never a silent PASS/SKIP.
 
 Coverage: AC-2b-1.  Requirements: R78.1–R78.10, R86.1, R86.2, R86.3, R47.
@@ -21,26 +25,33 @@ import pytest
 try:
     import pyro.device as pdev
     _IMPORT_ERR = None
-except Exception as exc:  # noqa: BLE001 — module not yet landed is pending, not a spec bug
+# noqa: BLE001 — module not yet landed is pending, not a spec bug
+except Exception as exc:
     pdev = None
     _IMPORT_ERR = exc
 
 
 def _need_pdev():
     if pdev is None:
-        pytest.xfail(f"pending pyro.device implementation (R86): {_IMPORT_ERR!r}")
+        pytest.xfail(
+    f"pending pyro.device implementation (R86): {
+        _IMPORT_ERR!r}")
 
 
 def _field(res, name):
     """R86.3: decode_frame returns a structured result whose fields are named
-    exactly for the R78 header.  Support attribute- or mapping-style access so the
+    exactly for the R78 header.  Support attribute- or mapping-style access so
+    the
     test binds to the NAMES (spec-normative) not a particular container type."""
     if hasattr(res, name):
         return getattr(res, name)
     try:
         return res[name]
     except (TypeError, KeyError):
-        raise AssertionError(f"decode_frame result lacks R78 field {name!r}: {res!r}")
+        raise AssertionError(
+    f"decode_frame result lacks R78 field {
+        name!r}: {
+            res!r}")
 
 
 # --------------------------------------------------------------------------
@@ -61,7 +72,8 @@ MTU_PAYLOAD_MAX = 1486  # R78.9 / R86.2 / R86.3 payload bound
 
 # --------------------------------------------------------------------------
 # R78.10 normative test vectors, PYRO-header-onward (frame offset 14+), i.e. the
-# exact bytes encode_frame MUST produce and decode_frame MUST parse (R86.2/R86.3).
+# exact bytes encode_frame MUST produce and decode_frame MUST parse
+# (R86.2/R86.3).
 # --------------------------------------------------------------------------
 def _hx(s):
     return bytes.fromhex(s.replace(" ", ""))
@@ -87,8 +99,10 @@ VEC_D_ENTRIES = (struct.pack("<QQII", 1, 3, 0, 0) +
 VEC_D_PAYLOAD = _hx("00 02  00 00  00 00 00 00") + VEC_D_ENTRIES
 VEC_D = _hx("50 01 04 00  00 01  00 00 00 02  00 38  00 00") + VEC_D_PAYLOAD
 
-# (e) STATUS/ERROR (R78.10(e), v2.2.3): the ID stub's reply to MATCH_REQUEST (c) —
-#     kind 0x05, echoes slot=1, seq=2, length=4, payload code=PYRO_E_NOT_RESIDENT (7).
+# (e) STATUS/ERROR (R78.10(e), v2.2.3): the ID stub's reply to MATCH_REQUEST
+# (c) —
+# kind 0x05, echoes slot=1, seq=2, length=4, payload
+# code=PYRO_E_NOT_RESIDENT (7).
 VEC_E_PAYLOAD = _hx("00 00 00 07")  # code = 7 (BE)
 VEC_E = _hx("50 01 05 00  00 01  00 00 00 02  00 04  00 00") + VEC_E_PAYLOAD
 PYRO_E_NOT_RESIDENT = 7  # R38
@@ -120,33 +134,42 @@ def test_encode_id_reply_matches_vector_b():  # AC-2b-1 (R78.5/R78.10/R86.2)
     assert out == VEC_B, f"{out.hex()} != {VEC_B.hex()}"
 
 
-def test_encode_match_request_matches_vector_c():  # AC-2b-1 (R78.6/R78.10/R86.2)
+# AC-2b-1 (R78.6/R78.10/R86.2)
+def test_encode_match_request_matches_vector_c():
     _need_pdev()
     out = pdev.encode_frame(MATCH_REQUEST, 1, 2, VEC_C_PAYLOAD)
     assert out == VEC_C, f"{out.hex()} != {VEC_C.hex()}"
-    # length field (BE @ offset 24-25 of the header-onward slice, i.e. bytes 10-11).
-    assert out[10:12] == (18).to_bytes(2, "big"), "length must be 0x0012 = 18 (R78.10c)"
+    # length field (BE @ offset 24-25 of the header-onward slice, i.e. bytes
+    # 10-11).
+    assert out[10:12] == (18).to_bytes(
+        2, "big"), "length must be 0x0012 = 18 (R78.10c)"
 
 
 def test_encode_match_reply_matches_vector_d():  # AC-2b-1 (R78.7/R78.10/R86.2)
     _need_pdev()
     out = pdev.encode_frame(MATCH_REPLY, 1, 2, VEC_D_PAYLOAD)
     assert out == VEC_D, f"{out.hex()} != {VEC_D.hex()}"
-    assert out[10:12] == (56).to_bytes(2, "big"), "length must be 0x0038 = 56 (R78.10d)"
+    assert out[10:12] == (56).to_bytes(
+        2, "big"), "length must be 0x0038 = 56 (R78.10d)"
 
 
-def test_encode_status_error_matches_vector_e():  # AC-2b-1 (R78.8/R78.10(e)/R86.2)
-    """R78.10(e) (v2.2.3): the ID stub's STATUS/ERROR PYRO_E_NOT_RESIDENT reply to
+# AC-2b-1 (R78.8/R78.10(e)/R86.2)
+def test_encode_status_error_matches_vector_e():
+    """R78.10(e) (v2.2.3): the ID stub's STATUS/ERROR PYRO_E_NOT_RESIDENT
+    reply to
     MATCH_REQUEST (c) — kind 0x05, slot/seq echoed, length 4, code=7 (BE)."""
     _need_pdev()
     out = pdev.encode_frame(STATUS_ERROR, 1, 2, VEC_E_PAYLOAD)
     assert out == VEC_E, f"{out.hex()} != {VEC_E.hex()}"
     assert out[2] == 0x05, "kind must be STATUS/ERROR 0x05 (R78.10e)"
-    assert out[10:12] == (4).to_bytes(2, "big"), "length must be 0x0004 = 4 (R78.10e)"
+    assert out[10:12] == (4).to_bytes(
+        2, "big"), "length must be 0x0004 = 4 (R78.10e)"
 
 
-def test_decode_status_error_vector_e_fields_and_code():  # AC-2b-1 (R78.8/R78.10(e)/R86.3)
-    """Decoding (e) recovers the echoed slot/seq and the PYRO_E_NOT_RESIDENT code."""
+# AC-2b-1 (R78.8/R78.10(e)/R86.3)
+def test_decode_status_error_vector_e_fields_and_code():
+    """Decoding (e) recovers the echoed slot/seq and the PYRO_E_NOT_RESIDENT
+    code."""
     _need_pdev()
     res = pdev.decode_frame(VEC_E)
     assert _field(res, "kind") == STATUS_ERROR
@@ -160,8 +183,10 @@ def test_decode_status_error_vector_e_fields_and_code():  # AC-2b-1 (R78.8/R78.1
         "STATUS/ERROR code must be PYRO_E_NOT_RESIDENT (7) (R38/R78.10e)")
 
 
-def test_encode_perf_request_matches_vector_f():  # AC-2b-1 (R78.11/R78.10(f)/R86.2)
-    """R78.10(f) (v2.4.0): PERF_REQUEST — kind 0x06, slot=1, seq=3, empty payload."""
+# AC-2b-1 (R78.11/R78.10(f)/R86.2)
+def test_encode_perf_request_matches_vector_f():
+    """R78.10(f) (v2.4.0): PERF_REQUEST — kind 0x06, slot=1, seq=3, empty
+    payload."""
     _need_pdev()
     out = pdev.encode_frame(PERF_REQUEST, 1, 3, VEC_F_PAYLOAD)
     assert out == VEC_F, f"{out.hex()} != {VEC_F.hex()}"
@@ -169,8 +194,10 @@ def test_encode_perf_request_matches_vector_f():  # AC-2b-1 (R78.11/R78.10(f)/R8
     assert out[10:12] == (0).to_bytes(2, "big"), "length must be 0 (R78.11)"
 
 
-def test_encode_perf_reply_matches_vector_g():  # AC-2b-1 (R78.11/R78.10(g)/R86.2)
-    """R78.10(g) (v2.4.0): PERF_REPLY — kind 0x07, echoes slot=1/seq=3, length=16,
+# AC-2b-1 (R78.11/R78.10(g)/R86.2)
+def test_encode_perf_reply_matches_vector_g():
+    """R78.10(g) (v2.4.0): PERF_REPLY — kind 0x07, echoes slot=1/seq=3,
+    length=16,
     payload = cycles(8 BE) | bytes(8 BE) (R45a counters; layout normative)."""
     _need_pdev()
     out = pdev.encode_frame(PERF_REPLY, 1, 3, VEC_G_PAYLOAD)
@@ -183,7 +210,8 @@ def test_encode_perf_reply_matches_vector_g():  # AC-2b-1 (R78.11/R78.10(g)/R86.
 
 
 def test_encode_sets_frozen_header_fields():  # AC-2b-1 (R78.3/R86.2)
-    """magic=0x50, version=0x01, flags=0, reserved=0 are frozen for version 1."""
+    """magic=0x50, version=0x01, flags=0, reserved=0 are frozen for version
+    1."""
     _need_pdev()
     out = pdev.encode_frame(ID_REPLY, 0, 1, VEC_B_PAYLOAD)
     assert out[0] == 0x50, "magic MUST be 0x50 ('P') (R78.3)"
@@ -198,7 +226,8 @@ def test_encode_header_fields_are_big_endian():  # AC-2b-1 (R78.2/R78.3/R86.2)
     out = pdev.encode_frame(MATCH_REQUEST, 0x0102, 0x03040506, b"xyz")
     assert out[4:6] == b"\x01\x02", "slot must be big-endian (R78.3)"
     assert out[6:10] == b"\x03\x04\x05\x06", "seq must be big-endian (R78.3)"
-    assert out[10:12] == b"\x00\x03", "length must be big-endian len(payload) (R78.3)"
+    assert out[10:
+        12] == b"\x00\x03", "length must be big-endian len(payload) (R78.3)"
 
 
 # ==========================================================================
@@ -215,7 +244,8 @@ def test_encode_header_fields_are_big_endian():  # AC-2b-1 (R78.2/R78.3/R86.2)
         (VEC_F, PERF_REQUEST, 1, 3, 0, VEC_F_PAYLOAD),
         (VEC_G, PERF_REPLY, 1, 3, 16, VEC_G_PAYLOAD),
     ],
-    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR",
+    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY",
+         "STATUS_ERROR",
          "PERF_REQUEST", "PERF_REPLY"],
 )
 def test_decode_recovers_named_fields(vec, kind, slot, seq, length, payload):
@@ -232,21 +262,47 @@ def test_decode_recovers_named_fields(vec, kind, slot, seq, length, payload):
     assert bytes(_field(res, "payload")) == payload
 
 
-@pytest.mark.parametrize(
-    "kind,slot,seq,payload",
-    [
-        (ID_REQUEST, 0, 1, VEC_A_PAYLOAD),
-        (ID_REPLY, 0, 1, VEC_B_PAYLOAD),
-        (MATCH_REQUEST, 1, 2, VEC_C_PAYLOAD),
-        (MATCH_REPLY, 1, 2, VEC_D_PAYLOAD),
-        (STATUS_ERROR, 0, 9, struct.pack(">I", 7) + b"not resident"),
-        (PERF_REQUEST, 1, 3, VEC_F_PAYLOAD),
-        (PERF_REPLY, 1, 3, VEC_G_PAYLOAD),
+@pytest.mark.parametrize( "kind,slot,seq,payload",
+    [ (ID_REQUEST,
+    0,
+    1,
+    VEC_A_PAYLOAD),
+    (ID_REPLY,
+    0,
+    1,
+    VEC_B_PAYLOAD),
+    (MATCH_REQUEST,
+    1,
+    2,
+    VEC_C_PAYLOAD),
+    (MATCH_REPLY,
+    1,
+    2,
+    VEC_D_PAYLOAD),
+    (STATUS_ERROR,
+    0,
+    9,
+    struct.pack(">I",
+    7) + b"not resident"),
+    (PERF_REQUEST,
+    1,
+    3,
+    VEC_F_PAYLOAD),
+    (PERF_REPLY,
+    1,
+    3,
+    VEC_G_PAYLOAD),
     ],
-    ids=["ID_REQUEST", "ID_REPLY", "MATCH_REQUEST", "MATCH_REPLY", "STATUS_ERROR",
-         "PERF_REQUEST", "PERF_REPLY"],
-)
-def test_encode_decode_roundtrip(kind, slot, seq, payload):  # AC-2b-1 (R86.2/R86.3)
+    ids=["ID_REQUEST",
+    "ID_REPLY",
+    "MATCH_REQUEST",
+    "MATCH_REPLY",
+    "STATUS_ERROR",
+    "PERF_REQUEST",
+    "PERF_REPLY"],
+     )
+# AC-2b-1 (R86.2/R86.3)
+def test_encode_decode_roundtrip(kind, slot, seq, payload):
     _need_pdev()
     enc = pdev.encode_frame(kind, slot, seq, payload)
     res = pdev.decode_frame(enc)
@@ -260,9 +316,11 @@ def test_encode_decode_roundtrip(kind, slot, seq, payload):  # AC-2b-1 (R86.2/R8
 # ==========================================================================
 # MATCH_REPLY embedded 24-byte little-endian pyro_match round-trip (R47/R78.7).
 # ==========================================================================
-def test_match_reply_embeds_le_pyro_match_entries():  # AC-2b-1 (R78.2/R78.7/R47)
+# AC-2b-1 (R78.2/R78.7/R47)
+def test_match_reply_embeds_le_pyro_match_entries():
     """The header is big-endian but each MATCH_REPLY entry is the 24-byte LE
-    pyro_match (start,end,pattern_id,flags) verbatim (R78.7) — mixed endianness."""
+    pyro_match (start,end,pattern_id,flags) verbatim (R78.7) — mixed
+    endianness."""
     _need_pdev()
     enc = pdev.encode_frame(MATCH_REPLY, 1, 2, VEC_D_PAYLOAD)
     assert enc == VEC_D
@@ -274,11 +332,13 @@ def test_match_reply_embeds_le_pyro_match_entries():  # AC-2b-1 (R78.2/R78.7/R47
     assert status == 0
     got = []
     for i in range(count):
-        start, end, pid, flags = struct.unpack_from("<QQII", payload, 8 + 24 * i)
+        start, end, pid, flags = struct.unpack_from(
+            "<QQII", payload, 8 + 24 * i)
         got.append((start, end, pid, flags))
     assert got == [(1, 3, 0, 0), (4, 6, 0, 0)], (
         "entries must decode as little-endian pyro_match (R78.7/R47)")
-    # flags bit0 (verified) == 0 => unverified; host must re-verify per R19 (R78.7).
+    # flags bit0 (verified) == 0 => unverified; host must re-verify per R19
+    # (R78.7).
     assert all((flags & 0x1) == 0 for *_, flags in got)
 
 
@@ -287,15 +347,18 @@ def test_match_reply_embeds_le_pyro_match_entries():  # AC-2b-1 (R78.2/R78.7/R47
 # ==========================================================================
 def test_decode_ignores_trailing_zero_padding():  # AC-2b-1 (R78.9/R86.3)
     _need_pdev()
-    padded = VEC_B + b"\x00" * 20  # simulate 60-byte-minimum zero-padding on the wire
+    # simulate 60-byte-minimum zero-padding on the wire
+    padded = VEC_B + b"\x00" * 20
     res = pdev.decode_frame(padded)
     assert _field(res, "length") == 12
     assert bytes(_field(res, "payload")) == VEC_B_PAYLOAD, (
-        "payload MUST be exactly `length` bytes; trailing padding ignored (R78.9)")
+        "payload MUST be exactly `length` bytes; trailing padding ignored "
+        "(R78.9)")
 
 
 def test_decode_ignores_nonzero_trailing_bytes():  # AC-2b-1 (R78.9/R86.3)
-    """R78.9: the receiver ignores ALL trailing bytes beyond `length`, delimited by
+    """R78.9: the receiver ignores ALL trailing bytes beyond `length`,
+    delimited by
     the length field alone (not only zero padding)."""
     _need_pdev()
     padded = VEC_A_HDR + b"\xde\xad\xbe\xef"
@@ -305,13 +368,15 @@ def test_decode_ignores_nonzero_trailing_bytes():  # AC-2b-1 (R78.9/R86.3)
 
 
 # ==========================================================================
-# Error taxonomy — encode_frame (R86.1 / R86.2): only PyroFrameError, no leakage.
+# Error taxonomy — encode_frame (R86.1 / R86.2): only PyroFrameError, no
+# leakage.
 # ==========================================================================
 def test_exception_taxonomy_shape():  # AC-2b-1 (R86.1)
     _need_pdev()
     assert issubclass(pdev.PyroFrameError, pdev.PyroDeviceError)
     assert issubclass(pdev.PyroDeviceError, Exception)
-    # Must NOT be an OSError/PermissionError family (no transport-internal leakage).
+    # Must NOT be an OSError/PermissionError family (no transport-internal
+    # leakage).
     assert not issubclass(pdev.PyroFrameError, OSError)
 
 
@@ -333,7 +398,8 @@ def test_encode_max_payload_is_accepted_boundary():  # AC-2b-1 (R78.9/R86.2)
 # R78.11).  0x00 is `reserved` and is NOT a message kind — encode_frame MUST
 # reject it, as must any value > 0x07.
 @pytest.mark.parametrize("bad_kind", [0x00, 0x08, 0x09, 0x10, 0x42, 0xFF])
-def test_encode_invalid_kind_raises_frame_error(bad_kind):  # AC-2b-1 (R78.4/R86.2)
+# AC-2b-1 (R78.4/R86.2)
+def test_encode_invalid_kind_raises_frame_error(bad_kind):
     _need_pdev()
     with pytest.raises(pdev.PyroFrameError):
         pdev.encode_frame(bad_kind, 0, 1, b"")
@@ -348,7 +414,8 @@ def test_encode_reserved_kind_0x00_rejected():  # AC-2b-1 (R86.2 v2.2.2)
 
 
 def test_encode_all_sendable_kinds_accepted():  # AC-2b-1 (R86.2 v2.4.0)
-    """The sendable kinds are exactly 0x01-0x07 (R78.4/R86.2); each MUST encode."""
+    """The sendable kinds are exactly 0x01-0x07 (R78.4/R86.2); each MUST
+    encode."""
     _need_pdev()
     for kind in (0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07):
         out = pdev.encode_frame(kind, 0, 1, b"")
@@ -356,7 +423,8 @@ def test_encode_all_sendable_kinds_accepted():  # AC-2b-1 (R86.2 v2.4.0)
 
 
 @pytest.mark.parametrize("bad_flags", [1, 2, 0x80, 0xFF])
-def test_encode_nonzero_flags_raises_frame_error(bad_flags):  # AC-2b-1 (R78.3/R86.2)
+# AC-2b-1 (R78.3/R86.2)
+def test_encode_nonzero_flags_raises_frame_error(bad_flags):
     _need_pdev()
     with pytest.raises(pdev.PyroFrameError):
         pdev.encode_frame(ID_REQUEST, 0, 1, b"", flags=bad_flags)
@@ -370,12 +438,14 @@ def test_encode_does_not_leak_os_permission_error():  # AC-2b-1 (R86.1)
         pdev.encode_frame(0xFF, 0, 1, b"")
     except pdev.PyroFrameError:
         pass
-    except (OSError, PermissionError) as exc:  # pragma: no cover - spec violation
+    # pragma: no cover - spec violation
+    except (OSError, PermissionError) as exc:
         pytest.fail(f"encode_frame leaked {type(exc).__name__} (R86.1)")
 
 
 # ==========================================================================
-# Error taxonomy — decode_frame (R86.1 / R86.3): only PyroFrameError, no leakage.
+# Error taxonomy — decode_frame (R86.1 / R86.3): only PyroFrameError, no
+# leakage.
 # ==========================================================================
 def test_decode_bad_magic_raises_frame_error():  # AC-2b-1 (R78.3/R86.3)
     _need_pdev()
@@ -415,7 +485,8 @@ def test_decode_truncated_payload_raises_frame_error():  # AC-2b-1 (R86.3)
     `length`) is malformed (R86.3)."""
     _need_pdev()
     # header claims length=12 but only 5 payload bytes present.
-    truncated = _hx("50 01 02 00  00 00  00 00 00 01  00 0C  00 00") + b"\x00" * 5
+    truncated = _hx(
+        "50 01 02 00  00 00  00 00 00 01  00 0C  00 00") + b"\x00" * 5
     with pytest.raises(pdev.PyroFrameError):
         pdev.decode_frame(truncated)
 
@@ -440,5 +511,6 @@ def test_decode_does_not_leak_os_permission_error():  # AC-2b-1 (R86.1)
         pdev.decode_frame(bytes(bad))
     except pdev.PyroFrameError:
         pass
-    except (OSError, PermissionError) as exc:  # pragma: no cover - spec violation
+    # pragma: no cover - spec violation
+    except (OSError, PermissionError) as exc:
         pytest.fail(f"decode_frame leaked {type(exc).__name__} (R86.1)")

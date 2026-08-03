@@ -19,7 +19,8 @@ import pytest
 import pyro.re as pre
 import oracle
 
-# distinct HW-eligible literal patterns; one measured call each keeps per-pattern
+# distinct HW-eligible literal patterns; one measured call each keeps per-
+# pattern
 # reuse at 1 (< N_reuse) so every call is a genuine loss-regime routing decision
 # through R51 steps 1..4 that ends in fallback.
 N_PATTERNS = 1500
@@ -71,7 +72,8 @@ def test_routing_overhead_absolute_median():
 def test_module_level_overhead_absolute_median():
     """R3a/R5: same absolute bound for the module-level function surface."""
     pats = _distinct_patterns(N_PATTERNS)
-    # Prime compile caches on both sides so we measure routing, not compile (R4).
+    # Prime compile caches on both sides so we measure routing, not compile
+    # (R4).
     for p in pats:
         stdre.search(p, SUBJECT)
         pre.search(p, SUBJECT)
@@ -98,8 +100,9 @@ def test_short_oneshot_routes_to_fallback():
     re.Match (R29).  Unique pattern keeps reuse at 1."""
     m = pre.search("uniq_oneshot_needle", "find uniq_oneshot_needle here")
     assert m is not None
-    assert isinstance(m, stdre.Match), \
-        "short one-shot HW-eligible call must route to fallback (R51 step 4, R29)"
+    assert isinstance(m, stdre.Match), (
+        "short one-shot HW-eligible call must route to fallback"
+        " (R51 step 4, R29)")
 
 
 def test_routing_is_deterministic():

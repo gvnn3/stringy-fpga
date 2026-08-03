@@ -36,12 +36,14 @@ class _VerifyError(Exception):
 
 # Offload thresholds (R2/R3): reuse count and minimum corpus size.  Re-exported
 # from the single source of truth (pyro/_thresholds.py); tests read
-# ``_route.S_MIN`` / ``_route.N_REUSE`` and the native routing extension bakes in
+# ``_route.S_MIN`` / ``_route.N_REUSE`` and the native routing extension bakes
+# in
 # a header generated from that SAME module, so the two can never diverge.
 from ._thresholds import S_MIN, N_REUSE   # noqa: F401  (re-export)
 
 # The native routing extension, or ``None`` on a pure-Python build.  Selected in
-# _match (which owns the PYRO_NO_NATIVE / ROUTE_ABI guards); mirrored here so the
+# _match (which owns the PYRO_NO_NATIVE / ROUTE_ABI guards); mirrored here so
+# the
 # dispatch/counter/env code can pick the native or pure-Python implementation
 # with a single ``is not None`` check.  Populated at the BOTTOM of this module
 # (after the run_* functions it configures exist); ``None`` until then, which is
@@ -54,7 +56,8 @@ _STATS = {
     "hardware": 0,             # dispatches served by real device (none in Ph0)
     "model": 0,                # dispatches served by the software model
     "fallback": 0,             # dispatches routed to CPython re
-    "fallback_after_error": 0, # device error / verify failure -> fallback (R52)
+    # device error / verify failure -> fallback (R52)
+    "fallback_after_error": 0,
     "device_errors": 0,
     "total": 0,
 }
@@ -98,8 +101,10 @@ def reset_stats() -> None:
 
 def _record(path: str) -> None:
     # When native, funnel the cold Python paths (model dispatch, sub/subn/split)
-    # into the SAME per-thread counters the C hot path bumps — two counter stores
-    # would make the aggregate wrong; there is exactly one.  The ~50 ns Python->C
+    # into the SAME per-thread counters the C hot path bumps — two counter
+    # stores
+    # would make the aggregate wrong; there is exactly one.  The ~50 ns
+    # Python->C
     # hop is on paths that already cost microseconds, never the measured path.
     if _fast is not None:
         _fast.count(_CNT_IDX[path])
@@ -134,14 +139,16 @@ def _record_error_fallback() -> None:
 # Truthiness rule (fail-safe): a variable counts as SET for any value other than
 # unset/empty/"0".  In particular PYRO_DISABLE=false / no / off all count as SET
 # (disabled) — for an opt-out/incident-mitigation switch we bias toward the safe
-# fallback path rather than silently ignoring an operator's non-canonical value.
+# fallback path rather than silently ignoring an operator's non-canonical
+# value.
 _UNSET_VALUES = (None, "", "0")
 _ENV = (False, False)                 # (disabled, force_model) cached snapshot
 _ENV_LOCK = threading.Lock()          # serializes samplers (R35d thread-safety)
 
 # R67/R68 cached snapshots — sampled at the SAME R35a points as _ENV, never on
 # the per-call hot path (R35a/R5).  _TEST_HOOKS gates the pyro.testing seam;
-# _N_SYNTH is the validated PYRO_N_SYNTH launch-threshold override (None=default).
+# _N_SYNTH is the validated PYRO_N_SYNTH launch-threshold override
+# (None=default).
 _TEST_HOOKS = False
 _N_SYNTH = None
 
@@ -167,7 +174,8 @@ _VIVADO_DIR = None
 # `transport: PYRO_DEVICE_IFACE not configured` reason (never a guess, never a
 # scan — R70).  PYRO_HW_SERVER is the Vivado hw_server URL the R85/R86.5 JTAG
 # loader connects to (default TCP:localhost:3121).  These are the ONLY two
-# env-sampled device inputs (R68/R86): pyro.device.DeviceConfig reads this cached
+# env-sampled device inputs (R68/R86): pyro.device.DeviceConfig reads this
+# cached
 # snapshot for its iface/hw_server field defaults — the device functions
 # themselves never touch os.environ (R5/R35a).  Every other device parameter
 # (SPEC16, R84 timeouts, R78 frame constants) is a spec-fixed constant.
@@ -186,7 +194,8 @@ _QDMA_CHARDEV = None
 # call.  PYRO_PR_STATIC_DCP -> ToolchainConfig.static_dcp (R82b locked static),
 # PYRO_PR_REFERENCE_DCP -> reference_dcp (R82c/R82d pr_verify reference).  **No
 # default, fail-loud** (R88): if a pr_bitstream job is requested and either is
-# unset/unresolvable, synthesis is SynthesisFailed (never a silent ooc downgrade).
+# unset/unresolvable, synthesis is SynthesisFailed (never a silent ooc
+# downgrade).
 # Unset here => None; the residency service passes them through to the worker.
 _PR_STATIC_DCP = None
 _PR_REFERENCE_DCP = None
@@ -200,7 +209,8 @@ _PR_EVIDENCE_MANIFEST = None
 
 
 def _parse_n_synth(raw):
-    """Validate a PYRO_N_SYNTH value: a positive int, else ``None`` (default)."""
+    """Validate a PYRO_N_SYNTH value: a positive int, else ``None``
+    (default)."""
     if raw is None or raw == "":
         return None
     try:
@@ -224,7 +234,8 @@ def sample_env() -> None:
         disabled = os.environ.get("PYRO_DISABLE") not in _UNSET_VALUES
         force = os.environ.get("PYRO_FORCE_MODEL") not in _UNSET_VALUES
         _ENV = (disabled, force)
-        _TEST_HOOKS = os.environ.get("PYRO_ENABLE_TEST_HOOKS") not in _UNSET_VALUES
+        _TEST_HOOKS = os.environ.get(
+            "PYRO_ENABLE_TEST_HOOKS") not in _UNSET_VALUES
         _N_SYNTH = _parse_n_synth(os.environ.get("PYRO_N_SYNTH"))
         # R70: toolchain selection.  Unrecognized PYRO_TOOLCHAIN => "mock" (fail
         # safe: never silently attempt a real flow the operator did not name).
@@ -242,7 +253,8 @@ def sample_env() -> None:
         _QDMA_CHARDEV = _qc if _qc else None
         _hs = os.environ.get("PYRO_HW_SERVER")
         _HW_SERVER = _hs if _hs else _HW_SERVER_DEFAULT
-        # R68 PR-substrate knobs (v2.2.4): no default (fail-loud is enforced by the
+        # R68 PR-substrate knobs (v2.2.4): no default (fail-loud is enforced
+        # by the
         # toolchain when a pr_bitstream job needs an absent path, R88).
         _psd = os.environ.get("PYRO_PR_STATIC_DCP")
         _PR_STATIC_DCP = _psd if _psd else None
@@ -253,7 +265,8 @@ def sample_env() -> None:
         _PR_EVIDENCE_MANIFEST = _pem if _pem else None
     # Push the freshly-sampled launch threshold onto the live residency manager
     # (R68).  Done outside the _ENV_LOCK and only if the synth subsystem is
-    # already imported, so package init / the fallback hot path never pull it in.
+    # already imported, so package init / the fallback hot path never pull it
+    # in.
     _mod = _sys.modules.get("pyro.synth.residency")
     if _mod is not None:
         try:
@@ -293,9 +306,12 @@ def device_iface():
     netdev for the device transport — ``None`` when unset (**no spec default;
     fail-closed**, F3/R68: the name is host configuration, and probe_device then
     returns the R83 canonical ``transport: PYRO_DEVICE_IFACE not configured``
-    reason instead of guessing or scanning).  Sampled only at R35a points; read by
-    :mod:`pyro.device`'s ``DeviceConfig`` for its ``iface`` default — never on the
-    per-call hot path, never via os.environ inside the device functions (R86)."""
+    reason instead of guessing or scanning).  Sampled only at R35a points;
+    read by
+    :mod:`pyro.device`'s ``DeviceConfig`` for its ``iface`` default — never on
+    the
+    per-call hot path, never via os.environ inside the device functions
+    (R86)."""
     return _DEVICE_IFACE
 
 
@@ -312,7 +328,8 @@ def qdma_chardev():
 def hw_server_url():
     """Cached PYRO_HW_SERVER (R68/v2.2.2), the Vivado hw_server URL for the R85
     JTAG loader (default ``TCP:localhost:3121``).  Sampled only at R35a points;
-    read by :mod:`pyro.device`'s ``DeviceConfig`` for its ``hw_server`` default."""
+    read by :mod:`pyro.device`'s ``DeviceConfig`` for its ``hw_server``
+    default."""
     return _HW_SERVER
 
 
@@ -320,7 +337,8 @@ def pr_substrate_dcps():
     """Cached (static_dcp, reference_dcp) PR substrate paths (R68/R88, v2.2.4).
 
     From PYRO_PR_STATIC_DCP / PYRO_PR_REFERENCE_DCP; ``None`` when unset (no
-    default — fail-loud is enforced by the toolchain when a pr_bitstream job needs
+    default — fail-loud is enforced by the toolchain when a pr_bitstream job
+    needs
     an absent path, R88).  Sampled only at R35a points; read by
     :mod:`pyro.synth.residency` when it builds the worker's ToolchainConfig."""
     return (_PR_STATIC_DCP, _PR_REFERENCE_DCP)
@@ -355,9 +373,11 @@ def _is_full_span(string, pos, endpos) -> bool:
 def _decide_hot(patt: PyroPattern, string, pos, endpos) -> str:
     """The native-equivalent routing decision: steps S0..S6, no UTF-8 probe.
 
-    This is the EXACT contract the C ``pyro_route_decide`` reproduces bit-for-bit
+    This is the EXACT contract the C ``pyro_route_decide`` reproduces
+    bit-for-bit
     (the 288-point equivalence test enumerates the full domain against a Python
-    transcription of it).  The O(n) UTF-8 transportability probe (R51a(d)/R14a) is
+    transcription of it).  The O(n) UTF-8 transportability probe
+    (R51a(d)/R14a) is
     deliberately NOT here — it is model-bound-only and lives in
     :func:`_serve_model_single`/:func:`_serve_model_finditer`, so the short
     fallback fast path never pays for it.
@@ -384,8 +404,10 @@ def _decide_hot(patt: PyroPattern, string, pos, endpos) -> str:
     if not _is_full_span(string, pos, endpos):      # S4  anchor-context safety
         return "fallback"
     if not force and len(string) < S_MIN and reuse < N_REUSE:
-        return "fallback"                           # S5  R51.4 loss regime (R3a)
-    return "model"                                  # S6  R51.6 (no device in Ph0)
+        # S5  R51.4 loss regime (R3a)
+        return "fallback"
+    # S6  R51.6 (no device in Ph0)
+    return "model"
 
 
 def _decide(patt: PyroPattern, string, pos, endpos) -> str:
@@ -399,7 +421,8 @@ def _decide(patt: PyroPattern, string, pos, endpos) -> str:
     verdict = _decide_hot(patt, string, pos, endpos)
     # C1: only strict-UTF-8-encodable str subjects can be transported to the
     # model; a lone surrogate (which stock re still matches) must fall back.
-    if verdict == "model" and type(string) is str and not _utf8_transportable(string):
+    if verdict == "model" and type(
+        string) is str and not _utf8_transportable(string):
         return "fallback"
     return verdict
 
@@ -415,8 +438,10 @@ def _utf8_transportable(s: str) -> bool:
 # --- residency-aware routing (R51 step 5 amended, R4a/R65) -----------------
 # The residency subsystem (pyro.synth) is imported lazily and cached so the
 # per-call *fallback* fast path (AC-0-6) never touches it — only the model path
-# (large/reused/forced, not the perf-measured path) consults it.  Because on this
-# host there is no device (F5, R7), the software model stands in for the resident
+# (large/reused/forced, not the perf-measured path) consults it.  Because on
+# this
+# host there is no device (F5, R7), the software model stands in for the
+# resident
 # tier, so this consultation drives the launch policy (R4a) and lifecycle stats
 # (R66) as a side effect and forces fallback only for a *permanently-fallback*
 # pattern (R65).  It never raises into a caller (R52/R65).
@@ -615,14 +640,22 @@ def _model_finditer(patt, string, pos, endpos):
     # only); translating each window per-call would be O(matches * len).
     # N3 (Phase-1 line item): this eagerly materialises every match into a list,
     # and the empty-adjacency recovery path (HybridMatch) re-scans via stock
-    # finditer -- both fine for a software model but worth streaming/caching once
+    # finditer -- both fine for a software model but worth streaming/caching
+    # once
     # a real device engine lands.
     prefix = utf8_prefix(string) if isinstance(string, str) else None
     out = []
     for w in windows:
         span0 = _win_to_cp(string, w, prefix)
         _verify_window(patt, string, w, span0)
-        out.append(HybridMatch(patt, string, span0, pos, endpos_eff, "finditer"))
+        out.append(
+    HybridMatch(
+        patt,
+        string,
+        span0,
+        pos,
+        endpos_eff,
+         "finditer"))
     return out
 
 
@@ -642,7 +675,8 @@ def _serve_model_single(patt, op, string, pos, endpos):
     if type(string) is str and not _utf8_transportable(string):
         _record("fallback")
         return _stock_op(patt, op, string, pos, endpos)
-    if _consult_residency(patt, string):       # R65 permanent fallback -> routing
+    if _consult_residency(
+    patt, string):       # R65 permanent fallback -> routing
         _record("fallback")
         return _stock_op(patt, op, string, pos, endpos)
     try:
@@ -662,7 +696,8 @@ def _serve_model_finditer(patt, string, pos, endpos):
     if type(string) is str and not _utf8_transportable(string):
         _record("fallback")
         return _stock_op(patt, "finditer", string, pos, endpos)
-    if _consult_residency(patt, string):       # R65 permanent fallback -> routing
+    if _consult_residency(
+    patt, string):       # R65 permanent fallback -> routing
         _record("fallback")
         return _stock_op(patt, "finditer", string, pos, endpos)
     try:
@@ -733,7 +768,8 @@ def run_split(patt, string, maxsplit=0):
 # bail-out functions the pure-Python router uses.  After configuring, re-run
 # sample_env() so the env word is pushed now that set_env is wired (the import
 # sample above ran with _fast still None).
-from . import _match as _match_mod   # noqa: E402  (bottom import breaks the cycle)
+# noqa: E402  (bottom import breaks the cycle)
+from . import _match as _match_mod
 
 _fast = _match_mod._fast
 if _fast is not None:

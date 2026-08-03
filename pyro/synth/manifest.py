@@ -33,7 +33,8 @@ class Manifest:
     # --- identity (R47a, mirrored into CIRC_ID*/CIRC_FLAGS) ----------------
     pattern_hash: str                 # hex of the 16-byte pattern hash
     encoding: int                     # PYRO_ENC_BYTES(0) / PYRO_ENC_UTF8(1)
-    effective_flags: int              # canonicalized post-inline-extraction flags
+    # canonicalized post-inline-extraction flags
+    effective_flags: int
     circ_flags: int                   # packed CIRC_FLAGS word (R45 0x0028)
     # --- versions / target region (R47b: artifact is not portable) ---------
     generator_version: int
@@ -69,7 +70,8 @@ class Manifest:
     # Independent, observable record of Vivado `pr_verify` success (R82c), added
     # additively with a default that preserves the JSON round-trip exactly like
     # payload_kind: an on-disk manifest lacking the key deserializes to False.
-    # Invariant (R47b/R82c): pr_verified is True **iff** pr_verify ran and passed
+    # Invariant (R47b/R82c): pr_verified is True **iff** pr_verify ran and
+    # passed
     # for this artifact — which is exactly when payload_kind == "pr_bitstream".
     # It MUST be False for "mock_stub" and "ooc_metrics" payloads (neither runs
     # pr_verify), so both the mock and vivado-OOC construction paths leave the
@@ -79,15 +81,19 @@ class Manifest:
 
     # -- R47b-consistency boundary check (defense-in-depth, v2.2.3) ----------
     def __post_init__(self) -> None:
-        """Reject an inconsistent ``pr_verified``/``payload_kind`` combination at
+        """Reject an inconsistent ``pr_verified``/``payload_kind`` combination
+        at
         the boundary (R47b-consistency/R82c), not merely at the producer.
 
         The invariant is the biconditional ``pr_verified == (payload_kind ==
-        "pr_bitstream")``: a genuine loadable partial bitstream is exactly the one
+        "pr_bitstream")``: a genuine loadable partial bitstream is exactly the
+        one
         for which ``pr_verify`` ran and passed.  Enforcing it in the constructor
-        (and in :meth:`from_json`) means a corrupt or hand-edited manifest cannot
+        (and in :meth:`from_json`) means a corrupt or hand-edited manifest
+        cannot
         enter the system.  Back-compat safe: every pre-v2.2.2 manifest is
-        ``mock_stub``/``ooc_metrics`` with ``pr_verified`` absent→``False``, which
+        ``mock_stub``/``ooc_metrics`` with ``pr_verified`` absent→``False``,
+        which
         satisfies the invariant.
         """
         if bool(self.pr_verified) != (self.payload_kind == "pr_bitstream"):
@@ -107,8 +113,10 @@ class Manifest:
         # R72a: a pre-2.1.0 manifest on disk lacks payload_kind — default it so
         # the JSON round-trip is preserved (missing key => "mock_stub").
         data.setdefault("payload_kind", "mock_stub")
-        # R47b/R82c (v2.2.2): a pre-v2.2.2 manifest lacks pr_verified — default it
-        # False so the round-trip is preserved (missing key => not pr-verified).
+        # R47b/R82c (v2.2.2): a pre-v2.2.2 manifest lacks pr_verified —
+        # default it
+        # False so the round-trip is preserved (missing key => not
+        # pr-verified).
         data.setdefault("pr_verified", False)
         # R47b-consistency (v2.2.3): the constructor (__post_init__) rejects an
         # inconsistent pr_verified/payload_kind combination, so a corrupt/edited
@@ -121,21 +129,28 @@ class Manifest:
         return (len(payload) == self.payload_len
                 and payload_crc32(payload) == self.integrity_hash)
 
-    def compatible_with(self, shell_version: int, harness_version: int) -> bool:
-        """R47b: the artifact is only loadable into a compatible shell/harness."""
+    def compatible_with(
+    self,
+    shell_version: int,
+     harness_version: int) -> bool:
+        """R47b: the artifact is only loadable into a compatible
+        shell/harness."""
         return (int(shell_version) == self.shell_version
                 and int(harness_version) == self.harness_version)
 
     def is_device_loadable(self) -> bool:
         """R72b (loader honesty): True iff this artifact is a genuine loadable
-        partial-reconfiguration bitstream — i.e. ``payload_kind == "pr_bitstream"``.
+        partial-reconfiguration bitstream — i.e. ``payload_kind ==
+        "pr_bitstream"``.
 
         The PR loader (``pyro_circuit_load``, R40) MUST treat an artifact as an
         on-device-loadable bitstream **only** when this holds.  ``"mock_stub"``
-        and ``"ooc_metrics"`` payloads are NOT device bitstreams: on hardware the
+        and ``"ooc_metrics"`` payloads are NOT device bitstreams: on hardware
+        the
         pattern is served by the model/fallback path and the on-device residency
         clauses SKIP.  On a device-free/model host this is moot — the software
-        model executes the ``PYROART1`` container regardless (R51b) — so it never
+        model executes the ``PYROART1`` container regardless (R51b) — so it
+        never
         gates the model-resident standin tier."""
         return self.payload_kind == "pr_bitstream"
 

@@ -164,11 +164,13 @@ class GroupSlot(NamedTuple):
     rules: Tuple[RuleRef, ...]
     pattern: bytes = b""     # SR3 lowered regex source (b"" = derive)
     flags: int = -1          # slot re-flags word (-1 = derive from nocase)
-    tail_span: int = -1      # SR12 tail contribution (-1 = derive: len(anchor))
+    # SR12 tail contribution (-1 = derive: len(anchor))
+    tail_span: int = -1
 
     @property
     def tombstone(self) -> bool:
-        """True once every rule that claimed this slot has been deleted (SR6)."""
+        """True once every rule that claimed this slot has been deleted
+        (SR6)."""
         return not self.rules
 
     @property
@@ -262,7 +264,9 @@ class RuleGroup(NamedTuple):
         out += _u32(len(self.slots))
         for slot in self.slots:
             out += _u32(slot.index)
-            flags = (0x1 if slot.nocase else 0) | (0x2 if slot.tombstone else 0)
+            flags = (
+    0x1 if slot.nocase else 0) | (
+        0x2 if slot.tombstone else 0)
             out += bytes([flags])
             out += _u32(len(slot.anchor)) + slot.anchor
             # v2 (AC-S3-2): the SR3 lowered matcher is identity-bearing.

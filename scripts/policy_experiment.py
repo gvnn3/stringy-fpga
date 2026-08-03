@@ -274,8 +274,9 @@ def simulate(tenants, trace, policy_fn, budget, switch_cost_s,
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+    description=__doc__,
+     formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--switch-cost", type=float, default=DL.PR_SWITCH_S)
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
@@ -354,10 +355,17 @@ def main():
                  for f in sorted(best) if base.get(f) and f not in degen]
         top = max(gains) if gains else (0, 0, "-")
         sep = "SEPARATES" if top[0] > 5 else "no separation"
-        print("  %-22s best gain over best-fixed-set: %+.1f%% (%s at %.0f%% budget)"
-              "  -> %s%s" % (label, top[0], top[2], top[1] * 100, sep,
-                             "   [%d degenerate budget(s) excluded]" % len(degen)
-                             if degen else ""))
+        print(
+    "  %-22s best gain over best-fixed-set: %+.1f%% (%s at %.0f%% budget)"
+    "  -> %s%s" %
+    (label,
+    top[0],
+    top[2],
+    top[1] *
+    100,
+    sep,
+    "   [%d degenerate budget(s) excluded]" %
+     len(degen) if degen else ""))
 
     if args.json_out:
         with open(args.json_out, "w") as fh:

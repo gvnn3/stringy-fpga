@@ -33,7 +33,10 @@ import subprocess
 import sys
 import tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 sys.path.insert(0, REPO)
 
 import pyro.device as pdev
@@ -88,7 +91,8 @@ def group_entries(automata, buf: bytes):
     """
     ents = []
     for pid, au in enumerate(automata):
-        if au is None:                     # tombstoned slot (SR6): never matches
+        # tombstoned slot (SR6): never matches
+        if au is None:
             continue
         for e in engine_end_set(au, buf):
             ents.append((e, pid))
@@ -119,7 +123,8 @@ def expect_status(req, code=7):
 
 
 def expect_match(req, ends, cap, maxent=61):
-    """``ends`` is a list of ``end`` (pattern_id 0) or of ``(end, pattern_id)``."""
+    """``ends`` is a list of ``end`` (pattern_id 0) or of ``(end,
+    pattern_id)``."""
     pairs = [e if isinstance(e, tuple) else (e, 0) for e in ends]
     cap_eff = min(cap, maxent)
     entries = pairs[:cap_eff]
@@ -300,7 +305,8 @@ def main(argv=None):
     # always sequential-after-drain (pyro_hw), where the routing is exact.
     if args.engines == 1:
         seq += 1
-        perf_req = ETH_REQ + pdev.encode_frame(pdev.KIND_PERF_REQUEST, SLOT, seq, b"")
+        perf_req = ETH_REQ + \
+            pdev.encode_frame(pdev.KIND_PERF_REQUEST, SLOT, seq, b"")
         reqs.append(perf_req)
         expected.append(None)                      # special-cased
 
@@ -336,10 +342,12 @@ def main(argv=None):
                                text=True, timeout=600)
             if p.returncode != 0:
                 print(f"FAIL: {' '.join(os.path.basename(c) for c in cmd[:1])} "
-                      f"rc={p.returncode}\n{p.stdout[-2000:]}\n{p.stderr[-500:]}")
+                      f"rc={p.returncode}\n{p.stdout[-2000:]}\n"
+                      f"{p.stderr[-500:]}")
                 return 1
         with open(os.path.join(wd, "out_beats.txt")) as f:
-            got = beats_to_frames([ln for ln in f.read().splitlines() if ln.strip()])
+            got = beats_to_frames(
+                [ln for ln in f.read().splitlines() if ln.strip()])
     finally:
         if args.keep_workdir:
             print(f"workdir kept: {wd}")
@@ -388,7 +396,9 @@ def main(argv=None):
                   f"(<= {bound}) {'OK' if ok else 'FAIL'}")
             fails += 0 if ok else 1
         elif g == e:
-            print(f"[{i}] {['ID','MATCH','STATUS'][0 if i==0 else 2 if len(e)==60 and e[16]==5 else 1]:6s} "
+            kind = ["ID", "MATCH", "STATUS"][
+                0 if i == 0 else 2 if len(e) == 60 and e[16] == 5 else 1]
+            print(f"[{i}] {kind:6s} "
                   f"exact ({len(g)} B) OK")
         else:
             fails += 1

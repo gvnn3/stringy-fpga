@@ -12,7 +12,8 @@ Responsibilities:
     was explicitly ``prewarm``ed.  Launching is deduplicated (R63a) and never
     blocks the triggering call (R63/R51).
   * **Tier tracking (R4/R31).** cold -> synthesizing -> warm -> resident, plus
-    permanently-fallback (R65).  ``tier()`` reports it; ``explain()`` surfaces it.
+    permanently-fallback (R65).  ``tier()`` reports it; ``explain()`` surfaces
+    it.
   * **PR-region arbitration (R64).** One resident circuit at a time
     (single-tenant).  A warm artifact is promoted to resident with a mock PR
     load; loading a different circuit evicts the least-recently-dispatched
@@ -23,12 +24,16 @@ Responsibilities:
 
 Design note (R7 vs R51 step 5, for the spec-writer).  On this host there is no
 device (F5), so per R7 the **software model stands in for the resident tier**:
-the router serves HW-eligible, gate-crossed work via the model regardless of this
-manager's tier.  This manager therefore models the *device* lifecycle — it drives
+the router serves HW-eligible, gate-crossed work via the model regardless of
+this
+manager's tier.  This manager therefore models the *device* lifecycle — it
+drives
 the launch policy, tier bookkeeping, eviction, and R66 counters, and it forces
 fallback only for a **permanently-fallback** key (R65).  The genuine
-NOT_RESIDENT-as-routing and tier-equivalence behavior (AC-1-6/AC-1-7) is exact in
-this manager and is exercised directly by the lifecycle tests; it is not observed
+NOT_RESIDENT-as-routing and tier-equivalence behavior (AC-1-6/AC-1-7) is exact
+in
+this manager and is exercised directly by the lifecycle tests; it is not
+observed
 through the model-as-resident router path.  See the Task-6 report §13 note.
 """
 
@@ -61,7 +66,8 @@ TIER_WARM = "warm"
 TIER_RESIDENT = "resident"
 TIER_FALLBACK_ONLY = "fallback_only"
 
-# Router decision outcomes (R51 step 5 amended).  NOT_RESIDENT/SYNTH are ordinary
+# Router decision outcomes (R51 step 5 amended).  NOT_RESIDENT/SYNTH are
+# ordinary
 # routing (AC-1-6): a non-permanent, non-resident key routes to fallback WITHOUT
 # being a device error.  PERMANENT_FALLBACK is R65.
 ROUTE_RESIDENT = "resident"
@@ -93,25 +99,33 @@ class ResidencyManager:
 
         self._lock = threading.RLock()
         self._service: Optional[SynthesisService] = None
-        self._counts: Dict[str, int] = {}          # digest -> eligible-dispatch count
+        # digest -> eligible-dispatch count
+        self._counts: Dict[str, int] = {}
         self._prewarmed: Set[str] = set()          # digest set
         self._synthesizing: Set[str] = set()        # digest set (in flight)
-        # digest -> _ResidentInfo, ordered least->most recently dispatched (LRU).
+        # digest -> _ResidentInfo, ordered least->most recently dispatched
+        # (LRU).
         self._resident: "OrderedDict[str, _ResidentInfo]" = OrderedDict()
-        # R67: digests whose next synthesis is armed to fail (via pyro.testing).
+        # R67: digests whose next synthesis is armed to fail (via
+        # pyro.testing).
         self._inject_synth_fail: Set[str] = set()
         # In-memory memo of the *persistent* per-key verdict ("cold"/"warm"/
-        # "failed"), so the hot reused-pattern dispatch path (R51 step 5) does not
-        # re-stat the filesystem every call.  Populated on the first fs read for a
-        # key and invalidated on the state transitions this manager controls under
-        # the RLock (synthesis completion, generator-gap failure, timeout reap).
+        # "failed"), so the hot reused-pattern dispatch path (R51 step 5) does
+        # not
+        # re-stat the filesystem every call.  Populated on the first fs read
+        # for a
+        # key and invalidated on the state transitions this manager controls
+        # under
+        # the RLock (synthesis completion, generator-gap failure, timeout
+        # reap).
         self._verdict: Dict[str, str] = {}
 
         self._stats = {
             "synth_launched": 0,
             "synth_succeeded": 0,
             "synth_failed": 0,
-            "synth_misconfigured": 0,     # inconsistent job; NOT an R65 negative
+            # inconsistent job; NOT an R65 negative
+            "synth_misconfigured": 0,
             "circuits_synthesizing": 0,   # gauge
             "circuits_resident": 0,        # gauge
             "circuits_evicted": 0,
@@ -122,7 +136,8 @@ class ResidencyManager:
     def _toolchain_version(self) -> int:
         """The R4/R47b toolchain_version for the configured kind (R75/R75a).
 
-        mock => 0x00000100, vivado => 0x19020000 (pinned 2025.2, R70a-pin).  Because this
+        mock => 0x00000100, vivado => 0x19020000 (pinned 2025.2, R70a-pin). 
+        Because this
         is a component of the R4 bitstream-cache key, a mock artifact and a
         vivado artifact for the same pattern occupy **distinct keys** and never
         collide (R75a) — switching PYRO_TOOLCHAIN never serves a mock stub where
@@ -145,13 +160,18 @@ class ResidencyManager:
             self._service.set_done_callback(self._on_synth_done)
         return self._service
 
-    def _on_synth_done(self, key: BitstreamKey, status: str, reason: str) -> None:
+    def _on_synth_done(
+    self,
+    key: BitstreamKey,
+    status: str,
+     reason: str) -> None:
         dig = key_digest(key)
         with self._lock:
             self._synthesizing.discard(dig)
             if status == STATUS_OK:
                 self._stats["synth_succeeded"] += 1
-                self._verdict[dig] = "warm"    # worker wrote the artifact (R63d)
+                # worker wrote the artifact (R63d)
+                self._verdict[dig] = "warm"
             elif status == STATUS_FAILED:
                 self._stats["synth_failed"] += 1
                 self._verdict[dig] = "failed"  # negative cache entry (R65)
@@ -199,7 +219,8 @@ class ResidencyManager:
             circuit = hdl.generate(pattern, flags, enc)
             job = _job_from_circuit(circuit)
         except Exception:
-            # A lowering/estimation gap: treat as permanent fallback (R65) rather
+            # A lowering/estimation gap: treat as permanent fallback (R65)
+            # rather
             # than raising into the caller.
             self._cache.put_failure(key, "generator could not lower pattern")
             self._stats["synth_failed"] += 1
@@ -211,10 +232,16 @@ class ResidencyManager:
             self._stats["synth_launched"] += 1
             self._stats["circuits_synthesizing"] = len(self._synthesizing)
 
-    def prewarm(self, pattern, flags: int = 0, enc: Optional[int] = None) -> bool:
-        """R62: request synthesis of one HW-eligible pattern regardless of count.
+    def prewarm(
+    self,
+    pattern,
+    flags: int = 0,
+     enc: Optional[int] = None) -> bool:
+        """R62: request synthesis of one HW-eligible pattern regardless of
+        count.
 
-        Returns ``True`` if a launch was (or already is) in progress for the key;
+        Returns ``True`` if a launch was (or already is) in progress for the
+        key;
         ``False`` if the pattern is fallback-only or already cached/failed.
         Never blocks and never raises (R62/R65).
         """
@@ -247,7 +274,8 @@ class ResidencyManager:
             self._inject_synth_fail.add(key_digest(key))
 
     def clear_injections(self) -> None:
-        """Clear armed synthesis-failure injections (R67 ``pyro.testing.reset``)."""
+        """Clear armed synthesis-failure injections (R67
+        ``pyro.testing.reset``)."""
         with self._lock:
             self._inject_synth_fail.clear()
 
@@ -262,14 +290,19 @@ class ResidencyManager:
         manifest = entry.manifest
         # R72b (loader honesty): a genuine on-*device* PR load requires
         # manifest.is_device_loadable() (payload_kind == "pr_bitstream").  On
-        # this device-free host no such artifact exists ("mock_stub"/"ooc_metrics"
+        # this device-free host no such artifact exists
+        # ("mock_stub"/"ooc_metrics"
         # are model-exec containers, not device bitstreams), so what follows is
         # the *model-resident standin* for the device lifecycle (see the module
         # design note, R7/R51b): the software model executes the PYROART1
-        # container regardless of payload_kind, and tier/residency bookkeeping is
-        # unchanged.  The on-device residency clauses SKIP until pr_flow_present.
-        # R47b: refuse a load whose shell/PR-region + harness are incompatible, or
-        # whose bitstream integrity hash does not match (treated as fallback, not
+        # container regardless of payload_kind, and tier/residency bookkeeping
+        # is
+        # unchanged.  The on-device residency clauses SKIP until
+        # pr_flow_present.
+        # R47b: refuse a load whose shell/PR-region + harness are
+        # incompatible, or
+        # whose bitstream integrity hash does not match (treated as fallback,
+        # not
         # a device error).
         if not manifest.compatible_with(SHELL_VERSION, hdl.HARNESS_VERSION):
             return False
@@ -278,8 +311,10 @@ class ResidencyManager:
                 return False
         except OSError:
             return False
-        # Evict LRU resident(s) to make room (single-tenant: pr_partitions == 1).
-        while len(self._resident) >= self._pr_partitions and dig not in self._resident:
+        # Evict LRU resident(s) to make room (single-tenant: pr_partitions ==
+        # 1).
+        while len(
+    self._resident) >= self._pr_partitions and dig not in self._resident:
             _ev_dig, _ev = self._resident.popitem(last=False)
             self._stats["circuits_evicted"] += 1
         self._resident[dig] = _ResidentInfo(key, manifest)
@@ -305,13 +340,18 @@ class ResidencyManager:
             return TIER_COLD
 
     def _fs_verdict(self, key: BitstreamKey, dig: str) -> str:
-        """Memoized persistent verdict for a key: ``"cold"``/``"warm"``/``"failed"``.
+        """Memoized persistent verdict for a key:
+        ``"cold"``/``"warm"``/``"failed"``.
 
-        Hits the filesystem (``is_failed`` + ``has``) only on the first lookup of
-        a key; thereafter the in-memory memo is authoritative, kept current by the
-        state transitions this manager owns under the RLock (synthesis completion
+        Hits the filesystem (``is_failed`` + ``has``) only on the first lookup
+        of
+        a key; thereafter the in-memory memo is authoritative, kept current by
+        the
+        state transitions this manager owns under the RLock (synthesis
+        completion
         -> warm/failed, generator-gap/timeout -> failed).  Keeps the hot
-        reused-pattern dispatch path off the filesystem while staying behaviorally
+        reused-pattern dispatch path off the filesystem while staying
+        behaviorally
         identical to reading the cache each call.
         """
         v = self._verdict.get(dig)
@@ -331,8 +371,10 @@ class ResidencyManager:
                                enc: Optional[int] = None) -> str:
         """Register one HW-eligible dispatch and return the routing outcome.
 
-        Ticks the launch counter, evaluates the launch policy (R4a), advances the
-        lifecycle (drains completions, promotes a warm artifact to resident), and
+        Ticks the launch counter, evaluates the launch policy (R4a), advances
+        the
+        lifecycle (drains completions, promotes a warm artifact to resident),
+        and
         returns one of the ``ROUTE_*`` outcomes.  Never raises (R65): the caller
         continues on fallback/model regardless.
         """
@@ -344,7 +386,8 @@ class ResidencyManager:
             dig = key_digest(key)
             self.poll()
 
-            verdict = self._fs_verdict(key, dig)   # memoized (no per-call stat)
+            verdict = self._fs_verdict(
+    key, dig)   # memoized (no per-call stat)
             if verdict == "failed":
                 return ROUTE_PERMANENT_FALLBACK
 
@@ -356,7 +399,8 @@ class ResidencyManager:
                 self._resident.move_to_end(dig)
                 return ROUTE_RESIDENT
 
-            # Warm artifact present: promote to resident (mock PR load, R4/R64).
+            # Warm artifact present: promote to resident (mock PR load,
+            # R4/R64).
             if verdict == "warm":
                 if self._promote_to_resident(key, dig):
                     return ROUTE_RESIDENT
@@ -369,7 +413,8 @@ class ResidencyManager:
             # Cold: evaluate the launch policy (R4a).
             if count >= self._n_synth or dig in self._prewarmed:
                 self._launch(pattern, flags, enc, key, dig)
-                return ROUTE_SYNTH if dig in self._synthesizing else ROUTE_NOT_RESIDENT
+                return (ROUTE_SYNTH if dig in self._synthesizing
+                        else ROUTE_NOT_RESIDENT)
             return ROUTE_NOT_RESIDENT
 
     # -- stats (R66) -------------------------------------------------------
@@ -403,7 +448,8 @@ class ResidencyManager:
 
 
 def _job_from_circuit(circuit: hdl.GeneratedCircuit) -> SynthJob:
-    """Build a picklable :class:`SynthJob` from a generated circuit's metadata."""
+    """Build a picklable :class:`SynthJob` from a generated circuit's
+    metadata."""
     r = circuit.resources or {}
     return SynthJob(
         pattern_hash=circuit.pattern_hash16.hex(),
@@ -434,8 +480,10 @@ _GLOBAL_LOCK = threading.Lock()
 
 
 def _effective_n_synth() -> int:
-    """The launch threshold in force: the sampled ``PYRO_N_SYNTH`` override (R68)
-    if valid, else the spec default.  Read only at sampling points (R35a) — never
+    """The launch threshold in force: the sampled ``PYRO_N_SYNTH`` override
+    (R68)
+    if valid, else the spec default.  Read only at sampling points (R35a) —
+    never
     on the per-call hot path — via :mod:`pyro._route`'s cached snapshot."""
     try:
         from .. import _route
@@ -447,7 +495,8 @@ def _effective_n_synth() -> int:
 
 def apply_n_synth() -> None:
     """Push the freshly-sampled ``PYRO_N_SYNTH`` (R68) onto the live global
-    manager, if one exists.  Called from an R35a sampling point (``sample_env``).
+    manager, if one exists.  Called from an R35a sampling point
+    (``sample_env``).
     """
     with _GLOBAL_LOCK:
         if _GLOBAL is not None:
@@ -455,30 +504,42 @@ def apply_n_synth() -> None:
 
 
 def _effective_toolchain_config() -> ToolchainConfig:
-    """Build the worker's :class:`ToolchainConfig` from the sampled R70 toolchain
+    """Build the worker's :class:`ToolchainConfig` from the sampled R70
+    toolchain
     selection (``PYRO_TOOLCHAIN`` / ``PYRO_VIVADO``).
 
     The selection is read from :mod:`pyro._route`'s cached snapshot, which is
     (re)sampled from ``os.environ`` at the R35a sampling points (import,
     install/uninstall, refresh_env) — never on the per-call hot path.  The
-    residency manager reads this snapshot **once, when it is first created**, and
+    residency manager reads this snapshot **once, when it is first created**,
+    and
     pins the toolchain for its lifetime (see :func:`get_manager`).  Defaults
-    reproduce the mock behavior, so with no knob set this returns a byte-identical
+    reproduce the mock behavior, so with no knob set this returns a
+    byte-identical
     ``ToolchainConfig()`` (kind ``"mock"``) and Phase-0/1 behavior is unchanged
     (R70a)."""
     from .. import _route
     kind, vivado_dir = _route.toolchain_selection()
     if kind == "vivado":
-        # R88 (v2.2.4): carry the sampled PR-substrate paths through to the worker
-        # (PYRO_PR_STATIC_DCP/PYRO_PR_REFERENCE_DCP, R68) so a pr_bitstream job can
-        # find them.  pr_bitstream itself stays construction-pinned (default False,
-        # R70b/R88): there is no env knob to request it — a caller/test constructs
-        # the manager with a pr_bitstream config.  When both DCPs are unset (this
-        # host) they pass through as None and any pr_bitstream request fails loud.
+        # R88 (v2.2.4): carry the sampled PR-substrate paths through to the
+        # worker
+        # (PYRO_PR_STATIC_DCP/PYRO_PR_REFERENCE_DCP, R68) so a pr_bitstream
+        # job can
+        # find them.  pr_bitstream itself stays construction-pinned (default
+        # False,
+        # R70b/R88): there is no env knob to request it — a caller/test
+        # constructs
+        # the manager with a pr_bitstream config.  When both DCPs are unset
+        # (this
+        # host) they pass through as None and any pr_bitstream request fails
+        # loud.
         static_dcp, reference_dcp = _route.pr_substrate_dcps()
-        return ToolchainConfig(kind="vivado", vivado_dir=vivado_dir,
-                               static_dcp=static_dcp, reference_dcp=reference_dcp,
-                               pr_evidence_manifest=_route.pr_evidence_manifest())
+        return ToolchainConfig(
+    kind="vivado",
+    vivado_dir=vivado_dir,
+    static_dcp=static_dcp,
+    reference_dcp=reference_dcp,
+     pr_evidence_manifest=_route.pr_evidence_manifest())
     return ToolchainConfig()
 
 
@@ -486,20 +547,28 @@ def _effective_timeout(config: ToolchainConfig) -> float:
     """The client-side service-reaper (R63e) timeout for a given toolchain.
 
     R77: the reaper is *bookkeeping only* and a **backstop** to the vivado
-    adapter's own authoritative process-tree kill.  A backstop that fires *before*
-    the authoritative timeout would spuriously mark every minutes-long real Vivado
+    adapter's own authoritative process-tree kill.  A backstop that fires
+    *before*
+    the authoritative timeout would spuriously mark every minutes-long real
+    Vivado
     job as failed, so for the vivado kind the reaper window must sit strictly
-    beyond the adapter's own deadline.  That deadline is **mode-dependent** (R84):
+    beyond the adapter's own deadline.  That deadline is **mode-dependent**
+    (R84):
     a ``pr_bitstream`` job kills at ``pr_job_timeout_s`` (3600 s) — much larger
-    than an OOC job's ``job_timeout_s`` (1800 s) — so the backstop tracks whichever
-    the pinned config selects.  For the mock kind the Phase-0/1 default (30 s) is
+    than an OOC job's ``job_timeout_s`` (1800 s) — so the backstop tracks
+    whichever
+    the pinned config selects.  For the mock kind the Phase-0/1 default (30 s)
+    is
     preserved byte-for-byte."""
     if getattr(config, "kind", "mock") == "vivado":
-        # adapter kills at the mode-correct deadline; give the backstop a generous
+        # adapter kills at the mode-correct deadline; give the backstop a
+        # generous
         # margin for Vivado startup + report writing + result plumbing.
         if getattr(config, "pr_bitstream", False):
-            return float(config.pr_job_timeout_s) + 300.0   # R84 PR job (3600 s)
-        return float(config.job_timeout_s) + 300.0          # R77 OOC job (1800 s)
+            return float(config.pr_job_timeout_s) + \
+                         300.0   # R84 PR job (3600 s)
+        return float(config.job_timeout_s) + \
+                     300.0          # R77 OOC job (1800 s)
     return 30.0
 
 
@@ -507,10 +576,12 @@ def get_manager() -> ResidencyManager:
     """The process-wide residency manager (lazily created).
 
     Its persistent cache defaults to the user cache area (``default_root``); a
-    test may point it at a temp directory via ``PYRO_CACHE_DIR`` + ``reset_manager``.
+    test may point it at a temp directory via ``PYRO_CACHE_DIR`` +
+    ``reset_manager``.
     Its launch threshold honors the sampled ``PYRO_N_SYNTH`` override (R68).
 
-    Toolchain selection (R70).  The ``PYRO_TOOLCHAIN`` / ``PYRO_VIVADO`` knobs are
+    Toolchain selection (R70).  The ``PYRO_TOOLCHAIN`` / ``PYRO_VIVADO`` knobs
+    are
     re-sampled into :mod:`pyro._route`'s cached snapshot at every R35a sampling
     point (import, install/uninstall, refresh_env).  This manager reads that
     snapshot **once, at first creation**, and pins the resulting
@@ -520,7 +591,8 @@ def get_manager() -> ResidencyManager:
     (e.g. after :func:`reset_manager`), NOT for an already-running one; this is
     intentional — live-swapping the toolchain of a manager with an in-flight
     real-Vivado job would orphan that job's subprocess tree (its R77 self-kill
-    cannot run once the worker is torn down).  Unlike the scalar ``PYRO_N_SYNTH``
+    cannot run once the worker is torn down).  Unlike the scalar
+    ``PYRO_N_SYNTH``
     (consulted per dispatch and pushed live by :func:`apply_n_synth`), the
     toolchain governs a spawned subprocess and so is pinned at construction.
     """
@@ -533,7 +605,8 @@ def get_manager() -> ResidencyManager:
             # R70a: the sampled toolchain selection crosses into the worker via
             # the ToolchainConfig built here (mock by default; vivado when the
             # operator opted in at the last R35a sampling point).  The service
-            # reaper timeout tracks the toolchain (R77 backstop vs. mock default).
+            # reaper timeout tracks the toolchain (R77 backstop vs. mock
+            # default).
             _cfg = _effective_toolchain_config()
             _GLOBAL = ResidencyManager(
                 toolchain_config=_cfg,
@@ -556,7 +629,8 @@ def reset_manager() -> None:
 @atexit.register
 def _atexit_shutdown() -> None:
     """Shut down whatever global manager exists at interpreter exit (no zombie
-    worker), registered exactly once regardless of how many managers were built."""
+    worker), registered exactly once regardless of how many managers were
+    built."""
     with _GLOBAL_LOCK:
         if _GLOBAL is not None:
             try:

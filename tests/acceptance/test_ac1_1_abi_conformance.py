@@ -6,7 +6,8 @@ DESCRIPTOR (serialized automaton + locator), not raw regex (R40/R40a); that
 descriptor's byte format is an internal L2↔L3 contract not defined in the public
 §7.3.  Consequently the resident-circuit happy path (synth→load→resident scan),
 the `PYRO_E_NOT_RESIDENT` scan guard on a real circuit, and the R49 alignment
-check via the debug seam are not constructible from public information here; they
+check via the debug seam are not constructible from public information here;
+they
 are exercised through the Python surface (AC-1-3/1-4/1-7) and recorded as a
 public-surface limitation.  This module covers everything reachable in pure
 ctypes: version, lifecycle open/close, caps, and the R44 defined-state-on-error
@@ -26,7 +27,9 @@ try:
 except OSError as e:
     _load_error = str(e)
 
-pytestmark = pytest.mark.skipif(lib is None, reason=f"libpyro_rt.so unavailable: {_load_error}")
+pytestmark = pytest.mark.skipif(
+    lib is None,
+     reason=f"libpyro_rt.so unavailable: {_load_error}")
 
 
 def _open(uri=b"model://"):
@@ -79,13 +82,15 @@ def test_caps_get_minimums():
 
 
 def test_generate_rejects_non_descriptor_defined_state():
-    """R44/R40a: on a non-OK `pyro_generate` (here: raw non-descriptor bytes) the
+    """R44/R40a: on a non-OK `pyro_generate` (here: raw non-descriptor bytes)
+    the
     out handle MUST be left NULL.  The device-free model does not classify
     (R40a); it returns a defined error, never UB."""
     rc, ctx = _open()
     assert rc == abi.PYRO_OK
     try:
-        circ = ctypes.c_void_p(0xDEADBEEF)  # poison; must be overwritten to NULL
+        # poison; must be overwritten to NULL
+        circ = ctypes.c_void_p(0xDEADBEEF)
         rc_gen = lib.pyro_generate(ctx, b"\x00\x01rawnotadescriptor", 18, 0,
                                    abi.PYRO_ENC_UTF8, ctypes.byref(circ))
         assert rc_gen != abi.PYRO_OK
@@ -102,7 +107,8 @@ def test_scan_null_circuit_defined_state():
     try:
         out = (abi.PyroMatch * 8)()
         n = ctypes.c_size_t(999)
-        rc_scan = lib.pyro_scan(ctx, None, b"abc", 3, 0, out, 8, ctypes.byref(n))
+        rc_scan = lib.pyro_scan(
+    ctx, None, b"abc", 3, 0, out, 8, ctypes.byref(n))
         assert rc_scan != abi.PYRO_OK
         assert n.value == 0, "R44: *out_count must be 0 on scan error"
     finally:
@@ -116,7 +122,8 @@ def test_status_and_load_null_circuit_defined():
     assert rc == abi.PYRO_OK
     try:
         st = ctypes.c_int(-1)
-        assert lib.pyro_circuit_status(ctx, None, ctypes.byref(st)) != abi.PYRO_OK
+        assert lib.pyro_circuit_status(
+    ctx, None, ctypes.byref(st)) != abi.PYRO_OK
         assert lib.pyro_circuit_load(ctx, None) != abi.PYRO_OK
         assert lib.pyro_synth_request(ctx, None) != abi.PYRO_OK
         lib.pyro_circuit_free(None)  # must not crash

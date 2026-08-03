@@ -66,7 +66,12 @@ class ModelProgram:
 
     __slots__ = ("_re", "enc", "flags", "states", "resident")
 
-    def __init__(self, compiled: "re.Pattern", enc: int, flags: int, states: int):
+    def __init__(
+    self,
+    compiled: "re.Pattern",
+    enc: int,
+    flags: int,
+     states: int):
         self._re = compiled
         self.enc = enc
         self.flags = flags
@@ -75,7 +80,8 @@ class ModelProgram:
 
 
 def utf8_prefix(s: str) -> List[int]:
-    """UTF-8 prefix table: index i -> byte offset of ``s[:i]`` (len == len(s)+1).
+    """UTF-8 prefix table: index i -> byte offset of ``s[:i]`` (len ==
+    len(s)+1).
 
     Strictly increasing (every code point is >= 1 byte), so it doubles as both
     the code-point->byte map (index it directly) and the byte->code-point map
@@ -106,21 +112,32 @@ class ModelContext:
         # Public-seam (R67) injection state, driven by pyro.testing behind the
         # PYRO_ENABLE_TEST_HOOKS gate.  All inert (0 / empty) until injected, so
         # the model path pays only a trivial int/dict check.
-        self._inject_device = 0           # next N scans raise DeviceError (R52)
+        # next N scans raise DeviceError (R52)
+        self._inject_device = 0
         self._inject_kind = "device"      # "device" | "timeout" (R67)
-        self._inject_fp = {}              # pattern -> remaining spurious windows
+        # pattern -> remaining spurious windows
+        self._inject_fp = {}
         self._lock = threading.Lock()
 
     # -- R67 public fault-injection seams (via pyro.testing) ----------------
-    def inject_device_error(self, kind: str = "device", count: int = 1) -> None:
-        """Arm the next ``count`` model dispatches to raise a device error (R52)."""
+    def inject_device_error(
+    self,
+    kind: str = "device",
+     count: int = 1) -> None:
+        """Arm the next ``count`` model dispatches to raise a device error
+        (R52)."""
         with self._lock:
             self._inject_kind = "timeout" if kind == "timeout" else "device"
             self._inject_device = max(0, int(count))
 
-    def inject_false_positive(self, pattern, flags: int = 0, count: int = 1) -> None:
+    def inject_false_positive(
+    self,
+    pattern,
+    flags: int = 0,
+     count: int = 1) -> None:
         """Arm the model to emit ``count`` spurious candidate windows for
-        ``pattern`` (re-verified away by the host, R19); results stay identical."""
+        ``pattern`` (re-verified away by the host, R19); results stay
+        identical."""
         with self._lock:
             self._inject_fp[pattern] = max(0, int(count))
 
@@ -182,8 +199,10 @@ class ModelContext:
             if self.fail_next_scan:
                 self.fail_next_scan = False
                 raise DeviceError("injected device error")
-            # R67 device/timeout injection: raise for the next N dispatches so the
-            # router takes the R52 fallback-retry path (fallback_after_error++).
+            # R67 device/timeout injection: raise for the next N dispatches so
+            # the
+            # router takes the R52 fallback-retry path
+            # (fallback_after_error++).
             if self._inject_device > 0:
                 self._inject_device -= 1
                 raise DeviceError(f"injected {self._inject_kind} error (R67)")
@@ -209,7 +228,8 @@ class ModelContext:
 
             # R67 false-positive injection: prepend a spurious, unverifiable
             # candidate window for this pattern.  Its end lies one byte past the
-            # buffer, so the host's R19 re-verification (an anchored stock match)
+            # buffer, so the host's R19 re-verification (an anchored stock
+            # match)
             # can never confirm it -> the window is dropped (whole-op fallback),
             # never leaking into results (byte-identical to CPython, R16/R19).
             fp_left = self._inject_fp.get(prog._re.pattern, 0)

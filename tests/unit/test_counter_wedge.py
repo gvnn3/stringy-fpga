@@ -30,7 +30,10 @@ import subprocess
 import sys
 import textwrap
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 
 
 def test_launch_policy_survives_post_install_explain_trigger(tmp_path):
@@ -49,14 +52,16 @@ def test_launch_policy_survives_post_install_explain_trigger(tmp_path):
         # The trigger is only armed while the stdlib detonators are NOT yet
         # imported (bare `import pyro` must keep it that way): if this fires,
         # the test has gone vacuous and must be re-plumbed, not skipped.
-        assert "dataclasses" not in sys.modules, "trigger disarmed: dataclasses pre-imported"
+        assert "dataclasses" not in sys.modules, (
+            "trigger disarmed: dataclasses pre-imported")
 
         pyro.install()
         try:
             # THE trigger ordering: first import of pyro.synth is initiated by
             # explain(), post-install, before the first eligible dispatch.
             assert pre.explain("abc[0-9]+x")["eligible"] is True
-            subj = "y" * (64 * 1024) + "abc123x"   # >= S_MIN: model path each call
+            # >= S_MIN so the model path runs on every call
+            subj = "y" * (64 * 1024) + "abc123x"
             for _ in range(12):
                 assert re.search("abc[0-9]+x", subj).group(0) == "abc123x"
 
@@ -77,12 +82,13 @@ def test_launch_policy_survives_post_install_explain_trigger(tmp_path):
             pyro.uninstall()
         """
     ) % str(tmp_path / "cache")
-    out = subprocess.run(
-        [sys.executable, "-c", prog], capture_output=True, text=True, cwd=_ROOT,
-    )
+    out = subprocess.run( [sys.executable, "-c", prog],
+                         capture_output=True, text=True, cwd=_ROOT, )
     assert out.returncode == 0, f"trigger subprocess failed:\n{out.stderr}"
     got = dict(line.split(" ", 1) for line in out.stdout.splitlines() if line)
     # Unfixed: SYNTH_LAUNCHED 0 / CIRCUIT_STATUS cold / CORPSE True.
-    assert got["CORPSE"] == "False", "dead partial residency module pinned in _route"
-    assert got["SYNTH_LAUNCHED"] == "1", "R4a launch policy never ticked (wedged)"
+    assert got["CORPSE"] == "False", (
+        "dead partial residency module pinned in _route")
+    assert got["SYNTH_LAUNCHED"] == "1", (
+        "R4a launch policy never ticked (wedged)")
     assert got["CIRCUIT_STATUS"] in ("warm", "resident"), got["CIRCUIT_STATUS"]

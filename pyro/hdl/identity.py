@@ -38,7 +38,8 @@ _PUBLIC_FLAG_MASK = 0xFFFF
 # A *global* inline-flag group at the very start of a pattern, e.g. ``(?i)``,
 # ``(?ims)`` — flags only (no ``:`` scoped body, no ``-`` clearing form).  These
 # are pure syntax for the effective flag set and MUST be canonicalized away so
-# that ``(?i)abc`` and ``abc`` + ``re.I`` hash identically (R47a v2.0.1).  Scoped
+# that ``(?i)abc`` and ``abc`` + ``re.I`` hash identically (R47a v2.0.1).
+# Scoped
 # groups ``(?i:...)`` and clearing groups ``(?-i:...)`` are semantic and stay.
 _GLOBAL_FLAGS_STR = _stock_compile(r"^(?:\(\?[aiLmsux]+\))+")
 _GLOBAL_FLAGS_BYTES = _stock_compile(rb"^(?:\(\?[aiLmsux]+\))+")
@@ -56,7 +57,8 @@ def canonical_pattern_bytes(pattern) -> Tuple[bytes, int]:
     """Return ``(pattern_bytes, enc_tag)`` for hashing / keying (R47a).
 
     ``pattern_bytes`` is the pattern source **after** leading global inline-flag
-    extraction (those flags are folded into the effective flags instead), and the
+    extraction (those flags are folded into the effective flags instead), and
+    the
     ``str`` pattern's UTF-8 encoding.  ``enc_tag`` is the R38 encoding
     discriminator (0=ENC_BYTES, 1=ENC_UTF8).
     """
@@ -171,7 +173,13 @@ def descriptor_key(pattern, flags: int, generator_version: int) -> tuple:
     synthesis).  The bitstream cache appends toolchain/shell versions (R47b).
     """
     pb, enc_tag = canonical_pattern_bytes(pattern)
-    return (pb, enc_tag, effective_flags(pattern, flags), int(generator_version))
+    return (
+    pb,
+    enc_tag,
+    effective_flags(
+        pattern,
+        flags),
+         int(generator_version))
 
 
 def circ_id_words(digest16: bytes) -> Tuple[int, int, int, int]:
@@ -183,4 +191,5 @@ def circ_id_words(digest16: bytes) -> Tuple[int, int, int, int]:
 
 def circ_flags_word(flags: int, num_patterns: int) -> int:
     """Pack ``CIRC_FLAGS`` (R45 0x0028): low16 flags, hi16 NUM_PAT."""
-    return (int(flags) & _PUBLIC_FLAG_MASK) | ((int(num_patterns) & 0xFFFF) << 16)
+    return (int(flags) & _PUBLIC_FLAG_MASK) | (
+        (int(num_patterns) & 0xFFFF) << 16)

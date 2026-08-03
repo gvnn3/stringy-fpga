@@ -42,7 +42,12 @@ def _equal_or_both_error(pattern, subject, flags, mode):
         with pytest.raises(stdre.error):
             pre.compile(pattern, flags)
         return
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"prop/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"prop/{mode}")
 
 
 @pytest.mark.parametrize("mode", ["default", "force_model"])
@@ -78,4 +83,5 @@ def test_bytes_subject_fuzz(mode):
     for _ in range(200):
         pattern = rng.choice(byte_pats)
         subject = bytes(rng.randint(0, 255) for _ in range(rng.randint(0, 20)))
-        oracle.assert_equivalent(pre, pattern, subject, 0, label=f"bytesfuzz/{mode}")
+        oracle.assert_equivalent(
+    pre, pattern, subject, 0, label=f"bytesfuzz/{mode}")

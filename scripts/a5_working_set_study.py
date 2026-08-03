@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""A5 working-set study: is prefilter coverage capacity-limited or latency-limited?
+"""A5 working-set study: is prefilter coverage capacity-limited or
+latency-limited?
 
 The A5 question (spec `snort-rule-offload` §9/OQ-1) is whether to open an
 amendment slot for a *loadable-table* engine — an overlay whose rule content
@@ -528,8 +529,11 @@ def main():
 
     groups, generic, specific = build_value_table()
     n = len(groups)
-    print("REAL inputs: %d groups, %d rules. Value = rules whose OWN header "
-          "predicate admits the flow's port." % (n, sum(g.rule_count for g in groups)))
+    print(
+    "REAL inputs: %d groups, %d rules. Value = rules whose OWN header "
+    "predicate admits the flow's port." %
+    (n, sum(
+        g.rule_count for g in groups)))
     v1, a1 = weighted(generic, specific, 1.0)
     print("  achievable rules by port (w=1): " +
           ", ".join("%d:%d" % (p, a1[p]) for p in PORTS[:6]) + ", ...")
@@ -546,9 +550,22 @@ def main():
                                      phase_s, args.flows, args.seed,
                                      args.span_s))
 
-    hdr = ("%-4s %-5s %-6s | %-8s %-8s | %-10s %-10s | %-8s %-8s %-8s %-8s | %-7s | %s"
-           % ("w", "skew", "phase", "pin_best", "pin_any", "s3_shipped",
-              "s3_value", "k1/1ms", "k2/1ms", "k4/1ms", "k8/1ms", "all", "regime"))
+    hdr = (
+    "%-4s %-5s %-6s | %-8s %-8s | %-10s %-10s"
+    " | %-8s %-8s %-8s %-8s | %-7s | %s" %
+    ("w",
+    "skew",
+    "phase",
+    "pin_best",
+    "pin_any",
+    "s3_shipped",
+    "s3_value",
+    "k1/1ms",
+    "k2/1ms",
+    "k4/1ms",
+    "k8/1ms",
+    "all",
+     "regime"))
     print("\n" + hdr)
     print("-" * len(hdr))
     for sc in rows:
@@ -563,13 +580,22 @@ def main():
             regime = "LATENCY"
         else:
             regime = "mixed"
-        print("%-4.0f %-5.1f %-6s | %7.1f%% %7.1f%% | %9.1f%% %9.1f%% | "
-              "%7.1f%% %7.1f%% %7.1f%% %7.1f%% | %6.1f%% | %s"
-              % (sc["w"], sc["skew"],
-                 ("stat" if sc["phase_s"] == 0 else "%ds" % int(sc["phase_s"])),
-                 c("pin_best"), c("pin_any"), c("s3_shipped"),
-                 c("s3_valueaware"), c("lru_k1_L1ms"), c("lru_k2_L1ms"),
-                 c("lru_k4_L1ms"), c("lru_k8_L1ms"), c("all"), regime))
+        print(
+    "%-4.0f %-5.1f %-6s | %7.1f%% %7.1f%% | %9.1f%% %9.1f%% | "
+    "%7.1f%% %7.1f%% %7.1f%% %7.1f%% | %6.1f%% | %s" % (sc["w"],
+    sc["skew"],
+    ("stat" if sc["phase_s"] == 0 else "%ds" % int(
+        sc["phase_s"])),
+        c("pin_best"),
+        c("pin_any"),
+        c("s3_shipped"),
+        c("s3_valueaware"),
+        c("lru_k1_L1ms"),
+        c("lru_k2_L1ms"),
+        c("lru_k4_L1ms"),
+        c("lru_k8_L1ms"),
+        c("all"),
+         regime))
 
     print("\nlatency sensitivity at fixed k (does making swaps FAST help?):")
     print("%-4s %-5s %-6s | %-9s %-9s %-9s | %-9s %-9s %-9s"
@@ -580,7 +606,8 @@ def main():
         r = sc["results"]
         def c(key):
             return 100 * r[key]["coverage"]
-        print("%-4.0f %-5.1f %-6s | %8.1f%% %8.1f%% %8.1f%% | %8.1f%% %8.1f%% %8.1f%%"
+        print("%-4.0f %-5.1f %-6s | %8.1f%% %8.1f%% %8.1f%% | %8.1f%% %8.1f%% "
+              "%8.1f%%"
               % (sc["w"], sc["skew"],
                  ("stat" if sc["phase_s"] == 0 else "%ds" % int(sc["phase_s"])),
                  c("lru_k1_L16s"), c("lru_k1_L1s"), c("lru_k1_L1ms"),
@@ -589,22 +616,29 @@ def main():
     print("\ns3 scheduler activity (k=1, L=16s): swaps over the trace")
     for sc in rows:
         r = sc["results"]
-        print("  w=%-3.0f skew=%-4.1f %-6s  shipped: %3d swaps (%4.0fs blind) | "
-              "value-aware: %3d swaps"
-              % (sc["w"], sc["skew"],
-                 ("stat" if sc["phase_s"] == 0 else "%ds" % int(sc["phase_s"])),
-                 r["s3_shipped"]["fills"], r["s3_shipped"]["fill_seconds"],
-                 r["s3_valueaware"]["fills"]))
+        print(
+    "  w=%-3.0f skew=%-4.1f %-6s  shipped: %3d swaps (%4.0fs blind) | "
+    "value-aware: %3d swaps" % (sc["w"],
+    sc["skew"],
+    ("stat" if sc["phase_s"] == 0 else "%ds" % int(
+        sc["phase_s"])),
+        r["s3_shipped"]["fills"],
+        r["s3_shipped"]["fill_seconds"],
+         r["s3_valueaware"]["fills"]))
 
     print("\nfill activity (k=4): fills / seconds spent filling")
     for sc in rows[:6]:
         r = sc["results"]
-        print("  w=%-3.0f skew=%-4.1f %-6s  L=16s: %4d fills %6.0fs busy | "
-              "L=1ms: %4d fills %5.2fs busy"
-              % (sc["w"], sc["skew"],
-                 ("stat" if sc["phase_s"] == 0 else "%ds" % int(sc["phase_s"])),
-                 r["lru_k4_L16s"]["fills"], r["lru_k4_L16s"]["fill_seconds"],
-                 r["lru_k4_L1ms"]["fills"], r["lru_k4_L1ms"]["fill_seconds"]))
+        print(
+    "  w=%-3.0f skew=%-4.1f %-6s  L=16s: %4d fills %6.0fs busy | "
+    "L=1ms: %4d fills %5.2fs busy" % (sc["w"],
+    sc["skew"],
+    ("stat" if sc["phase_s"] == 0 else "%ds" % int(
+        sc["phase_s"])),
+        r["lru_k4_L16s"]["fills"],
+        r["lru_k4_L16s"]["fill_seconds"],
+        r["lru_k4_L1ms"]["fills"],
+         r["lru_k4_L1ms"]["fill_seconds"]))
 
     if args.json_out:
         with open(args.json_out, "w") as fh:

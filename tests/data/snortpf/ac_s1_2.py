@@ -7,7 +7,8 @@ S3 is the same, minus reassembly), sends it as a MATCH_REQUEST, and maps
 pattern_id -> gid:sid via the build's sidecar. Positive corpus MUST nominate
 sid 1927; negative MUST nominate nothing.
 
-Usage: PYRO_DEVICE_IFACE=ens2 python3 ac_s1_2.py <sidecar.json> <pos.pcap> <neg.pcap>
+Usage: PYRO_DEVICE_IFACE=ens2 python3 ac_s1_2.py <sidecar.json> <pos.pcap>
+<neg.pcap>
 """
 import json
 import struct
@@ -59,7 +60,8 @@ def match_once(cfg, corpus):
     eth = (bytes(cfg.dst_mac) + bytes(cfg.src_mac)
            + struct.pack(">H", pdev.ETHERTYPE))
     seq = 23
-    body = struct.pack(">QHH", 0, OUT_CAP, 0) + corpus  # start_off, out_cap, rsvd
+    body = struct.pack(">QHH", 0, OUT_CAP, 0) + \
+                       corpus  # start_off, out_cap, rsvd
     tr.send(eth + pdev.encode_frame(pdev.KIND_MATCH_REQUEST, 1, seq, body))
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:

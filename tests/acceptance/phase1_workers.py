@@ -25,7 +25,10 @@ import time
 # Ensure the repo root (which holds the `pyro` package) is importable when this
 # file is run directly as a subprocess or re-imported by a spawn/forkserver
 # worker of the synthesis service (R63).
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -126,9 +129,11 @@ def cmd_prewarm_types():
     try:
         assert pyro.prewarm("abc") is None
         assert pyro.prewarm(["abc", "def", r"\d+"]) is None      # iterable
-        assert pyro.prewarm(r"(a)\1") is None                    # fallback-only, ignored
+        # fallback-only, ignored
+        assert pyro.prewarm(r"(a)\1") is None
         assert pyro.prewarm(["abc", r"(?=x)"]) is None           # mixed
-        assert pyro.prewarm("\ud800") is None                    # non-encodable, ignored
+        # non-encodable, ignored
+        assert pyro.prewarm("\ud800") is None
     except BaseException as e:  # noqa
         errors.append(repr(e))
     return {"no_raise": not errors, "errors": errors}
@@ -139,7 +144,8 @@ def cmd_persist_write(pattern):
     import pyro.re as pre
     pyro.prewarm(pattern)
     reached, last = _poll_until(
-        pre, pattern, lambda e, s: s["synth_succeeded"] > 0 or s["synth_failed"] > 0)
+        pre, pattern,
+        lambda e, s: s["synth_succeeded"] > 0 or s["synth_failed"] > 0)
     s = pre.stats()
     return {"reached": reached, "last": last,
             "synth_succeeded": s["synth_succeeded"],
@@ -149,7 +155,8 @@ def cmd_persist_write(pattern):
 
 
 def cmd_persist_read(pattern):
-    # Fresh process, same PYRO_CACHE_DIR: the artifact must be found WARM/RESIDENT
+    # Fresh process, same PYRO_CACHE_DIR: the artifact must be found
+    # WARM/RESIDENT
     # without a new synthesis launch (R4 invariant / R63d cache persistence).
     import pyro.re as pre
     s0 = pre.stats()
@@ -191,7 +198,8 @@ def cmd_tier_equiv(pattern, subject):
         }
 
     disabled = under(True, False)     # cold-fallback path (genuine re)
-    # Drive the pattern hot / resident via prewarm, then dispatch via model tier.
+    # Drive the pattern hot / resident via prewarm, then dispatch via model
+    # tier.
     os.environ.pop("PYRO_DISABLE", None)
     os.environ["PYRO_FORCE_MODEL"] = "1"
     pyro.refresh_env()
@@ -199,15 +207,18 @@ def cmd_tier_equiv(pattern, subject):
     _poll_until(pre, pattern,
                 lambda e, s: e["circuit_status"] in ("warm", "resident")
                 or s["synth_succeeded"] > 0 or s["synth_failed"] > 0)
-    resident = under(False, True)     # model / resident-circuit stand-in (R7/R51b)
+    # model / resident-circuit stand-in (R7/R51b)
+    resident = under(False, True)
     model = under(False, True)
     return {"disabled": disabled, "model": model, "resident": resident,
             "circuit_status": pre.explain(pattern)["circuit_status"]}
 
 
 def cmd_synth_failure(pattern):
-    """R67/R65: inject a synthesis failure for `pattern`, prewarm it, and confirm
-    the permanent-fallback transition (synth_failed counted, no exception, result
+    """R67/R65: inject a synthesis failure for `pattern`, prewarm it, and
+    confirm
+    the permanent-fallback transition (synth_failed counted, no exception,
+    result
     still byte-identical to stock re)."""
     import re as stdre
     import pyro
@@ -219,12 +230,17 @@ def cmd_synth_failure(pattern):
         pyro.prewarm(pattern)
         reached, last = _poll_until(
             pre, pattern,
-            lambda e, s: s["synth_failed"] > 0 or e["circuit_status"] == "fallback_only")
+            lambda e, s: (s["synth_failed"] > 0
+                          or e["circuit_status"] == "fallback_only"))
         subj = "z " + pattern + " z"
         m = pre.search(pattern, subj)
         exp = stdre.search(pattern, subj)
-        eq = (m.span() == exp.span()) if (m and exp) else (m is None and exp is None)
-        # prewarm/search a second time to prove no retry-storm and still no raise
+        eq = (
+    m.span() == exp.span()) if (
+        m and exp) else (
+            m is None and exp is None)
+        # prewarm/search a second time to prove no retry-storm and still no
+        # raise
         pyro.prewarm(pattern)
         pre.search(pattern, subj)
     except BaseException as e:  # noqa

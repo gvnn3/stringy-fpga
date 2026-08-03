@@ -42,7 +42,8 @@ _INSTALL_LOCK = threading.Lock()
 
 
 def install() -> None:
-    """Patch the already-imported stdlib ``re`` so calls route through PYRO (R34).
+    """Patch the already-imported stdlib ``re`` so calls route through PYRO
+    (R34).
 
     Idempotent and thread-safe.  ``PYRO_DISABLE=1`` still forces fallback (R35);
     fallback-only patterns are indistinguishable from stock ``re`` (R3/R29).
@@ -62,7 +63,8 @@ def install() -> None:
 
 
 def uninstall() -> None:
-    """Fully restore the stdlib ``re`` behavior patched by :func:`install` (R34)."""
+    """Fully restore the stdlib ``re`` behavior patched by :func:`install`
+    (R34)."""
     global _ORIGINALS
     _route.sample_env()  # sampling point R35a.2 (always, even if not installed)
     with _INSTALL_LOCK:
@@ -89,9 +91,11 @@ def is_installed() -> bool:
 def native_router() -> dict:
     """R3c evidence seam: is the §8 R51 routing decision served by native code?
 
-    Returns ``{'active': bool, 'reason': str, 'route_abi': int}``.  ``active`` is
+    Returns ``{'active': bool, 'reason': str, 'route_abi': int}``.  ``active``
+    is
     True iff ``pyro._fast.Pattern`` (the compiled routing extension) is the live
-    ``PyroPattern`` — i.e. a below-threshold call's R51 decision runs in compiled
+    ``PyroPattern`` — i.e. a below-threshold call's R51 decision runs in
+    compiled
     code reached by a direct C call, with no Python frame and no ctypes hop
     (R3c.1).  AC-3-3 asserts ``active is True`` before enforcing the R3b 1.15x
     bound and records SKIP-with-reason (never FAIL) when it is False.
@@ -123,12 +127,19 @@ def prewarm(patterns, flags=0) -> None:
     ignored.  Returns promptly (non-blocking) and MUST NOT raise for a
     fallback-only pattern or one whose synthesis later fails (R62/R65).
 
-    ``pyro.prewarm`` is PYRO-specific and is NOT patched onto the standard ``re``
+    ``pyro.prewarm`` is PYRO-specific and is NOT patched onto the standard
+    ``re``
     namespace by :func:`install` (R62/§7.2).
     """
     from .synth import residency as _res
 
-    if isinstance(patterns, (str, bytes, bytearray)) or hasattr(patterns, "pattern"):
+    if isinstance(
+    patterns,
+    (str,
+    bytes,
+    bytearray)) or hasattr(
+        patterns,
+         "pattern"):
         items = [patterns]
     else:
         try:

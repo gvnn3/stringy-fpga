@@ -38,9 +38,33 @@ def tcp_pkt(src_ip, dst_ip, sport, dport, seq, ack, flags, payload=b""):
 def session(client_payload: bytes):
     seq_c, seq_s = 1000, 5000
     pkts = [
-        tcp_pkt(CLI_IP, SRV_IP, CLI_PORT, SRV_PORT, seq_c, 0, 0x02),          # SYN
-        tcp_pkt(SRV_IP, CLI_IP, SRV_PORT, CLI_PORT, seq_s, seq_c + 1, 0x12),  # SYN+ACK
-        tcp_pkt(CLI_IP, SRV_IP, CLI_PORT, SRV_PORT, seq_c + 1, seq_s + 1, 0x10),  # ACK
+        tcp_pkt(
+    CLI_IP,
+    SRV_IP,
+    CLI_PORT,
+    SRV_PORT,
+    seq_c,
+    0,
+    0x02),
+              # SYN
+        tcp_pkt(
+    SRV_IP,
+    CLI_IP,
+    SRV_PORT,
+    CLI_PORT,
+    seq_s,
+    seq_c + 1,
+    0x12),
+      # SYN+ACK
+        tcp_pkt(
+    CLI_IP,
+    SRV_IP,
+    CLI_PORT,
+    SRV_PORT,
+    seq_c + 1,
+    seq_s + 1,
+    0x10),
+      # ACK
     ]
     banner = b"220 ftp ready\r\n"
     pkts.append(tcp_pkt(SRV_IP, CLI_IP, SRV_PORT, CLI_PORT, seq_s + 1,
@@ -62,6 +86,7 @@ def write_pcap(path, pkts):
             f.write(p)
 
 
-write_pcap(sys.argv[1], session(b"RETR AuthoRized_Keys\r\n"))   # mixed case: nocase must carry it
+# mixed case: nocase must carry it
+write_pcap(sys.argv[1], session(b"RETR AuthoRized_Keys\r\n"))
 write_pcap(sys.argv[2], session(b"RETR notes_from_today.txt\r\n"))
 print("wrote", sys.argv[1], sys.argv[2])

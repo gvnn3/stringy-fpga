@@ -11,7 +11,10 @@ import os
 import random
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 sys.path.insert(0, REPO)
 
 from pyro.overlay import model as M          # noqa: E402

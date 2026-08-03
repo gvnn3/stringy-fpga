@@ -1,4 +1,5 @@
-"""Unit tests for the group circuit model (pyro._circuit_model.GroupCircuitModel).
+"""Unit tests for the group circuit model
+(pyro._circuit_model.GroupCircuitModel).
 
 The SNORT-PF SR7 pattern-set circuit is N automata sharing one harness;
 :class:`GroupCircuitModel` is its single software twin.  These tests pin the

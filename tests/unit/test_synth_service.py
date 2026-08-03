@@ -1,6 +1,7 @@
 """Out-of-process synthesis service skeleton (R63/R63a-e).
 
-Hermetic: every service is created with a temp-dir cache and explicitly shut down
+Hermetic: every service is created with a temp-dir cache and explicitly shut
+down
 in a fixture teardown, leaving no spawned-process or temp-dir residue.
 """
 
@@ -12,7 +13,10 @@ import time
 
 import pytest
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 
 import pyro.hdl as hdl
 from pyro.hdl import identity
@@ -59,7 +63,8 @@ def test_job_runs_and_populates_cache(service_factory):
 
 
 def test_worker_runs_in_separate_process(service_factory):
-    # The worker reports a different PID than the caller (R63 separate process).
+    # The worker reports a different PID than the caller (R63 separate
+    # process).
     svc, cache = service_factory()
     # A pattern whose stub payload embeds nothing about pid; instead assert the
     # process object is a real, live child at submit time.
@@ -73,7 +78,8 @@ def test_dedup_in_flight_and_cached(service_factory):
     assert svc.submit(k, _job("dedup[0-9]+")) is True
     assert svc.submit(k, _job("dedup[0-9]+")) is False   # already in flight
     svc.drain(10.0)
-    assert svc.submit(k, _job("dedup[0-9]+")) is False   # already cached (warm)
+    # already cached (warm)
+    assert svc.submit(k, _job("dedup[0-9]+")) is False
 
 
 # --- R65: synthesis failure -> negative entry, no exception, correct signal -
@@ -99,9 +105,11 @@ def test_timeout_mode_marks_failed(service_factory):
 
 # --- R63e per-job timeout reap: hung job -> permanent fallback -------------
 def test_timeout_reap_marks_failed_and_fires_callback(service_factory):
-    # A genuinely hung worker never reports back; the client-side per-job timeout
+    # A genuinely hung worker never reports back; the client-side per-job
+    # timeout
     # reap MUST treat the key exactly like a worker-mediated failure: write a
-    # negative cache entry (R65) AND fire the done-callback with the failure, so a
+    # negative cache entry (R65) AND fire the done-callback with the failure,
+    # so a
     # residency manager's in-flight slot is unstuck and the key is not
     # re-synthesizable.  Injected directly (no real hang) for determinism.
     svc, cache = service_factory(timeout=0.01)
@@ -111,10 +119,12 @@ def test_timeout_reap_marks_failed_and_fires_callback(service_factory):
     # Simulate a job stuck in flight past its deadline.
     svc._inflight[key_digest(k)] = (k, time.monotonic() - 10.0)
     svc.poll()                                   # triggers _reap_timeouts
-    assert cache.is_failed(k) is True            # permanent-fallback entry (R65)
+    # permanent-fallback entry (R65)
+    assert cache.is_failed(k) is True
     assert svc.in_flight() == 0                   # slot unstuck
     assert len(seen) == 1 and seen[0][0] == STATUS_FAILED
-    # Re-submitting the reaped key is refused (dedup against the negative entry).
+    # Re-submitting the reaped key is refused (dedup against the negative
+    # entry).
     assert svc.submit(k, _job("hung[0-9]+")) is False
 
 
@@ -158,8 +168,10 @@ def test_shutdown_terminates_workers(tmp_path):
 
 # --- R63e strengthened: no residual worker survives interpreter shutdown ----
 def test_interpreter_shutdown_leaves_no_residual_worker(tmp_path):
-    # A fresh interpreter launches a synthesis (worker forked), then exits with no
-    # explicit shutdown — the atexit hook (R63e) MUST clean up so the test harness
+    # A fresh interpreter launches a synthesis (worker forked), then exits
+    # with no
+    # explicit shutdown — the atexit hook (R63e) MUST clean up so the test
+    # harness
     # can assert no residual service process survives.
     prog = textwrap.dedent(
         """
@@ -178,10 +190,10 @@ def test_interpreter_shutdown_leaves_no_residual_worker(tmp_path):
         # exit WITHOUT calling shutdown -> rely on the atexit hook (R63e)
         """
     ) % str(tmp_path)
-    out = subprocess.run(
-        [sys.executable, "-c", prog], capture_output=True, text=True, cwd=_ROOT,
-    )
-    assert out.returncode == 0, f"subprocess failed / atexit hung: {out.stderr}"
+    out = subprocess.run( [sys.executable, "-c", prog],
+                         capture_output=True, text=True, cwd=_ROOT, )
+    assert out.returncode == 0, f"subprocess failed / atexit hung: {
+    out.stderr}"
     line = next(l for l in out.stdout.splitlines() if l.startswith("PIDS"))
     pids = eval(line[len("PIDS "):])
     for pid in pids:

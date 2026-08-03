@@ -119,7 +119,8 @@ class AhoCorasick:
                 f = self.fail[r]
                 while f and b not in self.goto[f]:
                     f = self.fail[f]
-                self.fail[s] = self.goto[f].get(b, 0) if f or b in self.goto[0] else 0
+                self.fail[s] = self.goto[f].get(
+    b, 0) if f or b in self.goto[0] else 0
                 if self.fail[s] == s:
                     self.fail[s] = 0
                 # Pre-union: the match path must be fixed-latency.

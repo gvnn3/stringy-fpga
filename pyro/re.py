@@ -64,7 +64,8 @@ def compile(pattern, flags=0):
         classi = _classify.classify(pattern.pattern, pattern.flags)
         return PyroPattern(pattern, classi)
 
-    # R4: cache keyed by (pattern_bytes/str type, pattern, flags, engine_version)
+    # R4: cache keyed by (pattern_bytes/str type, pattern, flags,
+    # engine_version)
     # so a bumped engine version never serves a stale compiled program.
     key = (type(pattern), pattern, int(flags), _classify.ENGINE_VERSION)
     # Lock-free read: dict.get is atomic under the GIL, and a benign miss just
@@ -134,7 +135,8 @@ def purge():
 # excepts is NOT safe (the wedge's own ImportError/AttributeError are exactly
 # what must not escape), so swallowed failures are recorded observably in
 # :mod:`pyro._route` (the canonical diagnostic seam shared with the dispatch
-# path — see _route._RESIDENCY_CONSULT_FAILURES / _LAST_RESIDENCY_CONSULT_ERROR).
+# path — see _route._RESIDENCY_CONSULT_FAILURES /
+# _LAST_RESIDENCY_CONSULT_ERROR).
 # Diagnostics only: not part of the R31 explain() dict or the R52/R66 stats()
 # shape, never patched onto the stdlib ``re`` namespace.
 
@@ -152,7 +154,8 @@ def explain(pattern, flags=0) -> dict:
     from .hdl import estimate as _estimate  # local import: explain is not hot
     _stock_compile(pattern, flags)  # R30: reject what CPython rejects
     classi = _classify.classify(pattern, flags)
-    # The estimator is total (it never raises — a HDL lowering gap is reported as
+    # The estimator is total (it never raises — a HDL lowering gap is reported
+    # as
     # fallback-only with a reason, not an exception) and is the authority on
     # whether a circuit can actually be built/fit, so explain() reflects it.
     est = _estimate(pattern, flags)

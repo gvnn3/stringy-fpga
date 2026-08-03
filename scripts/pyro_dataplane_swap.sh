@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# pyro_dataplane_swap.sh — swap the single PF between the two host bindings (root).
+# pyro_dataplane_swap.sh — swap the single PF between the two host bindings
+# (root).
 #
-#   sudo scripts/pyro_dataplane_swap.sh data      onic -> qdma-pf char-devs (P2d)
-#   sudo scripts/pyro_dataplane_swap.sh control   qdma-pf -> onic netdev (R78 control)
+# sudo scripts/pyro_dataplane_swap.sh data      onic -> qdma-pf char-devs
+# (P2d)
+# sudo scripts/pyro_dataplane_swap.sh control   qdma-pf -> onic netdev (R78
+# control)
 #   sudo scripts/pyro_dataplane_swap.sh status    show which binding is active
 #
 # WHY A SWAP: the shell exposes ONE physical function (0000:02:00.0), and the
@@ -28,10 +31,13 @@ done
 
 BDF="${PYRO_BDF:-0000:02:00.0}"
 QDEV="qdma$(echo "$BDF" | sed 's/^0000://; s/[:.]//g')"        # qdma02000
-DMA_IP="${DMA_IP_DRIVERS:-/home/gnn/Repos/Yale/dma_ip_drivers/QDMA/linux-kernel}"
+DMA_IP="${DMA_IP_DRIVERS:-}"
+[ -n "$DMA_IP" ] || DMA_IP=/home/gnn/Repos/Yale/dma_ip_drivers/QDMA/linux-kernel
 QDMA_KO="${QDMA_KO:-$DMA_IP/bin/qdma-pf.ko}"
 DMACTL="${DMACTL:-$DMA_IP/bin/dma-ctl}"
-ONIC_KO="${ONIC_KO:-/home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko}"
+ONIC_KO="${ONIC_KO:-}"
+[ -n "$ONIC_KO" ] || \
+  ONIC_KO=/home/gnn/Repos/Yale/NetFPGA-PLUS/sw/driver/open-nic-driver/onic.ko
 IFACE="${PYRO_DEVICE_IFACE:-ens2}"
 MTU="${PYRO_DEVICE_MTU:-9586}"
 QIDX="${PYRO_QDMA_QIDX:-0}"
@@ -42,7 +48,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 status() {
-  drv="$(basename "$(readlink -f /sys/bus/pci/devices/$BDF/driver 2>/dev/null)" 2>/dev/null || echo none)"
+  drv="$(basename "$(readlink -f /sys/bus/pci/devices/$BDF/driver \
+    2>/dev/null)" 2>/dev/null || echo none)"
   echo "binding: $drv"
   ls /dev/${QDEV}* 2>/dev/null || true
   ip -br link show "$IFACE" 2>/dev/null || true
@@ -53,12 +60,17 @@ status) status ;;
 
 data)
   echo "=== onic -> qdma-pf ==="
-  rmmod onic 2>/dev/null && echo "    onic removed" || echo "    (onic not loaded)"
+  rmmod onic 2>/dev/null && echo "    onic removed" \
+    || echo "    (onic not loaded)"
   # Idempotent re-entry: tear down any prior qdma-pf state so a rebuilt .ko
   # and fresh queue config always take effect.
   if lsmod | grep '^qdma_pf' >/dev/null; then
-    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true; done
-    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true; done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do
+      "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true
+    done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do
+      "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true
+    done
     rmmod qdma_pf
     echo "    stale qdma-pf removed"
   fi
@@ -69,7 +81,8 @@ data)
   echo "    qdma-pf inserted (mode=${PYRO_QDMA_MODE:-02:0:2})"
   sleep 1
   QMAX_SYS="/sys/bus/pci/devices/$BDF/qdma/qmax"
-  [ -f "$QMAX_SYS" ] || { echo "ERROR: $QMAX_SYS missing — driver did not bind"; exit 2; }
+  [ -f "$QMAX_SYS" ] || \
+    { echo "ERROR: $QMAX_SYS missing — driver did not bind"; exit 2; }
   echo 32 > "$QMAX_SYS"
   # ST queue pairs on indexes QIDX..QIDX+QCOUNT-1 (default 4: parallel TX
   # queues for the 5 GiB/s target — the per-write syscall cost serializes a
@@ -82,7 +95,8 @@ data)
   for q in $(seq "$QIDX" $((QIDX + QCOUNT - 1))); do
     "$DMACTL" "$QDEV" q add idx "$q" mode st dir bi >/dev/null
     "$DMACTL" "$QDEV" q start idx "$q" dir h2c >/dev/null
-    "$DMACTL" "$QDEV" q start idx "$q" dir c2h cmptsz 0 trigmode every >/dev/null
+    "$DMACTL" "$QDEV" q start idx "$q" dir c2h cmptsz 0 trigmode every \
+      >/dev/null
   done
   echo "    ST queues $QIDX..$((QIDX + QCOUNT - 1)) started (bi)"
   # SHELL-side function qid map (NOT a QDMA-IP register): the open-nic
@@ -101,7 +115,8 @@ with open(path, "r+b") as f:
     m = mmap.mmap(f.fileno(), 0x2000)
     m[QCONF:QCONF+4] = struct.pack("<I", (qbase << 16) | num_q)
     rb = struct.unpack("<I", m[QCONF:QCONF+4])[0]
-    print(f"    shell QCONF(0) = {rb:#010x} (qbase={rb>>16}, num_q={rb & 0xFFFF})")
+    print(f"    shell QCONF(0) = {rb:#010x}"
+          f" (qbase={rb >> 16}, num_q={rb & 0xFFFF})")
 PYEOF
   ls -la /dev/${QDEV}-ST-${QIDX} 2>/dev/null || {
     echo "ERROR: char-dev /dev/${QDEV}-ST-${QIDX} did not appear"; exit 3; }
@@ -119,8 +134,12 @@ PYEOF
 control)
   echo "=== qdma-pf -> onic ==="
   if lsmod | grep '^qdma_pf' >/dev/null; then
-    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true; done
-    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true; done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do
+      "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true
+    done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do
+      "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true
+    done
     rmmod qdma_pf
     echo "    qdma-pf removed"
   else
@@ -158,7 +177,8 @@ with open(path, "r+b") as f:
     m = mmap.mmap(f.fileno(), 4096)
     ts = rd(m, REGS["build_ts"])
     if ts in (0x0, 0xFFFFFFFF):
-        sys.exit(f"    ABORT: build timestamp {ts:#010x} — BAR dead, not poking")
+        sys.exit(f"    ABORT: build timestamp {ts:#010x}"
+                 " — BAR dead, not poking")
     print(f"    build_timestamp={ts:#010x}")
     pulse(m, REGS["user_rst"], REGS["user_status"], "user[0]  (pyro box+RP)")
     pulse(m, REGS["shell_rst"], REGS["shell_status"], "shell[0] (QDMA soft)")
@@ -208,12 +228,16 @@ iommu)
   # (strict invalidation, keeps translation) | identity (pt-equivalent,
   # NO write protection — stray device writes hit RAM; controlled
   # experiments only).  Both drivers must be (and are) unbound first.
-  want="${PYRO_IOMMU_TYPE:?iommu mode needs PYRO_IOMMU_TYPE=DMA|DMA-FQ|identity}"
+  want="${PYRO_IOMMU_TYPE:?need PYRO_IOMMU_TYPE=DMA|DMA-FQ|identity}"
   grp="$(basename "$(readlink /sys/bus/pci/devices/$BDF/iommu_group)")"
   rmmod onic 2>/dev/null || true
   if lsmod | grep '^qdma_pf' >/dev/null; then
-    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true; done
-    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true; done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do
+      "$DMACTL" "$QDEV" q stop idx "$q" dir bi >/dev/null 2>&1 || true
+    done
+    for q in $(seq "$QIDX" $((QIDX + ${PYRO_QDMA_QCOUNT:-4} - 1))); do
+      "$DMACTL" "$QDEV" q del idx "$q" dir bi >/dev/null 2>&1 || true
+    done
     rmmod qdma_pf
   fi
   echo "$want" > "/sys/kernel/iommu_groups/$grp/type"

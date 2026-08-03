@@ -17,8 +17,10 @@ import pyro
 # fallback); NO unit test exercises the vivado toolchain. A combined
 # `pytest tests/acceptance tests/unit` run can leak PYRO_TOOLCHAIN=vivado /
 # PYRO_VIVADO into os.environ from the real-Vivado acceptance path (the session
-# vivado_corpus pins it and the acceptance _ENV_KEYS hygiene is directory-scoped),
-# which would make a mock-expecting prewarm test build a VIVADO residency manager and
+# vivado_corpus pins it and the acceptance _ENV_KEYS hygiene is directory-
+# scoped),
+# which would make a mock-expecting prewarm test build a VIVADO residency
+# manager and
 # launch a real (minutes-long) synth, timing out drain() so the tier stays
 # 'synthesizing'. Force the mock baseline hermetically for every unit test.
 _TOOLCHAIN_KEYS = ("PYRO_TOOLCHAIN", "PYRO_VIVADO")

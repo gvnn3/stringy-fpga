@@ -67,7 +67,11 @@ def test_groups_match_cpython(pat, subj):
 
 # --- R23: greedy vs lazy group boundaries (proves R17/R18) ----------------
 
-@pytest.mark.parametrize("pat", [r"(a+)(a+)", r"(a+?)(a+)", r"<(.*)>", r"<(.*?)>"])
+@pytest.mark.parametrize("pat",
+    [r"(a+)(a+)",
+    r"(a+?)(a+)",
+    r"<(.*)>",
+     r"<(.*?)>"])
 def test_greedy_lazy_boundaries(pat):
     subj = "<aaaa>bbbb>"
     m = pre.search(pat, subj)
@@ -153,7 +157,8 @@ def test_unverified_window_reverified():
 @pytest.mark.parametrize("pat,subj", [
     (r"(?P<g>_??)?", "_"),                     # minimized reproducer
     (r"(?P<g>_??)?", "x_y"),
-    (r"(?P<g200>_??)?|c{2,}1{2,}c{2}", "\ndaxc\n_b_d "),  # original AC-0-2b triple
+    # original AC-0-2b triple
+    (r"(?P<g200>_??)?|c{2,}1{2,}c{2}", "\ndaxc\n_b_d "),
 ])
 def test_empty_adjacency_group_reconstruction(pat, subj):
     # finditer yields BOTH an empty match and a non-empty match at the SAME
@@ -167,7 +172,8 @@ def test_empty_adjacency_group_reconstruction(pat, subj):
     ref = [(m.span(0), m.groups(), tuple(sorted(m.groupdict().items())))
            for m in re.finditer(pat, subj)]
     assert got == ref
-    # Reconstruction is faithful: no spurious error-fallback, and nothing raised.
+    # Reconstruction is faithful: no spurious error-fallback, and nothing
+    # raised.
     assert pre.stats()["fallback_after_error"] == 0
 
 

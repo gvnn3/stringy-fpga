@@ -39,7 +39,8 @@ fi
 ip link set "$IFACE" up
 sleep 1
 ip -br link show "$IFACE"
-echo "    (NO-CARRIER is expected -- the CMAC path is tied off; PYRO loops in-card)"
+echo "    (NO-CARRIER is expected -- the CMAC path is tied off; PYRO loops"
+echo "  in-card)"
 
 echo "=== 2. CAP_NET_RAW on the venv interpreter ==="
 if [ ! -f "$VENV_PY" ]; then
@@ -61,4 +62,5 @@ echo
 echo "DEVICE_TRANSPORT_OK"
 echo "Next (as your normal user):"
 echo "    PYRO_DEVICE_IFACE=$IFACE .venv-pyro/bin/python3 -c \\"
-echo "        'import pyro.device as d; print(d.probe_device(d.DeviceConfig()))'"
+echo "        'import pyro.device as d;"
+echo "  print(d.probe_device(d.DeviceConfig()))'"

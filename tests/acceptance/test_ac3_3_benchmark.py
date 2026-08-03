@@ -1,4 +1,5 @@
-"""AC-3-3: benchmark suite — R3b hard PASS, R59 win attribution, R78.11 read-out.
+"""AC-3-3: benchmark suite — R3b hard PASS, R59 win attribution, R78.11
+read-out.
 
 Machine-readable metrics: every measuring clause prints one ``AC33-METRIC``
 JSON line (and mirrors it into the junit ``user_properties`` via
@@ -265,7 +266,8 @@ def _match_roundtrip(cfg, transport, slot, corpus, seq):
     return None
 
 
-def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface):
+def test_r1_r2_hardware_win_regime_requires_device(
+    record_property, device_iface):
     """R59/AC-3-3 hardware clause: the R1/R2 win-regime demonstration
     (resident-circuit throughput vs stock) binds only when BOTH predicates
     hold: ``device_usable`` (R83) and the **P2 performance transport** (QDMA
@@ -304,7 +306,8 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
                 break
         if slot is None:
             _emit_metric(record_property, "r1_r2_hardware_win_regime", {
-                "requirement": "R1/R2 win regime on hardware (resident circuits)",
+                "requirement": "R1/R2 win regime on hardware (resident "
+                               "circuits)",
                 "status": "skip",
                 "device_probe_reason": reason,
                 "resident_slot": None,
@@ -447,7 +450,8 @@ def test_r1_r2_hardware_win_regime_requires_device(record_property, device_iface
 # ---------------------------------------------------------------------------
 # Clause 3: R78.11 on-chip CYCLES/BYTES attribution read-out.
 # ---------------------------------------------------------------------------
-def test_r78_11_perf_counter_attribution_readout(record_property, device_iface):
+def test_r78_11_perf_counter_attribution_readout(
+    record_property, device_iface):
     """R45a/R78.11 attribution seam: when the PERF read-out is reachable AND
     the device probes usable, read the resident circuit's CYCLES/BYTES
     counters in-band and report CYCLES x t_clk (pure on-chip scan cost) and

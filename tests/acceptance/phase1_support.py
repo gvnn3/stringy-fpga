@@ -9,15 +9,24 @@ import os
 import subprocess
 import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phase1_workers.py")
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
+WORKER = os.path.join(
+    os.path.dirname(
+        os.path.abspath(__file__)),
+         "phase1_workers.py")
 
 
 def jsonify(obj):
-    """Recursively coerce tuples -> lists so a value computed in-process compares
+    """Recursively coerce tuples -> lists so a value computed in-process
+    compares
     symmetrically against the same value round-tripped through the worker's JSON
-    boundary (JSON has no tuple type; e.g. findall's multi-group tuples arrive as
-    lists).  Applied to BOTH sides of a cross-process comparison keeps the oracle
+    boundary (JSON has no tuple type; e.g. findall's multi-group tuples arrive
+    as
+    lists).  Applied to BOTH sides of a cross-process comparison keeps the
+    oracle
     (stock re, tuples) and the worker result (JSON, lists) type-symmetric."""
     if isinstance(obj, (tuple, list)):
         return [jsonify(x) for x in obj]
@@ -64,10 +73,18 @@ def run_worker(command, *args, cache_dir, extra_env=None, timeout=150):
     try:
         return json.loads(proc.stdout), proc.stdout, proc.stderr
     except json.JSONDecodeError:
-        raise AssertionError(f"worker {command} did not emit JSON:\n{proc.stdout}\n{proc.stderr}")
+        raise AssertionError(
+    f"worker {command} did not emit JSON:\n{
+        proc.stdout}\n{
+            proc.stderr}")
 
 
-def run_worker_in_session(command, *args, cache_dir, extra_env=None, timeout=150):
+def run_worker_in_session(
+    command,
+    *args,
+    cache_dir,
+    extra_env=None,
+     timeout=150):
     """Run a worker command in its OWN process group/session (start_new_session)
     so a test can prove R63e — after the worker exits, NO residual synthesis
     service processes remain in its group.
@@ -85,8 +102,10 @@ def run_worker_in_session(command, *args, cache_dir, extra_env=None, timeout=150
     out, err = proc.communicate(timeout=timeout)
     if proc.returncode != 0:
         raise AssertionError(
-            f"worker {command} failed rc={proc.returncode}\nSTDOUT:\n{out}\nSTDERR:\n{err}")
+    f"worker {command} failed rc={
+        proc.returncode}\nSTDOUT:\n{out}\nSTDERR:\n{err}")
     try:
         return json.loads(out), pgid
     except json.JSONDecodeError:
-        raise AssertionError(f"worker {command} did not emit JSON:\n{out}\n{err}")
+        raise AssertionError(
+    f"worker {command} did not emit JSON:\n{out}\n{err}")

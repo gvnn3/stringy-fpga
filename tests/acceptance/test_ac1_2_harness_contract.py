@@ -46,7 +46,8 @@ def test_obsolete_prog_blob_path_absent():
     are removed — they MUST NOT appear in the ABI 2.0.0 header."""
     for gone in ("PROG_ADDR", "PROG_LEN", "PROG_ADDR_H", "pyro_prog",
                  "pyro_compile", "pyro_prog_load", "pyro_prog_free"):
-        assert gone not in HEADER, f"obsolete symbol {gone!r} present in header"
+        assert gone not in HEADER, f"obsolete symbol {
+    gone!r} present in header"
     # the old 'PROG' blob magic 0x50524F47 must be gone
     assert "50524F47" not in HEADER.upper().replace("_", "")
 
@@ -91,7 +92,8 @@ def test_encoding_enum_values_frozen():
     assert stdre.search(r"PYRO_ENC_UTF8\s*=\s*1", HEADER)
 
 
-@pytest.mark.skipif(lib is None, reason=f"libpyro_rt.so unavailable: {_load_error}")
+@pytest.mark.skipif(lib is None,
+     reason=f"libpyro_rt.so unavailable: {_load_error}")
 def test_csr_read_no_resident_returns_zero():
     """§7.4/R45 (debug seam): with no resident circuit, a CSR read returns 0 —
     a defined, non-crashing behavior (the ID/identity block is only populated

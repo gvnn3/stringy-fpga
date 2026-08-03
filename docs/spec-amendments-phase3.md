@@ -1,12 +1,15 @@
 # Spec amendments for owner review — Phase 3 slate
 
-- **Target spec:** `specs/python-regex-offload.md` (currently **v2.4.0**, 2026-07-10)
-- **Status:** **ADOPTED into v2.5.0** — all four amendments A1–A4 APPROVED by the
+- **Target spec:** `specs/python-regex-offload.md` (currently **v2.4.0**,
+  2026-07-10)
+- **Status:** **ADOPTED into v2.5.0** — all four amendments A1–A4 APPROVED by
+  the
   owner (2026-07-15) with the recommended sub-options (A4.4(b) new canonical
   condition inserted first; A4.4(d) neutralized URI examples; A4.5 option (b)
   no-default fail-closed iface) and applied to the spec.
 - **Date:** 2026-07-14
-- **Author:** spec-writer (drafting), on evidence from the `phase1-pyro` working tree
+- **Author:** spec-writer (drafting), on evidence from the `phase1-pyro`
+  working tree
 
 Four amendments are proposed. **Each is severable**: approve or reject any one
 without affecting the others. No amendment renumbers an existing requirement,
@@ -14,12 +17,30 @@ changes an AC number, or touches a frozen invariant (C ABI 2.0.0, the `PYROART1`
 artifact header, `SHELL_VERSION 0x0A000001`, `PYRO_SHELL_SPEC16 0x0202`, the
 R78.5b wire-harness namespace `0x00010000`).
 
-| # | Target | Kind | SemVer if adopted alone | One line |
-|---|--------|------|--------------------------|----------|
-| **A1** | R3b (+R3c, AC-2-5, AC-3-3) | measurement protocol added; **constant unchanged** | MINOR | Make the 1.15× bound decidable: median-of-≥5 trials, subject pinned at 132 B, binds against the compiled-extension build |
-| **A2** | R67 (+R51b, AC-3-2) | seam set extended | MINOR | Add `await_synthesis()` and a strict-residency/simulated-device seam that AC-3-2 cannot be written without |
-| **A3** | R73a (new) | scope clarification of an existing gate | MINOR | Scope the PR-link timing gate to the reconfigurable module; the static's permanent −0.427 ns CMAC violation otherwise makes **every** partial build fail |
-| **A4** | F2, F3 (+R68, R83, R39, §0, §10.1, P2) | normative facts demoted to configuration | MINOR (see A4 risk) | F2/F3 are **now false**; the netdev name is not a fact at all |
+- **A1**
+  - Target: R3b (+R3c, AC-2-5, AC-3-3)
+  - Kind: measurement protocol added; **constant unchanged**
+  - SemVer if adopted alone: MINOR
+  - One line: Make the 1.15× bound decidable: median-of-≥5 trials, subject
+    pinned at 132 B, binds against the compiled-extension build
+- **A2**
+  - Target: R67 (+R51b, AC-3-2)
+  - Kind: seam set extended
+  - SemVer if adopted alone: MINOR
+  - One line: Add `await_synthesis()` and a strict-residency/simulated-device
+    seam that AC-3-2 cannot be written without
+- **A3**
+  - Target: R73a (new)
+  - Kind: scope clarification of an existing gate
+  - SemVer if adopted alone: MINOR
+  - One line: Scope the PR-link timing gate to the reconfigurable module; the
+    static's permanent −0.427 ns CMAC violation otherwise makes **every**
+    partial build fail
+- **A4**
+  - Target: F2, F3 (+R68, R83, R39, §0, §10.1, P2)
+  - Kind: normative facts demoted to configuration
+  - SemVer if adopted alone: MINOR (see A4 risk)
+  - One line: F2/F3 are **now false**; the netdev name is not a fact at all
 
 If all four are adopted together the spec goes to **v2.5.0** (MINOR: added
 requirements, no interface/AC break).
@@ -149,9 +170,12 @@ Consequential touch-points: **R3c** (lines 193–206), **AC-2-5** (1782–1790),
   its reason misstates the build — recorded here so it is not mistaken for an
   honest SKIP on native builds.
 
-1. **R3c** — after "*MUST record a **SKIP** — not a FAIL — whose reason states the
-   measured ratio…*", append: "*The measured ratio cited in that SKIP MUST be the
-   R3b.1/R3b.2 statistic (median of ≥ 5 trials at the pinned 132-byte subject), not
+1. **R3c** — after "*MUST record a **SKIP** — not a FAIL — whose reason states
+   the
+   measured ratio…*", append: "*The measured ratio cited in that SKIP MUST be
+   the
+   R3b.1/R3b.2 statistic (median of ≥ 5 trials at the pinned 132-byte
+   subject), not
    a single trial.*"
 2. **AC-2-5** — the R3b clause: "*…records a **SKIP** whose reason states the
    measured ratio (not a FAIL)*" → "*…states the measured **R3b.1 median-of-≥5**
@@ -166,19 +190,28 @@ Consequential touch-points: **R3c** (lines 193–206), **AC-2-5** (1782–1790),
 - **The bound is currently asserted from a single trial.**
   `tests/acceptance/test_ac2_5_throughput.py:86-133`
   (`test_relative_loss_regime_bound_r3b`) runs **one** measurement loop, takes
-  `ratio = median(pyro_ns) / median(stock_ns)`, and decides PASS/SKIP on that one
+  `ratio = median(pyro_ns) / median(stock_ns)`, and decides PASS/SKIP on that
+  one
   number (`if ratio <= R3B_RATIO: return`, line 120).
-- **The margin is smaller than the noise.** Native router: median **≈1.10× ± 0.04**;
-  worst trial **≈1.15×**. Run-to-run noise is ±1.5%. A 4-point margin checked once,
-  against noise that can move the number by that much and a worst trial that lands
-  *on* the bound, is **flaky by construction** — it will PASS and FAIL on the same
+- **The margin is smaller than the noise.** Native router: median **≈1.10× ±
+  0.04**;
+  worst trial **≈1.15×**. Run-to-run noise is ±1.5%. A 4-point margin checked
+  once,
+  against noise that can move the number by that much and a worst trial that
+  lands
+  *on* the bound, is **flaky by construction** — it will PASS and FAIL on the
+  same
   build.
 - **The subject size is unpinned and outcome-determining.** The existing test's
-  subject is `"the quick brown fox jumps over the lazy dog " * 3` — **132 bytes**
+  subject is `"the quick brown fox jumps over the lazy dog " * 3` — **132
+  bytes**
   (line 29), an incidental artifact of the test, not a spec constant. The same
-  router measures **≈1.31× at 3 bytes** and **≈1.02× at 1 KiB**. Whether R3b passes
-  is therefore currently a property of a test literal. R3b.2 pins the literal the
-  measurements were actually taken at, so the recorded 1.10×/1.15× evidence stays
+  router measures **≈1.31× at 3 bytes** and **≈1.02× at 1 KiB**. Whether R3b
+  passes
+  is therefore currently a property of a test literal. R3b.2 pins the literal
+  the
+  measurements were actually taken at, so the recorded 1.10×/1.15× evidence
+  stays
   valid.
 - **The native floor is ≈1.01×**, i.e. the physically irreducible routing tax is
   ~1%. This is what makes 15% defensible, and it is precisely the claim R3b's
@@ -186,27 +219,36 @@ Consequential touch-points: **R3c** (lines 193–206), **AC-2-5** (1782–1790),
 
 ### A1.6 Risk of adopting
 
-- **The median-of-≥5 statistic hides a bad tail.** A build whose worst trials sit
+- **The median-of-≥5 statistic hides a bad tail.** A build whose worst trials
+  sit
   at 1.30× while the median holds at 1.10× would PASS. *Assessment:* accepted
   deliberately. R3b is a **routing-tax budget**, not a latency SLO; the tail is
-  scheduler/noise-dominated at this timescale, and a tail bound would re-introduce
-  the flakiness this amendment exists to remove. If a tail bound is later wanted it
-  should be stated as its own requirement (e.g. p95 ≤ some larger constant), not by
+  scheduler/noise-dominated at this timescale, and a tail bound would re-
+  introduce
+  the flakiness this amendment exists to remove. If a tail bound is later
+  wanted it
+  should be stated as its own requirement (e.g. p95 ≤ some larger constant),
+  not by
   tightening R3b's statistic.
 - **Cost: ≥ 5 × 1000 paired calls per R3b check.** Measurably slower acceptance
-  runs (seconds, not minutes). Acceptable; the R3b test is already `@pytest.mark.perf`.
-- **Pinning 132 bytes bakes a test artifact into the spec.** It is not a principled
-  size — it is the size at which the evidence was gathered. *Assessment:* that is
+  runs (seconds, not minutes). Acceptable; the R3b test is already
+  `@pytest.mark.perf`.
+- **Pinning 132 bytes bakes a test artifact into the spec.** It is not a
+  principled
+  size — it is the size at which the evidence was gathered. *Assessment:* that
+  is
   exactly the honest reason to pin it. The alternative (state the bound at a
   "principled" size we have not measured) would be worse. The spec should say
   plainly that 132 B is the *measured* size; A1's text does.
 - **Non-risk to flag explicitly:** this does **not** weaken R3. R3a (absolute
-  ≤ 2 µs) governs at all times and is unchanged; A1 touches only the relative bound's
+  ≤ 2 µs) governs at all times and is unchanged; A1 touches only the relative
+  bound's
   measurement.
 
 ### A1.7 Decision
 
-☑ **APPROVE A1** (owner, 2026-07-15) ☐ REJECT A1 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A1** (owner, 2026-07-15) ☐ REJECT A1 ☐ APPROVE with changes:
+______________________
 
 ---
 
@@ -214,8 +256,10 @@ Consequential touch-points: **R3c** (lines 193–206), **AC-2-5** (1782–1790),
 
 ### A2.1 Target
 
-§9.1, requirement **R67** (spec lines 1527–1547). R67 **enumerates** the seam set
-("providing at least:"), so adding a seam is a **normative** change to R67, not an
+§9.1, requirement **R67** (spec lines 1527–1547). R67 **enumerates** the seam
+set
+("providing at least:"), so adding a seam is a **normative** change to R67,
+not an
 implementation detail. Consequential: **R51b** (lines 1387–1397), **AC-3-2**
 (1866–1869).
 
@@ -311,7 +355,8 @@ implementation detail. Consequential: **R51b** (lines 1387–1397), **AC-3-2**
 
 ### A2.4 Consequential note under R51b (adopt with A2)
 
-Append to **R51b** (after "*…a not-resident pattern falls back for this call while
+Append to **R51b** (after "*…a not-resident pattern falls back for this call
+while
 synthesis/PR-load proceeds in the background.*"):
 
 ```
@@ -343,23 +388,30 @@ derivable from the spec alone:
 
 ### A2.5 Evidence
 
-- **`pyro/testing.py` today provides exactly four seams** (`__all__`, lines 36–41):
-  `inject_device_error`, `inject_synth_failure`, `inject_false_positive`, `reset`.
+- **`pyro/testing.py` today provides exactly four seams** (`__all__`, lines
+  36–41):
+  `inject_device_error`, `inject_synth_failure`, `inject_false_positive`,
+  `reset`.
   R67 enumerates precisely these. There is **no** wait/observe seam and **no**
   residency-mode seam anywhere in the tree (`grep -rn
   "strict_residency\|await_synth\|simulated_device" pyro/ tests/` → no hits).
-- **AC-3-2 cannot be written against the current seam set.** It asserts a pattern is
+- **AC-3-2 cannot be written against the current seam set.** It asserts a
+  pattern is
   "*silently upgraded from fallback to resident-circuit dispatch*". On this
   (device-free) host R51b (spec 1387–1397) says the model "*MAY serve **any**
   HW-eligible … dispatch at **any** tier … counting as a `model` dispatch*". So
-  before *and* after the upgrade the dispatch is a `model` dispatch: the upgrade has
-  no observable edge in `pyro.re.stats()`, and a test can only assert it by reading
+  before *and* after the upgrade the dispatch is a `model` dispatch: the
+  upgrade has
+  no observable edge in `pyro.re.stats()`, and a test can only assert it by
+  reading
   internals — which §9 (line 1448: "*Tests MUST NOT read the implementation*")
-  forbids. R67's own charter (line 1521: "*Any behavior an AC asks a test to verify
+  forbids. R67's own charter (line 1521: "*Any behavior an AC asks a test to
+  verify
   MUST … be reachable from a public surface*") is what obliges the addition.
 - **The wait problem is real too.** Synthesis is out-of-process and minutes-long
   (R63/P8). Without `await_synthesis`, the only spec-legal way to observe the
-  transition is a sleep-poll on `pyro.re.explain()["circuit_status"]` — a race, and
+  transition is a sleep-poll on `pyro.re.explain()["circuit_status"]` — a
+  race, and
   one that would have to be tuned per host.
 - **Existing style the new seams follow:** `pyro/testing.py` gates every seam on
   `_route.test_hooks_enabled()` and returns silently when the gate is off (lines
@@ -368,48 +420,65 @@ derivable from the spec alone:
 
 ### A2.6 Risk of adopting
 
-- **A second routing mode exists that only tests exercise, and it could drift from
+- **A second routing mode exists that only tests exercise, and it could drift
+  from
   the hardware path it simulates.** This is the real risk. *Mitigation, and the
   reason the seam is drafted as a **suspension** rather than a mode:*
-  strict-residency does not add a rule — it removes the R51b **exception**, leaving
+  strict-residency does not add a rule — it removes the R51b **exception**,
+  leaving
   R51 step 5 (the production hardware rule) in force. The code under test is the
-  shipping decision path; what changes is one predicate ("is a device present"). A
-  seam that *added* a parallel decision path would carry the drift risk properly and
+  shipping decision path; what changes is one predicate ("is a device
+  present"). A
+  seam that *added* a parallel decision path would carry the drift risk
+  properly and
   should be rejected.
-- **Leakage into production.** If `PYRO_ENABLE_TEST_HOOKS=1` were set in production
-  *and* something called `set_strict_residency(True)`, a device-free host would route
+- **Leakage into production.** If `PYRO_ENABLE_TEST_HOOKS=1` were set in
+  production
+  *and* something called `set_strict_residency(True)`, a device-free host
+  would route
   everything to fallback. *Impact:* a **performance** regression only — never a
-  correctness one (R16/R53 hold in both modes; fallback is always byte-identical).
-  *Mitigation:* the R67 gate, plus `reset()` clearing it, plus the fact that both
+  correctness one (R16/R53 hold in both modes; fallback is always byte-
+  identical).
+  *Mitigation:* the R67 gate, plus `reset()` clearing it, plus the fact that
+  both
   conditions must hold simultaneously.
 - **`await_synthesis` can mask an asynchrony defect.** A test that awaits cannot
-  notice that a *caller* was blocked. *Mitigation:* the proposed text forbids using
-  it in an AC that must prove asynchrony, and AC-1-5/AC-2-3 keep their independent
+  notice that a *caller* was blocked. *Mitigation:* the proposed text forbids
+  using
+  it in an AC that must prove asynchrony, and AC-1-5/AC-2-3 keep their
+  independent
   non-blocking assertions. Worth the owner's attention: this is a genuine sharp
   edge, and the prohibition is only as good as the reviewer who enforces it.
 - **Timeout semantics.** `await_synthesis` returning the last-observed tier on
-  timeout (rather than raising) means a hung service reads as "still cold", which a
-  careless test could treat as a legitimate observation. *Mitigation:* the return
-  value is the tier, so a test asserting `== "resident"` fails on timeout, which is
-  the right default. An owner who prefers a raise-on-timeout is invited to say so —
+  timeout (rather than raising) means a hung service reads as "still cold",
+  which a
+  careless test could treat as a legitimate observation. *Mitigation:* the
+  return
+  value is the tier, so a test asserting `== "resident"` fails on timeout,
+  which is
+  the right default. An owner who prefers a raise-on-timeout is invited to say
+  so —
   it is a one-word change to the draft.
 
 ### A2.7 Decision
 
-☑ **APPROVE A2** (owner, 2026-07-15) ☐ REJECT A2 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A2** (owner, 2026-07-15) ☐ REJECT A2 ☐ APPROVE with changes:
+______________________
 
 ---
 
 ## Amendment A3 — R73a (new): scope of the post-route timing gate
 
 > **This is the blocking one.** Without it, the PR flow **can never succeed** on
-> the flashed shell: every per-pattern partial build fails *after* `pr_verify` has
+> the flashed shell: every per-pattern partial build fails *after* `pr_verify`
+has
 > passed and *after* a good bitstream has been written.
 
 ### A3.1 Target
 
 §7.6, **new requirement R73a**, inserted immediately after **R73** (spec lines
-1267–1279). R73 itself is **not modified** — R73a scopes it for the PR-link case.
+1267–1279). R73 itself is **not modified** — R73a scopes it for the PR-link
+case.
 The next free number in §7.6 is R73a (R74 is taken); this follows the spec's
 established sub-lettering (R3a/R3b/R3c, R47a/R47b/R47c, R82a–R82d).
 
@@ -506,98 +575,138 @@ established sub-lettering (R3a/R3b/R3c, R47a/R47b/R47c, R82a–R82d).
 
 ### A3.4 Evidence
 
-- **The gate is unscoped in code.** `pyro/synth/toolchain.py`, the `_PR_FLOW_TCL`
+- **The gate is unscoped in code.** `pyro/synth/toolchain.py`, the
+  `_PR_FLOW_TCL`
   body, line **346**:
 
   ```tcl
   set _p [get_timing_paths -max_paths 1 -nworst 1 -setup]
   ```
 
-  No `-from`/`-to`/`-through` scoping, no cell filter, no clock filter. This is the
-  **global** worst setup path of the whole in-context design. Note the contrast two
+  No `-from`/`-to`/`-through` scoping, no cell filter, no clock filter. This
+  is the
+  **global** worst setup path of the whole in-context design. Note the
+  contrast two
   lines above (line 344): utilization *is* already scoped —
-  `report_utilization -cells [_rp_cell] -file util.rpt` — with the comment "*scope
-  utilization to the RM cell so PR manifests report the PATTERN's resources … not
-  static+RM whole-device*". The timing query was left global; A3 finishes the job the
+  `report_utilization -cells [_rp_cell] -file util.rpt` — with the comment
+  "*scope
+  utilization to the RM cell so PR manifests report the PATTERN's resources …
+  not
+  static+RM whole-device*". The timing query was left global; A3 finishes the
+  job the
   utilization scoping started.
-- **The static carries a permanent violation outside `pyro_rp`.** WNS **−0.427 ns**,
-  clock `txoutclk_out[0]`, inside OpenNIC's `cmac_usplus` IP. The R80 boundary (spec
+- **The static carries a permanent violation outside `pyro_rp`.** WNS **−0.427
+  ns**,
+  clock `txoutclk_out[0]`, inside OpenNIC's `cmac_usplus` IP. The R80 boundary
+  (spec
   2148–2171) carries only `clk`/`rstn` and the two AXI-Stream interfaces; PYRO
-  instantiates no CMAC logic and ties the datapath off. The violating path has neither
+  instantiates no CMAC logic and ties the datapath off. The violating path has
+  neither
   endpoint in `pyro_rp`.
 - **Consequence: the PR flow can never succeed.** In `_run_pr`
   (`pyro/synth/toolchain.py`):
   - line **707**: `met_timing = wns >= 0.0` → with the global WNS this is
     `-0.427 >= 0.0` → **`False`**, for **every** pattern, always;
-  - lines **709–712**: `raise SynthesisFailed("PR link timing not met at 250 MHz: WNS=-0.427 ns (R73)")`.
+  - lines **709–712**: `raise SynthesisFailed("PR link timing not met at 250
+    MHz: WNS=-0.427 ns (R73)")`.
 
-  This fires **after** the `pr_verify` hard gate has already **passed** (marker check,
-  line 675; report re-validation, line 682) — i.e. after Vivado has proven the static
-  region is bit-identical and the link is sound. Per R65, the pattern then becomes
-  **permanently fallback-only**. **AC-2b-3 can never flip LIVE**, and `pr_flow_present`
+  This fires **after** the `pr_verify` hard gate has already **passed**
+  (marker check,
+  line 675; report re-validation, line 682) — i.e. after Vivado has proven the
+  static
+  region is bit-identical and the link is sound. Per R65, the pattern then
+  becomes
+  **permanently fallback-only**. **AC-2b-3 can never flip LIVE**, and
+  `pr_flow_present`
   can never be attested (R83a step 5 needs a manifest with
-  `payload_kind == "pr_bitstream"`, which R82c forbids emitting without a completed
+  `payload_kind == "pr_bitstream"`, which R82c forbids emitting without a
+  completed
   job).
 
 ### A3.5 Also note — a **code bug**, deliberately *not* fixed in the spec
 
 `SynthesisFailed` at **toolchain.py:709–712** is raised **before** the partial
 bitstream is read at **:715–718**, and the `finally:` at **:749–750** then runs
-`shutil.rmtree(workdir, ignore_errors=True)`. So on this path Vivado has written a
+`shutil.rmtree(workdir, ignore_errors=True)`. So on this path Vivado has
+written a
 **good, `pr_verify`-passed `pyro_rp_partial.bit`** — and PYRO **destroys it**,
 unread, on the way out. Hours of P&R, discarded.
 
-This is an **implementation defect, not a spec defect**, and is listed here only so
-it is not lost. It is **independent of A3**: even with R73a adopted, any *future*
-`SynthesisFailed` raised between `write_bitstream` and the payload read (e.g. the
-utilization-parse failures at :690–696, or a genuine RM-side timing failure) will
-destroy a good artifact the same way. Suggested fix, for the coder's queue, not the
-owner's: read the payload as soon as the `pr_verify` gate passes, and/or preserve the
-workdir on failure under a diagnostic path. **No spec text is proposed for this.**
+This is an **implementation defect, not a spec defect**, and is listed here
+only so
+it is not lost. It is **independent of A3**: even with R73a adopted, any
+*future*
+`SynthesisFailed` raised between `write_bitstream` and the payload read (e.g.
+the
+utilization-parse failures at :690–696, or a genuine RM-side timing failure)
+will
+destroy a good artifact the same way. Suggested fix, for the coder's queue,
+not the
+owner's: read the payload as soon as the `pr_verify` gate passes, and/or
+preserve the
+workdir on failure under a diagnostic path. **No spec text is proposed for
+this.**
 
 ### A3.6 Risk of adopting
 
 Stated plainly, because this amendment **narrows a safety gate**:
 
 - **The narrower gate can mask a static-side violation.** With R73a, PYRO will
-  happily emit and load a partial into a static shell that does **not** close timing —
+  happily emit and load a partial into a static shell that does **not** close
+  timing —
   as, today, it demonstrably does not (−0.427 ns). PYRO would be shipping onto a
   known-marginal static. *This is a real reduction in what the per-pattern build
   checks, and the owner should decide it with that in mind.*
 - **Why it is nonetheless the right narrowing:**
-  1. **The static is not the partial's business, and the partial cannot fix it.** No
-     bit PYRO emits can move a path inside `cmac_usplus`. Gating on it does not make
+  1. **The static is not the partial's business, and the partial cannot fix
+     it.** No
+     bit PYRO emits can move a path inside `cmac_usplus`. Gating on it does
+     not make
      the static better; it only makes the PR flow impossible. A gate that no
      achievable artifact can pass is not a safety property — it is an outage.
-  2. **The static is validated once and then locked.** R82b makes the locked static
+  2. **The static is validated once and then locked.** R82b makes the locked
+     static
      DCP the linking substrate and the static region bit-identical across
-     configurations; R82c makes `pr_verify` a **mandatory** gate that proves exactly
-     that invariance before any `pr_bitstream` may be claimed. A partial therefore
+     configurations; R82c makes `pr_verify` a **mandatory** gate that proves
+     exactly
+     that invariance before any `pr_bitstream` may be claimed. A partial
+     therefore
      **cannot** introduce, worsen, or hide a static-side violation.
   3. **The violation is recorded, not buried.** R73a.4(1) requires the static's
      whole-design timing to be recorded at flash time; R73a.5 names the specific
-     −0.427 ns violation in the spec; R73a.6 keeps the whole-design WNS in the job
+     −0.427 ns violation in the spec; R73a.6 keeps the whole-design WNS in the
+     job
      diagnostics of every partial build.
 - **Residual risk 1 — mis-scoped query.** If the implementation's `-from`/`-to`
   filters catch only one boundary direction, or drop intra-RM paths, a genuine
   **RM-side** violation could escape the gate. *Mitigation:* R73a.1 states both
   directions and intra-cell paths explicitly; R73a.3 makes an empty scoped set a
-  failure, so a filter that matches nothing fails loudly instead of passing silently.
-  The first real PR job's `timing.rpt` should be read by a human against the scoped
+  failure, so a filter that matches nothing fails loudly instead of passing
+  silently.
+  The first real PR job's `timing.rpt` should be read by a human against the
+  scoped
   WNS before the flow is trusted.
-- **Residual risk 2 — the CMAC domain is assumed not to interact with the user box.**
-  R73a.4(3) rests this on the R80 boundary being thin and frozen (`axis_aclk` only).
-  That is true of the flashed image. It would stop being true the moment the boundary
+- **Residual risk 2 — the CMAC domain is assumed not to interact with the user
+  box.**
+  R73a.4(3) rests this on the R80 boundary being thin and frozen (`axis_aclk`
+  only).
+  That is true of the flashed image. It would stop being true the moment the
+  boundary
   gains a CMAC-domain signal — hence the explicit "MUST be revisited" in R73a.4.
-- **Risk of NOT adopting (for symmetry):** the PR flow remains a dead letter. Every
-  partial build burns a full in-context P&R (up to `VIVADO_PR_JOB_TIMEOUT` = 3600 s),
-  passes `pr_verify`, writes a good bitstream, **destroys it**, and marks the pattern
-  permanently fallback-only (R65). AC-2b-3 stays SKIP forever and `pr_flow_present`
+- **Risk of NOT adopting (for symmetry):** the PR flow remains a dead letter.
+  Every
+  partial build burns a full in-context P&R (up to `VIVADO_PR_JOB_TIMEOUT` =
+  3600 s),
+  passes `pr_verify`, writes a good bitstream, **destroys it**, and marks the
+  pattern
+  permanently fallback-only (R65). AC-2b-3 stays SKIP forever and
+  `pr_flow_present`
   can never flip true.
 
 ### A3.7 Decision
 
-☑ **APPROVE A3** (owner, 2026-07-15) ☐ REJECT A3 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A3** (owner, 2026-07-15) ☐ REJECT A3 ☐ APPROVE with changes:
+______________________
 
 ---
 
@@ -606,7 +715,8 @@ Stated plainly, because this amendment **narrows a safety gate**:
 ### A4.1 Target
 
 §1, ground-truth facts **F2** and **F3** (spec lines 66–71). Consequential:
-**R68** `PYRO_DEVICE_IFACE` (1566–1568), **R83** canonical SKIP string (2253–2265),
+**R68** `PYRO_DEVICE_IFACE` (1566–1568), **R83** canonical SKIP string
+(2253–2265),
 **§0** summary (line 19), **R39** `transport_uri` examples (721–722), **§10.1**
 preamble (line 1888), **P2** (line 2610).
 
@@ -680,9 +790,12 @@ Proposed:
     `PYRO_PR_STATIC_DCP` / `PYRO_PR_REFERENCE_DCP`.
 ```
 
-**(b) R83 canonical SKIP string — add the unconfigured-interface condition.** The
-`device_usable == false` enumeration (spec 2253–2265) currently has two conditions.
-Proposed: insert as the **first** condition (you cannot probe an interface you do not
+**(b) R83 canonical SKIP string — add the unconfigured-interface condition.**
+The
+`device_usable == false` enumeration (spec 2253–2265) currently has two
+conditions.
+Proposed: insert as the **first** condition (you cannot probe an interface you
+do not
 have), renumbering the existing two:
 
 ```
@@ -691,47 +804,80 @@ have), renumbering the existing two:
     3. `transport: CAP_NET_RAW absent`
 ```
 
-⚠ **This changes the canonical string** and therefore any test that pins the literal.
-Called out as a risk below. If the owner prefers stability of the existing order, the
-new condition can be appended as `4.` instead — logically worse (it reports a probe
+⚠ **This changes the canonical string** and therefore any test that pins the
+literal.
+Called out as a risk below. If the owner prefers stability of the existing
+order, the
+new condition can be appended as `4.` instead — logically worse (it reports a
+probe
 failure for a probe that never ran), mechanically cheaper.
 
 **(c) §0 summary, line 19** — "*The target device is the Xilinx/AMD PCIe card at
 `af:00.0`/`af:00.1` running the **OpenNIC** shell*" → "*The target device is the
-AMD/Xilinx Alveo U250 running the **OpenNIC** shell (its BDF is host configuration,
+AMD/Xilinx Alveo U250 running the **OpenNIC** shell (its BDF is host
+configuration,
 F2)*".
 
-**(d) R39, lines 721–722** — the `transport_uri` examples `"qdma://af:00.0/q0"` and
-`"eth://enp175s0f0"` are **illustrative**, but they illustrate two now-false strings.
+**(d) R39, lines 721–722** — the `transport_uri` examples
+`"qdma://af:00.0/q0"` and
+`"eth://enp175s0f0"` are **illustrative**, but they illustrate two now-false
+strings.
 Replace with `"qdma://0000:02:00.0/q0"` / `"eth://<iface>"`, or neutralize to
-`"qdma://<bdf>/q0"` / `"eth://<iface>"` (**recommended** — the ABI takes a URI, and the
+`"qdma://<bdf>/q0"` / `"eth://<iface>"` (**recommended** — the ABI takes a
+URI, and the
 spec should not re-import a host fact by example).
 
-**(e) §10.1 preamble, line 1888** — "*on the `onic` netdev (`enp175s0f0`/`f1`, F3)*"
+**(e) §10.1 preamble, line 1888** — "*on the `onic` netdev (`enp175s0f0`/`f1`,
+F3)*"
 → "*on the `onic` netdev named by `PYRO_DEVICE_IFACE` (F3/R68)*".
 
-**(f) P2, line 2610** — "*the **raw-Ethernet-frame binding** to `enp175s0f0`/`f1`
+**(f) P2, line 2610** — "*the **raw-Ethernet-frame binding** to
+`enp175s0f0`/`f1`
 (F3)*" → "*…to the `onic` netdev (F3/R68)*".
 
 ### A4.5 What this implies for `pyro/device.py` (the default is currently wrong)
 
 Two places bake the stale name in:
 
-- `pyro/device.py:288` — `_sampled_iface()` falls back to `return "enp175s0f0"`, and
+- `pyro/device.py:288` — `_sampled_iface()` falls back to `return
+  "enp175s0f0"`, and
   `DeviceConfig.iface` (line 335) defaults from it;
 - `pyro/_route.py:125` — `_DEVICE_IFACE_DEFAULT = "enp175s0f0"`.
 
-On this host that default names an interface that **does not exist**. `AF_PACKET`
-`bind()` against it (`pyro/device.py:604`) fails with `ENODEV` — an obscure `OSError`
+On this host that default names an interface that **does not exist**.
+`AF_PACKET`
+`bind()` against it (`pyro/device.py:604`) fails with `ENODEV` — an obscure
+`OSError`
 where the spec's contract (R86.4) is a clean `(False, reason)`.
 
 Three options; **(b) is recommended** and is what the A4.4(a) text specifies:
 
-| | Option | Assessment |
-|---|--------|------------|
-| (a) | Change the default to `"ens2"` | **Rejected.** Fastest, and wrong for exactly the reason F3 was wrong: it re-encodes one host's configuration as a library constant. It will be false again on the next host, and F3's shape problem survives untouched. |
-| (b) | **No default.** `DeviceConfig.iface: Optional[str] = None`; `_route.device_iface()` returns `None` when unset; `probe_device` returns `(False, "device_usable=false — transport: PYRO_DEVICE_IFACE not configured, …")` | **Recommended.** Fail-closed, matches the R70 no-scanning discipline and the existing fail-loud DCP knobs, and turns an obscure `ENODEV` into the spec's own contract. Costs the operator one env var — the same act they already perform for `PYRO_PR_STATIC_DCP`. |
-| (c) | Derive the netdev from a configured BDF via `/sys/bus/pci/devices/<bdf>/net/` | **Available, deliberately not proposed.** Honest caveat: the name **is** *look-up-able* at runtime from the BDF via sysfs even though it is not *derivable* from it by any naming rule. But this trades one required knob (`PYRO_DEVICE_IFACE`) for another (the BDF) **plus** a filesystem read that sits close to the line R70 draws against library code scanning the system. It is a reasonable convenience **on top of** (b) — never instead of it. Offered for the owner to accept or decline separately. |
+- **(a)**
+  - Option: Change the default to `"ens2"`
+  - Assessment: **Rejected.** Fastest, and wrong for exactly the reason F3 was
+    wrong: it re-encodes one host's configuration as a library constant. It
+    will be false again on the next host, and F3's shape problem survives
+    untouched.
+- **(b)**
+  - Option: **No default.** `DeviceConfig.iface: Optional[str] = None`;
+    `_route.device_iface()` returns `None` when unset; `probe_device` returns
+    `(False, "device_usable=false — transport: PYRO_DEVICE_IFACE not
+    configured, …")`
+  - Assessment: **Recommended.** Fail-closed, matches the R70 no-scanning
+    discipline and the existing fail-loud DCP knobs, and turns an obscure
+    `ENODEV` into the spec's own contract. Costs the operator one env var —
+    the same act they already perform for `PYRO_PR_STATIC_DCP`.
+- **(c)**
+  - Option: Derive the netdev from a configured BDF via
+    `/sys/bus/pci/devices/<bdf>/net/`
+  - Assessment: **Available, deliberately not proposed.** Honest caveat: the
+    name **is** *look-up-able* at runtime from the BDF via sysfs even though
+    it is not *derivable* from it by any naming rule. But this trades one
+    required knob (`PYRO_DEVICE_IFACE`) for another (the BDF) **plus** a
+    filesystem read that sits close to the line R70 draws against library code
+    scanning the system. It is a reasonable convenience **on top of** (b) —
+    never instead of it. Offered for the owner to accept or decline
+    separately.
 
 ### A4.6 Evidence
 
@@ -751,48 +897,70 @@ $ basename $(readlink -f /sys/class/net/ens2/device/driver)
 onic
 ```
 
-- **F2 is false on both counts.** One PF, not two (`10ee:913f` is **absent** — the
+- **F2 is false on both counts.** One PF, not two (`10ee:913f` is **absent** —
+  the
   PYRO PR shell is built `pf=cmac=1`); at `0000:02:00.0`, not `af:00.0`.
-- **F3 is false, and falser than it looks.** The netdev is `ens2`. Note *why*: `ens2`
-  is **SLOT**-based systemd naming, `enp175s0f0` was **PATH**-based. The naming scheme
-  itself changed with the card/topology, which is the point — **no rule takes you from
-  the BDF to the name**. `0000:02:00.0` does not "predict" `ens2`; the firmware's slot
+- **F3 is false, and falser than it looks.** The netdev is `ens2`. Note *why*:
+  `ens2`
+  is **SLOT**-based systemd naming, `enp175s0f0` was **PATH**-based. The
+  naming scheme
+  itself changed with the card/topology, which is the point — **no rule takes
+  you from
+  the BDF to the name**. `0000:02:00.0` does not "predict" `ens2`; the
+  firmware's slot
   index does. That is why F3 cannot be repaired by editing the string.
-- **The spec's own machinery already agrees with the demotion.** R81/R83 make the
+- **The spec's own machinery already agrees with the demotion.** R81/R83 make
+  the
   **live probe** (`ID_REQUEST` → `ID_REPLY`, `SPEC16` check) the authoritative
-  device-identity gate. Nothing normative depends on F2's BDF; nothing *should* depend
+  device-identity gate. Nothing normative depends on F2's BDF; nothing
+  *should* depend
   on F3's name. A4 removes the last places that do.
 - *Incidental, not proposed for amendment:* **F1** records the host kernel as
-  `6.8.0-124-generic`; it is now `6.8.0-134-generic`. Nothing in the spec turns on the
+  `6.8.0-124-generic`; it is now `6.8.0-134-generic`. Nothing in the spec
+  turns on the
   point release. Noted only so the owner is not surprised to find it stale too.
 
 ### A4.7 Risk of adopting
 
-- **Removing the `PYRO_DEVICE_IFACE` default is a behavior change** — the closest
-  thing in this slate to a break. A caller who relied on `DeviceConfig()` binding a
+- **Removing the `PYRO_DEVICE_IFACE` default is a behavior change** — the
+  closest
+  thing in this slate to a break. A caller who relied on `DeviceConfig()`
+  binding a
   netdev with no configuration now gets a `(False, reason)` from `probe_device`.
   *Assessment:* on **this** host that "working" default binds a **nonexistent**
-  interface, so the change converts a silent misbind into an explicit, spec-shaped
-  reason string. On a host where `enp175s0f0` happened to be right, the operator must
+  interface, so the change converts a silent misbind into an explicit, spec-
+  shaped
+  reason string. On a host where `enp175s0f0` happened to be right, the
+  operator must
   now set one env var. Fail-closed is the correct trade for a device binding.
 - **The R83 canonical SKIP string changes** (new first condition, existing two
-  renumbered). Any test pinning the literal must be updated. *Mitigation:* the string
+  renumbered). Any test pinning the literal must be updated. *Mitigation:* the
+  string
   is already spec-owned and already changed once (v2.2.0 superseded the v2.1.3
-  literal); the append-as-`4.` variant in A4.4(b) avoids the renumber at the cost of
+  literal); the append-as-`4.` variant in A4.4(b) avoids the renumber at the
+  cost of
   reporting a probe failure for a probe that never ran.
-- **Demoting F2/F3 leaves §1 with less concrete grounding**, and §1 opens by promising
-  facts the design "MUST be grounded in". *Mitigation:* F2 keeps the parts that are
-  genuinely invariant (U250, part number, vendor ID, PCI class, `onic`, OpenNIC shell)
-  and drops only the two that are configuration. The device-identity guarantee does not
+- **Demoting F2/F3 leaves §1 with less concrete grounding**, and §1 opens by
+  promising
+  facts the design "MUST be grounded in". *Mitigation:* F2 keeps the parts
+  that are
+  genuinely invariant (U250, part number, vendor ID, PCI class, `onic`,
+  OpenNIC shell)
+  and drops only the two that are configuration. The device-identity guarantee
+  does not
   weaken — it **strengthens**, moving from a written-down string that goes stale
   silently to the R81 `SPEC16` wire check that is verified on every probe.
-- **Six cross-references must move together** (A4.4 a–f). If any is missed, the spec
-  keeps asserting `enp175s0f0`/`af:00.0` somewhere, which is the exact failure mode
+- **Six cross-references must move together** (A4.4 a–f). If any is missed,
+  the spec
+  keeps asserting `enp175s0f0`/`af:00.0` somewhere, which is the exact failure
+  mode
   this amendment exists to end. Adopt A4 as a unit, or not at all.
 
 ### A4.8 Decision
 
-☑ **APPROVE A4** (owner, 2026-07-15; with A4.4(b) insert-first and A4.4(d) neutralized examples; A4.5 option (b)) ☐ REJECT A4 ☐ APPROVE with changes: ______________________
+☑ **APPROVE A4** (owner, 2026-07-15; with A4.4(b) insert-first and A4.4(d)
+neutralized examples; A4.5 option (b)) ☐ REJECT A4 ☐ APPROVE with changes:
+______________________
 
 ---
 
@@ -844,9 +1012,13 @@ onic
 `pyro/synth/toolchain.py` `_run_pr`: `SynthesisFailed` at **:709–712** is raised
 **before** the partial bitstream is read at **:715–718**, and the `finally:` at
 **:749–750** runs `shutil.rmtree(workdir, ignore_errors=True)`. A **good,
-`pr_verify`-passed** `pyro_rp_partial.bit` is therefore **destroyed unread** on every
-failure between `write_bitstream` and the payload read. Adopting A3 stops the specific
+`pr_verify`-passed** `pyro_rp_partial.bit` is therefore **destroyed unread**
+on every
+failure between `write_bitstream` and the payload read. Adopting A3 stops the
+specific
 `met_timing` case from firing, but the destroy-on-failure hazard remains for the
-utilization-parse failures (**:690–696**) and for any genuine RM-side timing failure.
-Fix belongs in code (read the payload once `pr_verify` passes; and/or preserve the
+utilization-parse failures (**:690–696**) and for any genuine RM-side timing
+failure.
+Fix belongs in code (read the payload once `pr_verify` passes; and/or preserve
+the
 workdir on failure under a diagnostics path). **No spec text proposed.**

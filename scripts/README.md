@@ -10,17 +10,30 @@ where the U250 sat at `0000:af:00.0` / `0000:af:00.1` behind root port
 `ae:00.0`, in PCIe Slot 4, with Vivado 2025.2 at `/usr/local/cad/2025.2/Vivado`
 and the PYRO shell build tree at `/usr/local/cad/gn262/pyro/open-nic-shell`.
 
-As of **2026-07-13** the card is in **nf-server06** (Supermicro X99, Xeon E5 v4):
+As of **2026-07-13** the card is in **nf-server06** (Supermicro X99, Xeon E5
+v4):
 
-| | zanetti (R740) | nf-server06 (now) |
-|---|---|---|
-| Card BDF | `0000:af:00.0` / `.1` | **`0000:02:00.0`** (single fn — golden image) |
-| Root port | `ae:00.0` | `0000:00:02.0` |
-| Physical slot | 4 | 2 |
-| Netdevs (post-flash) | `enp175s0f0` / `f1` | **`ens2`** (single fn; SLOT-based naming) |
-| BMC | iDRAC9 @ 10.66.3.9 | ASPEED (no iDRAC; **no slot-disablement path**) |
-| Vivado | `/usr/local/cad/2025.2/Vivado` | **not installed** |
-| PYRO shell build tree | `/usr/local/cad/gn262/pyro/…` | **not present** |
+- **Card BDF**
+  - zanetti (R740): `0000:af:00.0` / `.1`
+  - nf-server06 (now): **`0000:02:00.0`** (single fn — golden image)
+- **Root port**
+  - zanetti (R740): `ae:00.0`
+  - nf-server06 (now): `0000:00:02.0`
+- **Physical slot**
+  - zanetti (R740): 4
+  - nf-server06 (now): 2
+- **Netdevs (post-flash)**
+  - zanetti (R740): `enp175s0f0` / `f1`
+  - nf-server06 (now): **`ens2`** (single fn; SLOT-based naming)
+- **BMC**
+  - zanetti (R740): iDRAC9 @ 10.66.3.9
+  - nf-server06 (now): ASPEED (no iDRAC; **no slot-disablement path**)
+- **Vivado**
+  - zanetti (R740): `/usr/local/cad/2025.2/Vivado`
+  - nf-server06 (now): **not installed**
+- **PYRO shell build tree**
+  - zanetti (R740): `/usr/local/cad/gn262/pyro/…`
+  - nf-server06 (now): **not present**
 
 The card is currently running its **factory golden image** (`10ee:d004`), i.e.
 there is no user image in QSPI at `0x01002000` — so there is no static shell,

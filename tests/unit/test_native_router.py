@@ -1,4 +1,5 @@
-"""Anti-drift + behavioural equivalence for the native routing hot path (R3b/R3c).
+"""Anti-drift + behavioural equivalence for the native routing hot path
+(R3b/R3c).
 
 Four nets keep the C router and the pure-Python router provably in sync:
 
@@ -34,7 +35,14 @@ native = pytest.mark.skipif(_fast is None, reason="native extension not built")
 # --------------------------------------------------------------------------
 # 1. Exhaustive decide_raw equivalence (288 points).
 # --------------------------------------------------------------------------
-def _ref_decide(subj_len, reuse, disabled, force, eligible, exact_type, full_span):
+def _ref_decide(
+    subj_len,
+    reuse,
+    disabled,
+    force,
+    eligible,
+    exact_type,
+     full_span):
     S_MIN, N_REUSE = _route.S_MIN, _route.N_REUSE
     if disabled:
         return 0
@@ -56,8 +64,21 @@ def test_decide_raw_exhaustive():
     reuses = [N_REUSE - 1, N_REUSE, N_REUSE + 1]
     bools = [0, 1]
     n = 0
-    for (disabled, force, eligible, exact_type, full_span, subj_len, reuse) in \
-            itertools.product(bools, bools, bools, bools, bools, lens, reuses):
+    for (
+    disabled,
+    force,
+    eligible,
+    exact_type,
+    full_span,
+    subj_len,
+    reuse) in itertools.product(
+        bools,
+        bools,
+        bools,
+        bools,
+        bools,
+        lens,
+         reuses):
         got = _fast.decide_raw(subj_len, reuse, disabled, force,
                                eligible, exact_type, full_span)
         exp = _ref_decide(subj_len, reuse, disabled, force,
@@ -156,7 +177,8 @@ def test_differential_pos_endpos(pos, endpos):
     for op in ("search", "match", "fullmatch"):
         a = getattr(py, op)(subj, pos, endpos)
         b = getattr(nat, op)(subj, pos, endpos)
-        assert _canon(a) == _canon(b), f"{op}({pos},{endpos}) py={_canon(a)} nat={_canon(b)}"
+        assert _canon(a) == _canon(
+            b), f"{op}({pos},{endpos}) py={_canon(a)} nat={_canon(b)}"
     assert [_canon(m) for m in py.finditer(subj, pos, endpos)] == \
            [_canon(m) for m in nat.finditer(subj, pos, endpos)]
     assert py.findall(subj, pos, endpos) == nat.findall(subj, pos, endpos)

@@ -11,14 +11,17 @@ path in Phase 1 — both are exercised directly by the ABI-conformance /
 harness-contract unit tests, not by ``re.search``/``finditer`` calls.
 
 The library is not built by importing PYRO; it is produced by ``make lib``
-(``build/libpyro_rt.so``).  :func:`load` raises :class:`NativeUnavailable` with a
-recorded reason if the ``.so`` is absent, so a test fixture can *skip with reason*
+(``build/libpyro_rt.so``).  :func:`load` raises :class:`NativeUnavailable`
+with a
+recorded reason if the ``.so`` is absent, so a test fixture can *skip with
+reason*
 rather than fail when a C toolchain is unavailable.
 
 model:// binding descriptor (Task-7 artifact-format extension).  Because a C
 library performs no regex classification, ``pyro_generate`` in the model binding
 takes a **circuit descriptor** built by :func:`build_descriptor` from a
-:class:`pyro.hdl.GeneratedCircuit` and its on-disk artifact directory, rather than
+:class:`pyro.hdl.GeneratedCircuit` and its on-disk artifact directory, rather
+than
 raw regex text.  See ``src/pyro_rt.c`` for the wire layout.
 """
 
@@ -183,7 +186,8 @@ def build_descriptor(pattern_hash16: bytes, circ_flags: int, enc: int,
     """Build the model:// circuit descriptor consumed by ``pyro_generate``.
 
     ``pattern_hash16`` is the 16-byte R47a identity the host will demand of the
-    resident circuit (``GeneratedCircuit.pattern_hash16``); ``circ_flags`` is the
+    resident circuit (``GeneratedCircuit.pattern_hash16``); ``circ_flags`` is
+    the
     packed ``CIRC_FLAGS`` word; ``art_dir`` is the directory holding the
     ``artifact.bin`` + ``manifest.json`` produced by the toolchain.
     """
@@ -224,7 +228,8 @@ class NativeCircuit:
         return self._ctx.lib.pyro_circuit_load(self._ctx.handle, self._h)
 
     def scan(self, buf: bytes, start_off: int = 0, out_cap: int = 64):
-        """Return ``(status, matches, overflowed)`` — a Python view of a scan."""
+        """Return ``(status, matches, overflowed)`` — a Python view of a
+        scan."""
         arr = (PyroMatch * out_cap)()
         count = ctypes.c_size_t(0)
         rc = self._ctx.lib.pyro_scan(
@@ -266,8 +271,13 @@ class NativeCtx:
     def generate(self, descriptor: bytes, flags: int = 0,
                  enc: int = PYRO_ENC_BYTES) -> NativeCircuit:
         out = ctypes.c_void_p()
-        rc = self.lib.pyro_generate(self._h, bytes(descriptor), len(descriptor),
-                                    int(flags), int(enc), ctypes.byref(out))
+        rc = self.lib.pyro_generate(
+    self._h,
+    bytes(descriptor),
+    len(descriptor),
+    int(flags),
+    int(enc),
+     ctypes.byref(out))
         if rc != PYRO_OK:
             raise OSError(f"pyro_generate -> {rc}")
         return NativeCircuit(self, out)

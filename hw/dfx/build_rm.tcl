@@ -10,8 +10,10 @@
 #
 # Outputs:
 #   <out>/full/<tag>.dcp        routed full config (the pr_verify subject)
-#   <out>/partials/<tag>.bit    the partial bitstream (payload_kind == pr_bitstream)
-#   <out>/partials/<tag>.bin    raw partial, for a future ICAP/MCAP path (R85 defers this)
+# <out>/partials/<tag>.bit    the partial bitstream (payload_kind ==
+# pr_bitstream)
+# <out>/partials/<tag>.bin    raw partial, for a future ICAP/MCAP path (R85
+# defers this)
 
 set static [lindex $argv 0]
 set rmdcp  [lindex $argv 1]
@@ -52,5 +54,6 @@ catch {
     -loadbit "up 0x0 $out/partials/${tag}.bit" $out/partials/${tag}.bin
 }
 
-if {$wns >= 0} { puts "BUILD_RM_${tag}_TIMING_MET" } else { puts "BUILD_RM_${tag}_TIMING_FAILED" }
+if {$wns >= 0} { puts "BUILD_RM_${tag}_TIMING_MET" } \
+else { puts "BUILD_RM_${tag}_TIMING_FAILED" }
 puts "BUILD_RM_${tag}_DONE"

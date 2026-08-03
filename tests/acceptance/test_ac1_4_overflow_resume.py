@@ -55,7 +55,8 @@ def test_spaced_matches_over_large_corpus():
     returned in order, byte-identical to stock re."""
     import re as stdre
     _force_model()
-    subject = ("tok%04d " % 0) + "".join("tok%04d " % (i % 10000) for i in range(40000))
+    subject = ("tok%04d " % 0) + "".join("tok%04d " % (i % 10000)
+               for i in range(40000))
     pattern = r"tok\d{4}"
     assert pre.findall(pattern, subject) == stdre.findall(pattern, subject)
     exp = [m.span() for m in stdre.finditer(pattern, subject)]

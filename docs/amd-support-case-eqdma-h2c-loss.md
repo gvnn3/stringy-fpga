@@ -1,4 +1,5 @@
-# AMD support case draft — QDMA (EQDMA5.0 Soft IP) multi-queue H2C ST packet corruption/loss
+# AMD support case draft — QDMA (EQDMA5.0 Soft IP) multi-queue H2C ST packet
+corruption/loss
 
 Status: ready to file (needs the filer's account/case metadata). All data
 below was measured on silicon 2026-07-25/26; full lab log in `docs/notebook.md`.
@@ -21,16 +22,26 @@ is silent from both ends: writeback says sent, the fabric never sees it.
 
 ## Environment
 
-| Item | Value |
-|---|---|
-| Card | Alveo U250 (`xcu250-figd2104-2L-e`), PCIe Gen3 x16 (confirmed at 8 GT/s x16) |
-| Shell | OpenNIC shell (open-nic-shell), 1 PF (`10ee:903f`), 1 CMAC, MAX_PKT_LEN=9600 |
-| DMA IP | QDMA Soft IP, driver reports `Device Type: Soft IP`, `IP Type: EQDMA5.0 Soft IP` |
-| Vivado | 2025.2 (`/usr/local/cad/2025.2/Vivado`) |
-| Driver | dma_ip_drivers QDMA PF Linux driver `v2024.1.0.0` |
-| Host | Linux 6.8.0-136-generic (Ubuntu 24.04), Intel DMAR IOMMU |
-| Queue config | 4 ST queue pairs (bi), desc size 1536, ring 2048, cmptsz 0, trigmode every |
-| Modes tested | direct interrupt (02:0:2), auto (02:0:0), poll (02:0:1) |
+- **Card**
+  - Value: Alveo U250 (`xcu250-figd2104-2L-e`), PCIe Gen3 x16 (confirmed at 8
+    GT/s x16)
+- **Shell**
+  - Value: OpenNIC shell (open-nic-shell), 1 PF (`10ee:903f`), 1 CMAC,
+    MAX_PKT_LEN=9600
+- **DMA IP**
+  - Value: QDMA Soft IP, driver reports `Device Type: Soft IP`, `IP Type:
+    EQDMA5.0 Soft IP`
+- **Vivado**
+  - Value: 2025.2 (`/usr/local/cad/2025.2/Vivado`)
+- **Driver**
+  - Value: dma_ip_drivers QDMA PF Linux driver `v2024.1.0.0`
+- **Host**
+  - Value: Linux 6.8.0-136-generic (Ubuntu 24.04), Intel DMAR IOMMU
+- **Queue config**
+  - Value: 4 ST queue pairs (bi), desc size 1536, ring 2048, cmptsz 0,
+    trigmode every
+- **Modes tested**
+  - Value: direct interrupt (02:0:2), auto (02:0:0), poll (02:0:1)
 
 ## Symptom detail
 
@@ -79,18 +90,36 @@ is silent from both ends: writeback says sent, the fabric never sees it.
 
 ## Ruled out by experiment
 
-| Hypothesis | Experiment | Result |
-|---|---|---|
-| Driver IRQ re-arm race | poll mode, zero MSI-X vectors allocated | still lossy |
-| Multi-descriptor packet interleave | single-descriptor (1504 B) packets | still lossy |
-| IOMMU lazy-invalidation race | strict (`DMA`) domain | still lossy |
-| IOMMU translation entirely | `identity` domain (pt-equivalent) | still lossy |
-| Writeback accumulation | `GLBL_DSC_CFG.WB_ACC_INT` 5→0 | no change |
-| Descriptor prefetch masking | `GLBL_DSC_CFG.MAXFETCH` 2→0 | ~100× WORSE (latency-sensitivity dose-response) |
-| Thermal / power | sysmon 58.8 °C, VCCINT 0.844 V | nominal |
-| PCIe link | 8 GT/s x16, no AER | nominal |
-| Host SW regression | byte-identical driver + app binaries across good/bad days | reproduces |
-| JTAG/hw_server interference | hw_server killed | still lossy |
+- **Driver IRQ re-arm race**
+  - Experiment: poll mode, zero MSI-X vectors allocated
+  - Result: still lossy
+- **Multi-descriptor packet interleave**
+  - Experiment: single-descriptor (1504 B) packets
+  - Result: still lossy
+- **IOMMU lazy-invalidation race**
+  - Experiment: strict (`DMA`) domain
+  - Result: still lossy
+- **IOMMU translation entirely**
+  - Experiment: `identity` domain (pt-equivalent)
+  - Result: still lossy
+- **Writeback accumulation**
+  - Experiment: `GLBL_DSC_CFG.WB_ACC_INT` 5→0
+  - Result: no change
+- **Descriptor prefetch masking**
+  - Experiment: `GLBL_DSC_CFG.MAXFETCH` 2→0
+  - Result: ~100× WORSE (latency-sensitivity dose-response)
+- **Thermal / power**
+  - Experiment: sysmon 58.8 °C, VCCINT 0.844 V
+  - Result: nominal
+- **PCIe link**
+  - Experiment: 8 GT/s x16, no AER
+  - Result: nominal
+- **Host SW regression**
+  - Experiment: byte-identical driver + app binaries across good/bad days
+  - Result: reproduces
+- **JTAG/hw_server interference**
+  - Experiment: hw_server killed
+  - Result: still lossy
 
 ## Where the packets go — measured at the IP boundary (2026-07-26)
 
@@ -101,11 +130,18 @@ asserted. Measured on silicon, fresh cold boot, per-packet accounting
 (the single-queue control run matches sent-count exactly, validating the
 counters):
 
-| Run (jumbo, 9,556 B) | packets written (incl. retx) | delivered at boundary | delivered with `tuser_err` |
-|---|---|---|---|
-| 4-queue, first traffic after cold boot | 3,072 | 3,067 | **0** |
-| 1-queue control | 3,067 | 3,067 (exact) | **0** |
-| 4-queue, degraded (after ~28k mq packets) | 28,208 | 24,481 | **0** |
+- **4-queue, first traffic after cold boot**
+  - packets written (incl. retx): 3,072
+  - delivered at boundary: 3,067
+  - delivered with `tuser_err`: **0**
+- **1-queue control**
+  - packets written (incl. retx): 3,067
+  - delivered at boundary: 3,067 (exact)
+  - delivered with `tuser_err`: **0**
+- **4-queue, degraded (after ~28k mq packets)**
+  - packets written (incl. retx): 28,208
+  - delivered at boundary: 24,481
+  - delivered with `tuser_err`: **0**
 
 Two conclusions:
 
@@ -144,4 +180,5 @@ directions.
 - dmesg extracts: `GLBL_TRQ_ERR` decode, `qdma_request_wait_for_cmpl`
   timeouts, DMAR faults
 - Shell build: OpenNIC + 1 DFX partition; QDMA IP tcl:
-  `third_party/open-nic-shell/src/qdma_subsystem/vivado_ip/qdma_no_sriov_au250.tcl`
+  `third_party/open-nic-
+  shell/src/qdma_subsystem/vivado_ip/qdma_no_sriov_au250.tcl`

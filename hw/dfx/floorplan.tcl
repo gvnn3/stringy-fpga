@@ -1,6 +1,8 @@
-# floorplan.tcl - read the pyro_rp pblock definition from platform_manifest.json.
+# floorplan.tcl - read the pyro_rp pblock definition from
+# platform_manifest.json.
 #
-# The manifest is the single source of truth for the pblock range and the RP cell
+# The manifest is the single source of truth for the pblock range and the RP
+# cell
 # name; keep both out of the build scripts so they cannot drift apart.
 #
 # Capture the directory at source time: [info script] is correct here, but NOT
@@ -14,8 +16,12 @@ proc _read_manifest {} {
   close $fh
   array set m {}
   foreach rp {PYRO_RP} {
-    regexp "\"$rp\"\\s*:\\s*\\{\[^\\}\]*?\"cell\"\\s*:\\s*\"(\[^\"\]+)\"" $txt -> m($rp,cell)
-    regexp "\"$rp\"\\s*:\\s*\\{\[^\\}\]*?\"pblock_range\"\\s*:\\s*\"(\[^\"\]+)\"" $txt -> m($rp,range)
+    set re_cell "\"$rp\"\\s*:\\s*\\{\[^\\}\]*?\"cell\"\\s*:\\s*"
+    append re_cell "\"(\[^\"\]+)\""
+    regexp $re_cell $txt -> m($rp,cell)
+    set re_rng "\"$rp\"\\s*:\\s*\\{\[^\\}\]*?\"pblock_range\""
+    append re_rng "\\s*:\\s*\"(\[^\"\]+)\""
+    regexp $re_rng $txt -> m($rp,range)
   }
   return [array get m]
 }

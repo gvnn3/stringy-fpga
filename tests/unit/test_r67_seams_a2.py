@@ -86,7 +86,8 @@ def test_set_strict_residency_gate_off_is_inert(hooks_off):
 def test_await_synthesis_terminal_fallback_only(hooks_on):
     P = r"awfail\d+"
     pt.inject_synth_failure(P)
-    pyro.prewarm(P)                              # launch -> injected failure (R65)
+    # launch -> injected failure (R65)
+    pyro.prewarm(P)
     t0 = time.monotonic()
     assert pt.await_synthesis(P, timeout=10.0) == "fallback_only"
     assert time.monotonic() - t0 < 5.0           # already terminal: no wait
@@ -185,7 +186,8 @@ def test_strict_residency_results_byte_identical(hooks_on):
     _route.reset_stats()
     got_strict = [m.span() for m in pre.finditer(P, subj)]
     s = pre.stats()
-    assert s["fallback"] >= 1 and s["model"] == 0   # served by genuine fallback
+    # served by genuine fallback
+    assert s["fallback"] >= 1 and s["model"] == 0
 
     pt.set_strict_residency(False)
     _route.reset_stats()

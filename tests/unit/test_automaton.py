@@ -52,7 +52,11 @@ def test_astral_literal_is_four_byte_chain():
     # U+1D518 == F0 9D 94 98
     au = build("\U0001D518")
     assert byte_edge_sets(au) == [
-        frozenset({0xF0}), frozenset({0x9D}), frozenset({0x94}), frozenset({0x98})]
+    frozenset(
+        {0xF0}), frozenset(
+            {0x9D}), frozenset(
+                {0x94}), frozenset(
+                    {0x98})]
 
 
 # --- R9: character classes ------------------------------------------------

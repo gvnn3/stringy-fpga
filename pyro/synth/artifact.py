@@ -3,8 +3,10 @@
 Task 7 binds the software model behind the ABI-2.0.0 native runtime
 (``src/pyro_rt.c``).  A *C* model cannot import Python, so it cannot execute the
 live :class:`pyro.hdl.automaton.Automaton` object — it must be handed a
-**self-describing binary table** it can parse and run.  This module produces that
-table and embeds it, together with the manifest-critical R47a/R47b header fields,
+**self-describing binary table** it can parse and run.  This module produces
+that
+table and embeds it, together with the manifest-critical R47a/R47b header
+fields,
 into the **PR bitstream artifact** (``artifact.bin``) written by the mock
 toolchain (:mod:`pyro.synth.toolchain`).
 
@@ -43,7 +45,8 @@ Binary layout (all multi-byte fields little-endian)::
     72   4     n_assert_edges
     76   ...   byte-edge table   : [src u32][dst u32][bitmap 32 bytes] * n_byte
          ...   eps-edge table    : [src u32][dst u32]                 * n_eps
-         ...   assert-edge table : [src u32][dst u32][code u32]        * n_assert
+         ...   assert-edge table : [src u32][dst u32][code u32]        *
+         n_assert
     -- trailer --
     end-4 4    crc32 over all preceding bytes (R47b integrity)
 
@@ -65,16 +68,19 @@ FORMAT_VERSION = 1
 
 # Stable serialized zero-width-assertion codes.  These are format-internal (they
 # do NOT depend on CPython's ``re._constants`` numeric values), so the C model's
-# evaluator can mirror ``pyro._circuit_model._assert_ok`` without any coupling to
+# evaluator can mirror ``pyro._circuit_model._assert_ok`` without any coupling
+# to
 # a private Python enum.
 AC_SOB = 0   # ^ (non-MULTILINE) / \A  -> pos == 0
 AC_BOL = 1   # ^ (MULTILINE)           -> pos == 0 or buf[pos-1] == '\n'
 AC_EOS = 2   # \Z                      -> pos == n
-AC_EOB = 3   # $ (non-MULTILINE)       -> pos == n or (pos == n-1 and buf[pos]=='\n')
+# $ (non-MULTILINE)       -> pos == n or (pos == n-1 and buf[pos]=='\n')
+AC_EOB = 3
 AC_EOL = 4   # $ (MULTILINE)           -> pos == n or buf[pos] == '\n'
 AC_WB = 5    # \b (bytes mode)         -> ASCII word boundary
 AC_NWB = 6   # \B (bytes mode)         -> not an ASCII word boundary
-AC_TRUE = 7  # over-approx / unknown   -> always satisfiable (never under-approx)
+# over-approx / unknown   -> always satisfiable (never under-approx)
+AC_TRUE = 7
 
 _HEADER = struct.Struct("<8sI16sIIIIII")   # up to shell_version (offset 0..51)
 _DIMS = struct.Struct("<IIIIII")            # n_states..n_assert_edges
@@ -84,7 +90,8 @@ def _assert_code(at: int, is_bytes: bool) -> int:
     """Map a resolved ``re`` AT_* opcode + encoding to a stable serialized code.
 
     Mirrors :func:`pyro._circuit_model._assert_ok` exactly: ``^``/``$`` have
-    already been resolved to their LINE variants under MULTILINE at lowering time
+    already been resolved to their LINE variants under MULTILINE at lowering
+    time
     (``automaton._resolve_at``); Unicode word boundaries in str mode are
     over-approximated to always-true (the C model re-verifies, R19).
     """
@@ -106,7 +113,8 @@ def _assert_code(at: int, is_bytes: bool) -> int:
 
 
 def _bitmap(byteset) -> bytes:
-    """256-bit little-endian membership bitmap of a byte set (bit b => b in set)."""
+    """256-bit little-endian membership bitmap of a byte set (bit b => b in
+    set)."""
     bm = bytearray(32)
     for b in byteset:
         bm[b >> 3] |= 1 << (b & 7)
@@ -137,7 +145,13 @@ def serialize_automaton_body(au: _auto.Automaton) -> bytes:
                 code = _assert_code(int(e.payload), is_bytes)
                 assert_edges += struct.pack("<III", s, e.target, code)
                 n_assert += 1
-    body = _DIMS.pack(au.n_states, au.start, au.accept, n_byte, n_eps, n_assert)
+    body = _DIMS.pack(
+    au.n_states,
+    au.start,
+    au.accept,
+    n_byte,
+    n_eps,
+     n_assert)
     return body + bytes(byte_edges) + bytes(eps_edges) + bytes(assert_edges)
 
 
@@ -147,7 +161,8 @@ def build_artifact(pattern_hash16: bytes, circ_flags: int, encoding: int,
                    body: bytes) -> bytes:
     """Assemble the full ``artifact.bin`` payload from header parts + body.
 
-    ``body`` is the output of :func:`serialize_automaton_body`.  Appends a CRC-32
+    ``body`` is the output of :func:`serialize_automaton_body`.  Appends a
+    CRC-32
     trailer over all preceding bytes (the R47b integrity check the C model
     performs) and returns the complete payload.
     """

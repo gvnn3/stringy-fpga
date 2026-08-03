@@ -26,7 +26,8 @@ per-cycle drain, the OVF retire) is exercised by it — verified by replacing
 gate: real R78 frames through ``tb_pyro_rp.v`` under the pinned Vivado's xsim,
 every reply compared byte-for-byte, at N=2/4/9 and datapath_bytes 1 and 8.
 ``test_the_rtl_gate_actually_bites`` sabotages the priority encoder to keep
-that gate falsifiable, and ``test_the_rtl_reference_agrees_with_the_group_model``
+that gate falsifiable, and
+``test_the_rtl_reference_agrees_with_the_group_model``
 pins that xsim's reference and gate 1's model are the same semantics for
 fixed-length literal slots.  No Vivado is an honest SKIP, never a pass.
 
@@ -451,7 +452,8 @@ def test_resume_bound_covers_the_nocase_over_uppercase_quadrant():
     want = S.oracle_windows(sub, data)
     assert len(want) == 4 and len({w.start for w in want}) == 1
     # exactly the reported bound is complete ...
-    assert S.nominate_with_resume(sub_model, sub, (data,), out_cap=depth) == want
+    assert S.nominate_with_resume(
+    sub_model, sub, (data,), out_cap=depth) == want
     # ... and one below it is not (so the bound is tight, not merely safe)
     assert S.nominate_with_resume(
         sub_model, sub, (data,), out_cap=depth - 1) < want
@@ -520,8 +522,12 @@ def test_corpus_is_not_vacuous(group, cases, nominations):
 # THE AC-S2-3 RTL gate, and `test_the_rtl_gate_actually_bites` sabotages the
 # emitter to prove the gate is not vacuous.  Vivado-absent is an honest SKIP
 # (R83/SR18), never a pass.
-XSIM = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "hw", "xsim_diff.py")
+XSIM = os.path.join(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))),
+            "hw",
+             "xsim_diff.py")
 
 
 def _xsim_diff():
@@ -535,7 +541,8 @@ def _xsim_diff():
 
 
 def _run_xsim(argv):
-    """Run one differential in-process; SKIP (never pass) when Vivado is absent."""
+    """Run one differential in-process; SKIP (never pass) when Vivado is
+    absent."""
     mod = _xsim_diff()
     rc = mod.main(argv)
     if rc == 2:
@@ -625,8 +632,10 @@ def test_the_rtl_reference_agrees_with_the_group_model(group, model):
         entries, ovf = model.scan(data, 0, 1 << 40)
         assert not ovf
         got = sorted((m.end, m.pattern_id) for m in entries)
-        assert got == want, ("corpus %d: the xsim reference and the group "
-                             "model disagree: %s" % (i, sorted(set(got) ^ set(want))[:6]))
+        assert got == want, (
+            "corpus %d: the xsim reference and the group "
+            "model disagree: %s"
+            % (i, sorted(set(got) ^ set(want))[:6]))
 
 
 # ==========================================================================
@@ -707,7 +716,8 @@ def test_case_permuted_split_anchors_still_fire(fuzz):
 
 
 def test_full_group_boundary_split(group, model):
-    """The same split property at N=253, on a smaller chunk to stay in budget."""
+    """The same split property at N=253, on a smaller chunk to stay in
+    budget."""
     slot = max((s for s in group.slots if not s.tombstone),
                key=lambda s: s.length)
     chunk = 256
@@ -772,7 +782,8 @@ def test_unclassified_is_unreachable_by_construction_not_by_luck(group):
     test fails and the ``unclassified`` pin becomes a real gate again.
     """
     empty = [(r.gid, r.sid) for s in group.slots if not s.tombstone
-             for r in s.rules if not S.rule_by_line(r.line_no)[1].dropped_options]
+             for r in s.rules
+             if not S.rule_by_line(r.line_no)[1].dropped_options]
     assert not empty, (
         "%d rule(s) drop no conjuncts, so FP_UNCLASSIFIED is now REACHABLE "
         "and its pinned 0 is a real assertion — re-read it: %r"

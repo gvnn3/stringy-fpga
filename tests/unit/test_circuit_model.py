@@ -1,6 +1,8 @@
-"""Unit tests for the circuit software model (pyro._circuit_model, R7/R19; AC-1-3).
+"""Unit tests for the circuit software model (pyro._circuit_model, R7/R19;
+AC-1-3).
 
-The model *executes the generator's automaton* (not an independent re-derivation)
+The model *executes the generator's automaton* (not an independent
+re-derivation)
 so a generator lowering bug shows up as a missing/extra candidate window here.
 Tests assert: harness-contract CSR/identity semantics (R45/R47a), result-ring
 overflow (R47), the not-resident guard (R41), and the correctness keystone —
@@ -208,7 +210,8 @@ def test_empty_matches_are_byte_identical(ctx, i):
     circ = _load(ctx, pat)
     got = cm.group0_finditer(circ.circuit, subj)
     ref = [m.span() for m in re.finditer(pat, subj)]
-    assert got == ref            # includes every zero-width match (no suppression)
+    # includes every zero-width match (no suppression)
+    assert got == ref
 
 
 # --- R24/§6.5: scoped inline multiline threaded per-anchor ----------------
@@ -236,7 +239,8 @@ def test_scoped_multiline_complete_and_identical(ctx, i):
 
 # --- R22 must_advance: lazy/optional empty-preferring quantifiers ---------
 # CPython finditer (post-3.7) retries at the same position after an empty match,
-# demanding a non-empty match before advancing, so e.g. 'a??' on 'aa' yields BOTH
+# demanding a non-empty match before advancing, so e.g. 'a??' on 'aa' yields
+# BOTH
 # the empty and the non-empty spans at each position.  Dropping any of these is
 # an R19 false negative — the class R19 never permits.
 
@@ -267,7 +271,8 @@ def test_lazy_empty_quantifiers_byte_identical(ctx, i):
 # inside group0_finditer) and the enumerated spans must equal stock finditer.
 _GRAMMAR_DIFF = [
     ("abc", "zabcabz"), (r"[a-z]+", "A9bc7de"), (r"[^0-9]+", "a1b22c"),
-    ("a|bc|def", "xdefbcax"), ("(ab|cd)+", "abcdab z"), ("colou?r", "color colour"),
+    ("a|bc|def", "xdefbcax"), ("(ab|cd)+", "abcdab z"), ("colou?r", "color "
+                                                                    "colour"),
     (r"\d{2,4}", "1 22 333 4444 55555"), (r"\w+@\w+", "u@h x a@b"),
     (r"\bcat\b", "cat cats a cat"), (r"a.c", "abc a\nc"), ("^x", "x\nxy"),
     ("y$", "y\nzy"), ("é+", "café thé"), (r"\w+", "a\U0001D518b \U0001D518"),
@@ -290,7 +295,8 @@ def test_group0_finditer_surfaces_a_completeness_defect(ctx):
     # completeness cross-check inside group0_finditer raises (R19), rather than
     # silently returning a wrong/short result.
     circ = _load(ctx, r"abc")
-    # Corrupt the circuit's automaton so it can no longer begin a match (drop the
+    # Corrupt the circuit's automaton so it can no longer begin a match (drop
+    # the
     # start state's outgoing edges) — a stand-in for a generator lowering bug.
     import copy
     broken = copy.deepcopy(circ.circuit)

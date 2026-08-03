@@ -40,18 +40,21 @@ def _manifest(payload, pattern="abc", flags=0):
 # --- R4/R4b canonical keying ----------------------------------------------
 def test_key_components_are_full_r4_tuple():
     k = _key("abc", 0)
-    assert len(k) == 6  # (pattern_bytes, enc, eff_flags, gen, toolchain, shell)
+    # (pattern_bytes, enc, eff_flags, gen, toolchain, shell)
+    assert len(k) == 6
     assert k[4] == TOOLCHAIN_VERSION and k[5] == SHELL_VERSION
 
 
 def test_canonically_equal_patterns_share_one_key():
-    # R4b: "(?i)abc" and ("abc", re.I) canonicalize identically -> one circuit key.
+    # R4b: "(?i)abc" and ("abc", re.I) canonicalize identically -> one circuit
+    # key.
     assert _key("(?i)abc", 0) == _key("abc", re.I)
     assert key_digest(_key("(?i)abc", 0)) == key_digest(_key("abc", re.I))
 
 
 def test_scoped_inline_flag_stays_distinct():
-    # Scoped (?i:abc) is semantic, not a global flag -> distinct key from plain.
+    # Scoped (?i:abc) is semantic, not a global flag -> distinct key from
+    # plain.
     assert _key("(?i:abc)", 0) != _key("abc", 0)
 
 
@@ -108,7 +111,9 @@ def test_success_supersedes_prior_failure(tmp_path):
 def test_warm_survives_restart(tmp_path):
     k = _key("needle[0-9]+")
     payload = b"PYROSTUB" + b"\x02" * 16
-    BitstreamCache(tmp_path).put(k, payload, _manifest(payload, "needle[0-9]+"))
+    BitstreamCache(tmp_path).put(
+    k, payload, _manifest(
+        payload, "needle[0-9]+"))
     # "restart": a brand-new cache object over the same on-disk directory.
     reopened = BitstreamCache(tmp_path)
     entry = reopened.get(k)

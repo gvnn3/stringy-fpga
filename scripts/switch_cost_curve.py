@@ -107,8 +107,9 @@ def timed_load(iface, path):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+    description=__doc__,
+     formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--json-out", default=None)
     ap.add_argument("--list", action="store_true")
@@ -146,8 +147,8 @@ def main():
             uniq.append(p)
 
     print("Switch-cost curve, %d reps each, on %s\n" % (args.reps, iface))
-    print("%-26s %-6s %-9s | %-8s %-8s %-8s | %-8s"
-          % ("artifact", "slots", "MB", "program", "recover", "probe", "TOTAL"))
+    print("%-26s %-6s %-9s | %-8s %-8s %-8s | %-8s" %
+     ("artifact", "slots", "MB", "program", "recover", "probe", "TOTAL"))
     print("-" * 88)
     rows = []
     for a in uniq:
@@ -157,17 +158,21 @@ def main():
             except Exception as exc:
                 print("%-26s FAILED: %s" % (a["name"][:26], exc))
                 continue
-            rows.append({**{k: a[k] for k in ("name", "kind", "bytes", "slots")},
+            keep = {k: a[k] for k in ("name", "kind", "bytes", "slots")}
+            rows.append({**keep,
                          "rep": rep, **ph})
             print("%-26s %-6s %-9.2f | %8.2f %8.2f %8.2f | %8.2f%s"
-                  % (a["name"][:26].replace("group_", "").replace("_partial.bit", ""),
+                  % (a["name"][:26].replace("group_", "")
+                     .replace("_partial.bit", ""),
                      a["slots"] if a["slots"] else "-",
                      a["bytes"] / 1e6, ph.get("program", float("nan")),
                      ph.get("recover", float("nan")), ph["probe"],
-                     ph["switch_total"], "" if ph["probe_ok"] else "  PROBE FAILED"))
+                     ph["switch_total"], "" if ph["probe_ok"] else "  PROBE "
+                                                                   "FAILED"))
 
     if rows:
-        print("\n--- correlation: does switch cost depend on WHAT is loaded? ---")
+        print("\n--- correlation: does switch cost depend on WHAT is loaded? "
+              "---")
         by_art = {}
         for r in rows:
             by_art.setdefault(r["name"], []).append(r)
@@ -176,7 +181,8 @@ def main():
         for name, rs in by_art.items():
             tots = [r["switch_total"] for r in rs]
             print("%-30s %-7s %-8.2f %-9.2f %-9.2f"
-                  % (name[:30].replace("group_", "").replace("_partial.bit", ""),
+                  % (name[:30].replace("group_", "")
+                     .replace("_partial.bit", ""),
                      rs[0]["slots"] or "-", rs[0]["bytes"] / 1e6,
                      sum(tots) / len(tots), max(tots) - min(tots)))
         allt = [r["switch_total"] for r in rows]
@@ -189,10 +195,12 @@ def main():
         smallest = min(rows, key=lambda r: r["slots"] or 0)
         largest = max(rows, key=lambda r: r["slots"] or 0)
         if smallest["slots"] and largest["slots"]:
-            print("  %dx more slots (%d -> %d) costs %+.1f%% switch time"
-                  % (largest["slots"] // max(1, smallest["slots"]),
-                     smallest["slots"], largest["slots"],
-                     100 * (largest["switch_total"] / smallest["switch_total"] - 1)))
+            print("  %dx more slots (%d -> %d) costs %+.1f%% switch time" %
+    (largest["slots"] //
+    max(1, smallest["slots"]), smallest["slots"], largest["slots"], 100 *
+    (largest["switch_total"] /
+    smallest["switch_total"] -
+     1)))
 
     if args.json_out:
         with open(args.json_out, "w") as fh:

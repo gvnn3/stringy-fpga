@@ -19,8 +19,13 @@ from pyro.snort import report as SR
 from pyro.snort import triage as ST
 
 CORPUS = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "third_party", "snort3-community-rules", "snort3-community.rules")
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(__file__)))),
+                "third_party",
+                "snort3-community-rules",
+                 "snort3-community.rules")
 
 pytestmark = pytest.mark.skipif(
     not os.path.exists(CORPUS), reason="community ruleset not vendored")

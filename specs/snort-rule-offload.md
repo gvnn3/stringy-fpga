@@ -190,7 +190,8 @@ clause of SF4–SF7 where they conflict. None changes an SR obligation.
   selection — the value narrows the normalized-header cursor to one field —
   so its content is evaluated in the inspector-normalized User-Agent field,
   not pkt_data; 1,760/1,892 → 1,759/1,893. The valued `sip_method:`/
-  `sip_stat_code:` forms remain genuine match options and stay raw.)* **2,258 rules (56%) match only
+  `sip_stat_code:` forms remain genuine match options and stay raw.)* **2,258
+  rules (56%) match only
   inside inspector-normalized sticky buffers** (http_uri 1,692, http_header
   556, file_data 263, …) that exist only after Snort's HTTP inspector
   (dechunk, gunzip, %-decode). A raw-byte prefilter can be blinded by encoding
@@ -481,13 +482,28 @@ Requirements are numbered `SR1…` in this spec's own namespace.
 
 ## 5. Coverage (against the 4,017-rule corpus)
 
-| Tier | Rules | % | Disposition |
-|---|---|---|---|
-| Anchor-compilable prefilter circuits | 3,896 | 97.0% | FPGA nominates; Snort verifies |
-| — of which raw/pkt_data anchors (SR2 `raw-anchor`) | 1,759 | 43.8% | nomination sound even vs encoding; only suppression-eligible tier (SR17) |
-| — HTTP-textual / file_data / dce anchors (`normalized-buffer`) | 2,137 | 53.2% | nomination best-effort (SF11); tripwires cover the known-blind cases (SR15) |
-| Header-only | 95 | 2.4% | host var-table match (SR13); no payload circuit |
-| Never literal-prefilterable | 26 | 0.6% | always forwarded (SR1) |
+- **Anchor-compilable prefilter circuits**
+  - Rules: 3,896
+  - %: 97.0%
+  - Disposition: FPGA nominates; Snort verifies
+- **— of which raw/pkt_data anchors (SR2 `raw-anchor`)**
+  - Rules: 1,759
+  - %: 43.8%
+  - Disposition: nomination sound even vs encoding; only suppression-eligible
+    tier (SR17)
+- **— HTTP-textual / file_data / dce anchors (`normalized-buffer`)**
+  - Rules: 2,137
+  - %: 53.2%
+  - Disposition: nomination best-effort (SF11); tripwires cover the known-
+    blind cases (SR15)
+- **Header-only**
+  - Rules: 95
+  - %: 2.4%
+  - Disposition: host var-table match (SR13); no payload circuit
+- **Never literal-prefilterable**
+  - Rules: 26
+  - %: 0.6%
+  - Disposition: always forwarded (SR1)
 
 **Honest headline constraint:** compilable coverage is 97%, but **instantaneous
 resident coverage is one group ≈ 256 rules ≈ 6.4%** under single-tenant

@@ -1,4 +1,5 @@
-# Phase 2 implementation plan — SNORT-PF dynamic filtering (branch `phase2-snort`)
+# Phase 2 implementation plan — SNORT-PF dynamic filtering (branch
+`phase2-snort`)
 
 - **Written:** 2026-07-27 (pre-authorization) · **Last updated:** 2026-07-30
 - **Goal (owner's statement):** swap FPGA programs at run time based on the
@@ -11,12 +12,18 @@
 
 ## 0. Status — S1, S2 and S3 are complete
 
-| Phase | Acceptance | State |
-|---|---|---|
-| S1 — one rule through the unmodified flow | AC-S1-1, AC-S1-2 | **PASS** on silicon |
-| S2 — pattern-set groups + triage + oracle | AC-S2-1/-2/-3 | **PASS** on silicon (33/33 incl. the resident-identity clause) |
-| S3 — full build, residency, incremental updates | AC-S3-1/-2/-3 | **PASS**; 21/21 groups built and `pr_verified` |
-| S4 — ROM-baked shared trie + suppression pilot | AC-S4-1/-2 | **not started — owner-gated** |
+- **S1 — one rule through the unmodified flow**
+  - Acceptance: AC-S1-1, AC-S1-2
+  - State: **PASS** on silicon
+- **S2 — pattern-set groups + triage + oracle**
+  - Acceptance: AC-S2-1/-2/-3
+  - State: **PASS** on silicon (33/33 incl. the resident-identity clause)
+- **S3 — full build, residency, incremental updates**
+  - Acceptance: AC-S3-1/-2/-3
+  - State: **PASS**; 21/21 groups built and `pr_verified`
+- **S4 — ROM-baked shared trie + suppression pilot**
+  - Acceptance: AC-S4-1/-2
+  - State: **not started — owner-gated**
 
 Open for the owner: the **A1–A4 amendment slate** and open finding **OF-1**
 (`docs/spec-amendments-s3.md`), and recommendations 2–4 of the working-set
@@ -24,13 +31,21 @@ study (`docs/studies/a5-working-set.md`).
 
 Headline measurements now in hand (all on `nf-server06`, this shell):
 
-| quantity | planned/assumed | **measured** |
-|---|---|---|
-| groups for the corpus | ~16 | **21** over 8 port classes |
-| swap cost | 17–45 s | **14–16.2 s** incl. in-band wedge recovery |
-| per-group build | ~30–60 min | **~60 min**; 22.6 h of Vivado for all 21 |
-| group circuit | 20–30K LUTs @ dpb=8 | **~10K LUTs @ dpb=1**, fmax 250.7–258.8 |
-| instantaneous coverage | 6.4% of the corpus | **~28%** of the rules that could fire on a given flow |
+- **groups for the corpus**
+  - planned/assumed: ~16
+  - **measured**: **21** over 8 port classes
+- **swap cost**
+  - planned/assumed: 17–45 s
+  - **measured**: **14–16.2 s** incl. in-band wedge recovery
+- **per-group build**
+  - planned/assumed: ~30–60 min
+  - **measured**: **~60 min**; 22.6 h of Vivado for all 21
+- **group circuit**
+  - planned/assumed: 20–30K LUTs @ dpb=8
+  - **measured**: **~10K LUTs @ dpb=1**, fmax 250.7–258.8
+- **instantaneous coverage**
+  - planned/assumed: 6.4% of the corpus
+  - **measured**: **~28%** of the rules that could fire on a given flow
 
 ## 1. Shape of the system
 
@@ -75,13 +90,33 @@ explicitly. Seconds-scale rule pushes ("A5") and line-rate inline filtering
 
 ## 3. Owner decisions (OQ-1…OQ-5) — current state
 
-| OQ | Question | State |
-|---|---|---|
-| OQ-1 | Open the A5 slot (loadable-table engine)? | **Answered on the evidence it asked for.** The deferral was "measure S3's real swap cadence first." Measured (16 s), then measured what it buys: coverage is **capacity-limited, not latency-limited** — 27/27 scenarios (`docs/studies/a5-working-set.md`). **Do not open A5 on coverage grounds.** A separate, unpriced *build-time* argument survives (weekly diffs without Vivado). Owner's call. |
-| OQ-2 | Line-rate CMAC tap on the roadmap? | Unchanged: feasibility spike only, not started. Host-tap ceiling remains sufficient. |
-| OQ-3 | Raise GROUP_MAX past 256? | Measured headroom exists (a 253-slot group is 12.7% of the PR budget). But the study says group **size** is not the lever — group **composition** is (see §6.2). Recommend deciding both together. |
-| OQ-4 | Suppression pilot wanted? | Unchanged: **nomination-only through S3**, SR17-gated, S4 question. The SR16 differential the gate depends on now exists and has bitten (sid 509). |
-| OQ-5 | Which traffic tap? | Resolved: **AF_PACKET on the control binding**, implemented in `pyro/snort/daemon.py`; pcap replay for deterministic runs. Risk b sidestepped rather than solved (see §5b). |
+- **OQ-1**
+  - Question: Open the A5 slot (loadable-table engine)?
+  - State: **Answered on the evidence it asked for.** The deferral was
+    "measure S3's real swap cadence first." Measured (16 s), then measured
+    what it buys: coverage is **capacity-limited, not latency-limited** —
+    27/27 scenarios (`docs/studies/a5-working-set.md`). **Do not open A5 on
+    coverage grounds.** A separate, unpriced *build-time* argument survives
+    (weekly diffs without Vivado). Owner's call.
+- **OQ-2**
+  - Question: Line-rate CMAC tap on the roadmap?
+  - State: Unchanged: feasibility spike only, not started. Host-tap ceiling
+    remains sufficient.
+- **OQ-3**
+  - Question: Raise GROUP_MAX past 256?
+  - State: Measured headroom exists (a 253-slot group is 12.7% of the PR
+    budget). But the study says group **size** is not the lever — group
+    **composition** is (see §6.2). Recommend deciding both together.
+- **OQ-4**
+  - Question: Suppression pilot wanted?
+  - State: Unchanged: **nomination-only through S3**, SR17-gated, S4 question.
+    The SR16 differential the gate depends on now exists and has bitten (sid
+    509).
+- **OQ-5**
+  - Question: Which traffic tap?
+  - State: Resolved: **AF_PACKET on the control binding**, implemented in
+    `pyro/snort/daemon.py`; pcap replay for deterministic runs. Risk b
+    sidestepped rather than solved (see §5b).
 
 ## 4. Delivery sequence — as planned, as delivered
 

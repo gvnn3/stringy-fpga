@@ -43,7 +43,8 @@ class HybridMatch:
         self._span0 = span0
         self._pos = pos
         self._endpos = endpos
-        self._op = op                  # origin op: search/match/fullmatch/finditer
+        # origin op: search/match/fullmatch/finditer
+        self._op = op
         self._ngroups = patt._stock.groups
         self._named = bool(patt._stock.groupindex)
         self._real = None              # cached CPython re-run result
@@ -59,7 +60,8 @@ class HybridMatch:
             # evaluated exactly as in the original scan.  A window-TRUNCATED
             # fullmatch([s, e)) would move end-of-string to e and flip those
             # assertions at the window edge -- silently returning the same span
-            # with the wrong group in an alternation (the regression this fixes).
+            # with the wrong group in an alternation (the regression this
+            # fixes).
             real = self._stock.match(self._subject, s, self._endpos)
             if real is None or real.span(0) != self._span0:
                 # The anchored match did not reproduce the reported window.
@@ -80,7 +82,8 @@ class HybridMatch:
         ``None`` -- the guarded chain always yields a real ``re.Match`` so
         subsequent accessors can never hit ``AttributeError`` (R52).
         """
-        subj, (s, e), endpos, pos = self._subject, self._span0, self._endpos, self._pos
+        subj, (s, e) = self._subject, self._span0
+        endpos, pos = self._endpos, self._pos
         if self._op == "finditer":
             for m in self._stock.finditer(subj, pos, endpos):
                 if m.span(0) == (s, e):
@@ -191,7 +194,8 @@ class PyPattern:
     hybrid re-run) plus the cached HW-eligibility classification (R4/R8).
 
     This class is kept in the tree **permanently** and is always constructible,
-    even when the native ``pyro._fast.Pattern`` is active: it is the byte-for-byte
+    even when the native ``pyro._fast.Pattern`` is active: it is the
+    byte-for-byte
     behavioural reference the differential tests drive the native type against,
     and the fallback the whole package uses when the extension cannot be built
     (no C toolchain).  ``PyroPattern`` below is an alias for whichever class is

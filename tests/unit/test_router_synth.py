@@ -50,8 +50,13 @@ def test_permanent_fallback_routes_as_ordinary_fallback(temp_global):
     needle = "permfbneedle"
     # Inject a negative cache entry for this pattern's key (as if synthesis had
     # failed, R65) so the router's residency consult forces fallback.
-    key = make_key(hdl.identity.descriptor_key(needle, 0, hdl.GENERATOR_VERSION),
-                   TOOLCHAIN_VERSION, SHELL_VERSION)
+    key = make_key(
+    hdl.identity.descriptor_key(
+        needle,
+        0,
+        hdl.GENERATOR_VERSION),
+        TOOLCHAIN_VERSION,
+         SHELL_VERSION)
     temp_global._cache.put_failure(key, "injected failure")
 
     subject = _large(needle)
@@ -67,8 +72,13 @@ def test_permanent_fallback_routes_as_ordinary_fallback(temp_global):
 def test_permanent_fallback_finditer(temp_global):
     _route.reset_stats()
     needle = r"permfb\d+"
-    key = make_key(hdl.identity.descriptor_key(needle, 0, hdl.GENERATOR_VERSION),
-                   TOOLCHAIN_VERSION, SHELL_VERSION)
+    key = make_key(
+    hdl.identity.descriptor_key(
+        needle,
+        0,
+        hdl.GENERATOR_VERSION),
+        TOOLCHAIN_VERSION,
+         SHELL_VERSION)
     temp_global._cache.put_failure(key, "injected")
     subject = _large("perm") + " permfb12 permfb345"
     got = [m.span() for m in pre.finditer(needle, subject)]
@@ -95,19 +105,23 @@ def test_prewarm_single_pattern(temp_global):
 
 
 def test_prewarm_iterable_mixed(temp_global):
-    # Iterable with an eligible and a fallback-only pattern; never raises (R62).
-    pyro.prewarm([r"good[0-9]+", r"(a)\1"])   # 2nd is a backreference -> ignored
+    # Iterable with an eligible and a fallback-only pattern; never raises
+    # (R62).
+    # 2nd is a backreference -> ignored
+    pyro.prewarm([r"good[0-9]+", r"(a)\1"])
     temp_global.drain(10.0)
     assert temp_global.stats()["synth_launched"] == 1
 
 
 def test_prewarm_never_raises_on_fallback_only(temp_global):
-    pyro.prewarm(r"(?P=missing)")     # invalid/backref-style -> silently ignored
+    # invalid/backref-style -> silently ignored
+    pyro.prewarm(r"(?P=missing)")
     assert temp_global.stats()["synth_launched"] == 0
 
 
 def test_prewarm_is_not_on_patched_re(temp_global):
-    # R62/§7.2: prewarm must NOT appear on the standard re namespace when installed.
+    # R62/§7.2: prewarm must NOT appear on the standard re namespace when
+    # installed.
     pyro.install()
     try:
         assert not hasattr(re, "prewarm")

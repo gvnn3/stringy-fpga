@@ -23,7 +23,8 @@ def main() -> int:
         print("  %-10s %.2f MB -> %.3f ms" % (name, sz / 1e6, sz / RATE * 1e3))
 
     print("\ndouble-buffer vs SF2 URAM (%.2f MB):" % (URAM / 1e6))
-    for name, sz in (("16 B cap x2", 2 * TABLE_16B), ("8 B cap x2", 2 * TABLE_8B)):
+    for name, sz in (("16 B cap x2", 2 * TABLE_16B),
+                     ("8 B cap x2", 2 * TABLE_8B)):
         print("  %-12s %.2f MB  %s"
               % (name, sz / 1e6, "FITS" if sz <= URAM else "does NOT fit"))
 
@@ -36,8 +37,9 @@ def main() -> int:
                       ("standard 1518 B", STD_PAYLOAD)):
         print("  %-20s %d frames" % (name, -(-int(TABLE_16B) // pay)))
 
-    print("\nbandwidth for a FULL rewrite, by phase length (need <= %.0f%% of P):"
-          % (R_STAR * 100))
+    print(
+    "\nbandwidth for a FULL rewrite, by phase length (need <= %.0f%% of P):" %
+     (R_STAR * 100))
     for P in (1.0, 0.1, 0.01, 0.001):
         need = TABLE_16B / (R_STAR * P)
         print("  P=%-8s %9.1f MB/s  %s" % ("%gs" % P, need / 1e6,

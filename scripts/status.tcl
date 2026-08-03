@@ -1,8 +1,10 @@
-# status.tcl - U250 (xcu250) board/device status over JTAG via Vivado Hardware Manager
+# status.tcl - U250 (xcu250) board/device status over JTAG via Vivado Hardware
+# Manager
 # Read-only. Does NOT program the device.
 # Run:  vivado -mode batch -source status.tcl
 #  or:  vivado -mode tcl  then  source status.tcl
-# Optional: pass a hw_server URL ->  vivado -mode batch -source status.tcl -tclargs <host:port>
+# Optional: pass a hw_server URL ->  vivado -mode batch -source status.tcl
+# -tclargs <host:port>
 
 set url "localhost:3121"
 if {$argc >= 1} { set url [lindex $argv 0] }
@@ -43,15 +45,20 @@ foreach tgt $targets {
         hr "CONFIG HEALTH (SLR0)"
         foreach {label prop} {
             DONE_pin        {REGISTER.CONFIG_STATUS.SLR0.BIT[14]_DONE_PIN}
-            End_of_startup  {REGISTER.CONFIG_STATUS.SLR0.BIT[04]_END_OF_STARTUP_(EOS)_STATUS}
-            PLL_lock        {REGISTER.CONFIG_STATUS.SLR0.BIT[02]_PLL_LOCK_STATUS}
+            End_of_startup  \
+              {REGISTER.CONFIG_STATUS.SLR0.BIT[04]_END_OF_STARTUP_(EOS)_STATUS}
+            PLL_lock        \
+              {REGISTER.CONFIG_STATUS.SLR0.BIT[02]_PLL_LOCK_STATUS}
             CRC_error       {REGISTER.CONFIG_STATUS.SLR0.BIT[00]_CRC_ERROR}
-            OverTemp_alarm  {REGISTER.CONFIG_STATUS.SLR0.BIT[17]_SYSTEM_MONITOR_OVER-TEMP_ALARM_STATUS}
+            OverTemp_alarm  \
+  {REGISTER.CONFIG_STATUS.SLR0.BIT[17]_SYSTEM_MONITOR_OVER-TEMP_ALARM_STATUS}
         } {
             if {![catch {get_property $prop $dev} val]} { kv $label $val }
         }
-        catch { kv "BOOT_STATUS.SLR0"   [get_property REGISTER.BOOT_STATUS.SLR0 $dev] }
-        catch { kv "CONFIG_STATUS.SLR0" [get_property REGISTER.CONFIG_STATUS.SLR0 $dev] }
+        catch { kv "BOOT_STATUS.SLR0"   [get_property \
+          REGISTER.BOOT_STATUS.SLR0 $dev] }
+        catch { kv "CONFIG_STATUS.SLR0" [get_property \
+          REGISTER.CONFIG_STATUS.SLR0 $dev] }
 
         # --- SYSMON: die temperature + internal voltage rails (if exposed) ---
         set sm [get_hw_sysmons -quiet -of_objects $dev]
@@ -64,7 +71,9 @@ foreach tgt $targets {
                 VCCAUX      VCCAUX      "V"
                 VCCBRAM     VCCBRAM     "V"
             } {
-                if {![catch {get_property $prop $sm} val]} { kv $label "$val $unit" }
+                if {![catch {get_property $prop $sm} val]} {
+                    kv $label "$val $unit"
+                }
             }
         } else {
             hr "SYSMON (die)"

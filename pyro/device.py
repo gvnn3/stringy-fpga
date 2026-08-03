@@ -4,7 +4,8 @@ This module is the PYRO-specific surface the coder and the test-developer each
 derive independently from §10.1/§10.2 of the spec.  It provides four functions:
 
   * :func:`encode_frame` / :func:`decode_frame` — the byte-exact PYRO control
-    header + payload codec of **R78** (R86.2/R86.3).  ``encode_frame`` builds the
+    header + payload codec of **R78** (R86.2/R86.3).  ``encode_frame`` builds
+    the
     14-byte big-endian PYRO header (R78.3) plus payload — i.e. the Ethernet
     *payload*, frame offset 14 onward; the 14-byte Ethernet L2 header
     (``dst``/``src``/``0x88B5``), the FCS, and any 60-byte-minimum zero-padding
@@ -26,19 +27,22 @@ and :class:`PyroLoadError` (JTAG/PR-load failure).  ``PermissionError``/
 ``OSError``/transport internals are wrapped or swallowed and MUST NOT leak.
 
 **Config-in, no ad-hoc env reads (R5/R35a, R86).** Every environment-derived
-value (netdev, expected ``PYRO_SHELL_SPEC16``, probe-timeout, Vivado/``hw_server``
+value (netdev, expected ``PYRO_SHELL_SPEC16``, probe-timeout,
+Vivado/``hw_server``
 locations) is carried on the passed :class:`DeviceConfig`; the functions never
 read ``os.environ`` themselves.  **Spec-sanctioned private test seams (R86.6,
 v2.2.2)** on the config
 (``cap_check``, ``transport_factory``, ``load_runner``) let the no-privilege /
 timeout / SPEC16-mismatch / load-failure paths be exercised without hardware;
-each defaults to the real implementation, so ``DeviceConfig()`` is byte-identical
+each defaults to the real implementation, so ``DeviceConfig()`` is
+byte-identical
 to production.  R86.6 blesses these as the specced (test-developer-usable)
 injection points; they are explicit config injection, not ``pyro.testing``
 ambient hooks, so they need no ``PYRO_ENABLE_TEST_HOOKS`` gate.
 
 This namespace is PYRO-specific and is NOT patched onto the standard ``re``
-module by :func:`pyro.install` (§7.2), mirroring ``explain``/``stats``/``testing``.
+module by :func:`pyro.install` (§7.2), mirroring
+``explain``/``stats``/``testing``.
 """
 
 from __future__ import annotations
@@ -88,7 +92,8 @@ __all__ = [
 # Protocol constants (R78)
 # ---------------------------------------------------------------------------
 
-#: EtherType for PYRO control frames (R78.1), big-endian on the wire (``88 B5``).
+#: : EtherType for PYRO control frames (R78.1), big-endian on the wire (``88
+#: B5``).
 ETHERTYPE = 0x88B5
 #: PYRO control-header sanity byte, ``'P'`` (R78.3).
 MAGIC = 0x50
@@ -159,7 +164,8 @@ PYRO_RECOVER_CMD = (
 _CAP_NET_RAW = 13
 
 # ``struct`` format for the 14-byte PYRO control header, all big-endian (R78.2/
-# R78.3): magic(B) version(B) kind(B) flags(B) slot(H) seq(I) length(H) resv(H).
+# R78.3): magic(B) version(B) kind(B) flags(B) slot(H) seq(I) length(H)
+# resv(H).
 _HDR_FMT = ">BBBBHIHH"
 assert struct.calcsize(_HDR_FMT) == PYRO_HEADER_LEN
 
@@ -174,11 +180,13 @@ class PyroDeviceError(Exception):
 
 
 class PyroFrameError(PyroDeviceError):
-    """A malformed PYRO frame in :func:`encode_frame`/:func:`decode_frame` (R86.1)."""
+    """A malformed PYRO frame in :func:`encode_frame`/:func:`decode_frame`
+    (R86.1)."""
 
 
 class PyroLoadError(PyroDeviceError):
-    """A JTAG / PR partial-bitstream load failure in :func:`load_partial` (R86.1)."""
+    """A JTAG / PR partial-bitstream load failure in :func:`load_partial`
+    (R86.1)."""
 
 
 # ---------------------------------------------------------------------------
@@ -194,11 +202,13 @@ def encode_frame(kind: int, slot: int, seq: int, payload: bytes,
     The Ethernet L2 header, FCS, and 60-byte-minimum zero-padding are the
     transport's concern (R78.9) and are not produced here.
 
-    Raises :class:`PyroFrameError` if ``len(payload) > 1486`` (R78.9), if ``kind``
+    Raises :class:`PyroFrameError` if ``len(payload) > 1486`` (R78.9), if
+    ``kind``
     is not an R78.4 message kind, if ``flags != 0`` (reserved, MUST be 0 in
     version 1), or if ``slot``/``seq`` are out of their unsigned field ranges.
     """
-    # B1/M2: reject a non-bytes-like payload BEFORE any conversion.  ``bytes(7)``
+    # B1/M2: reject a non-bytes-like payload BEFORE any conversion.
+    # ``bytes(7)``
     # would silently fabricate a 7-byte zero payload, and ``bytes(2**33)`` would
     # allocate an attacker-sized buffer — both must be a taxonomy error, not a
     # valid frame or a MemoryError.
@@ -214,9 +224,12 @@ def encode_frame(kind: int, slot: int, seq: int, payload: bytes,
     flags = _index_field("flags", flags)
     if flags != 0:
         raise PyroFrameError(
-            f"flags must be 0 in protocol version 1 (got {flags!r}) (R78.3/R86.2)")
+    f"flags must be 0 in protocol version 1 (got {
+        flags!r}) (R78.3/R86.2)")
     if kind not in VALID_KINDS:
-        raise PyroFrameError(f"invalid message kind 0x{_as_byte(kind):02x} (R78.4)")
+        raise PyroFrameError(
+    f"invalid message kind 0x{
+        _as_byte(kind):02x} (R78.4)")
     payload = bytes(payload)
     if len(payload) > max_payload:
         raise PyroFrameError(
@@ -240,7 +253,8 @@ def _index_field(name: str, value) -> int:
         return operator.index(value)
     except TypeError as exc:
         raise PyroFrameError(
-            f"{name} must be an integer, not {type(value).__name__} (R86.2)") from exc
+    f"{name} must be an integer, not {
+        type(value).__name__} (R86.2)") from exc
 
 
 @dataclass(frozen=True)
@@ -248,7 +262,8 @@ class DecodedFrame:
     """A decoded PYRO control header + payload (R86.3).
 
     Field names mirror the R78.3 header exactly.  ``payload`` is the raw
-    kind-specific body ``bytes``; typed sub-parsing of ``ID_REPLY``/``MATCH_REPLY``
+    kind-specific body ``bytes``; typed sub-parsing of
+    ``ID_REPLY``/``MATCH_REPLY``
     is offered separately (not required of :func:`decode_frame`, R86.3).
     """
 
@@ -263,7 +278,8 @@ class DecodedFrame:
 
 
 def decode_frame(data: bytes, max_payload: int = MAX_PAYLOAD) -> DecodedFrame:
-    """Parse the PYRO control header + payload (R78) into a :class:`DecodedFrame`.
+    """Parse the PYRO control header + payload (R78) into a
+    :class:`DecodedFrame`.
 
     ``data`` is the same slice :func:`encode_frame` returns (frame offset 14
     onward), optionally followed by Ethernet zero-padding, which is ignored
@@ -271,11 +287,14 @@ def decode_frame(data: bytes, max_payload: int = MAX_PAYLOAD) -> DecodedFrame:
 
     Raises :class:`PyroFrameError` if the header is truncated, if ``magic`` !=
     ``0x50``, if ``version`` != ``0x01``, if ``flags`` != 0, if ``length``
-    exceeds the R78.9 bound (1486), or if fewer than ``length`` payload bytes are
+    exceeds the R78.9 bound (1486), or if fewer than ``length`` payload bytes
+    are
     available (R86.3).
     """
-    # B2/M2: reject non-bytes-like input BEFORE any conversion.  ``bytes(None)`` /
-    # ``bytes("xyz")`` raise TypeError (taxonomy leak) and ``bytes(2**33)`` would
+    # B2/M2: reject non-bytes-like input BEFORE any conversion.
+    # ``bytes(None)`` /
+    # ``bytes("xyz")`` raise TypeError (taxonomy leak) and ``bytes(2**33)``
+    # would
     # allocate an 8 GiB buffer before any bounds check — guard first.
     if not isinstance(data, (bytes, bytearray, memoryview)):
         raise PyroFrameError(
@@ -283,26 +302,33 @@ def decode_frame(data: bytes, max_payload: int = MAX_PAYLOAD) -> DecodedFrame:
     data = bytes(data)
     if len(data) < PYRO_HEADER_LEN:
         raise PyroFrameError(
-            f"truncated PYRO header: {len(data)} < {PYRO_HEADER_LEN} bytes (R78.3)")
+    f"truncated PYRO header: {
+        len(data)} < {PYRO_HEADER_LEN} bytes (R78.3)")
     magic, version, kind, flags, slot, seq, length, reserved = struct.unpack(
         _HDR_FMT, data[:PYRO_HEADER_LEN])
     if magic != MAGIC:
-        raise PyroFrameError(f"bad magic 0x{magic:02x} (expected 0x50) (R78.3)")
+        raise PyroFrameError(
+    f"bad magic 0x{
+        magic:02x} (expected 0x50) (R78.3)")
     if version != VERSION:
         raise PyroFrameError(
-            f"unsupported protocol version 0x{version:02x} (expected 0x01) (R78.3)")
+    f"unsupported protocol version 0x{
+        version:02x} (expected 0x01) (R78.3)")
     if flags != 0:
         raise PyroFrameError(
-            f"reserved flags must be 0 in version 1 (got 0x{flags:02x}) (R78.3)")
+    f"reserved flags must be 0 in version 1 (got 0x{
+        flags:02x}) (R78.3)")
     if length > max_payload:
         raise PyroFrameError(
             f"length {length} exceeds MTU bound {max_payload} (R78.9/R78.9a)")
     avail = len(data) - PYRO_HEADER_LEN
     if avail < length:
         raise PyroFrameError(
-            f"length {length} inconsistent with {avail} available payload bytes "
+            f"length {length} inconsistent with {avail} available payload "
+            f"bytes "
             f"(R78.9/R86.3)")
-    payload = data[PYRO_HEADER_LEN:PYRO_HEADER_LEN + length]  # trailing pad ignored
+    # trailing pad ignored
+    payload = data[PYRO_HEADER_LEN:PYRO_HEADER_LEN + length]
     return DecodedFrame(magic=magic, version=version, kind=kind, flags=flags,
                         slot=slot, seq=seq, length=length, payload=payload)
 
@@ -366,7 +392,8 @@ def _default_vivado_dir() -> str:
 
 @dataclass(frozen=True)
 class DeviceConfig:
-    """Config carried into the R86 device functions (R86.6, config-in discipline).
+    """Config carried into the R86 device functions (R86.6, config-in
+    discipline).
 
     Every field is defaulted from a spec constant so ``DeviceConfig()`` is fully
     usable with no introspection; the functions never read ``os.environ``.  Only
@@ -382,15 +409,21 @@ class DeviceConfig:
     MAY override on the config.
 
     **Spec-sanctioned private test seams (R86.6, v2.2.2).** The three
-    ``Optional[Callable]`` seam fields are **blessed by R86.6** as the specced way
-    to drive the no-privilege / timeout / SPEC16-mismatch / load-failure paths of
+    ``Optional[Callable]`` seam fields are **blessed by R86.6** as the specced
+    way
+    to drive the no-privilege / timeout / SPEC16-mismatch / load-failure paths
+    of
     AC-2b-1..2b-3 without hardware.  Each defaults to ``None`` => the real
     production implementation, so a ``DeviceConfig()`` with no overrides is
-    byte-identical to production behavior.  They need no ``PYRO_ENABLE_TEST_HOOKS``
-    gate: passing a non-default value is explicit config injection, not an ambient
+    byte-identical to production behavior.  They need no
+    ``PYRO_ENABLE_TEST_HOOKS``
+    gate: passing a non-default value is explicit config injection, not an
+    ambient
     process-wide hook, so there is no production foot-gun (R86.6).  The seam
-    callables' contracts are normative in **R86.7** (v2.2.3): ``transport_factory``
-    returns an R86.7 ``Transport`` (full-Ethernet-frame ``send``/``recv``-``None``-
+    callables' contracts are normative in **R86.7** (v2.2.3):
+    ``transport_factory``
+    returns an R86.7 ``Transport`` (full-Ethernet-frame
+    ``send``/``recv``-``None``-
     sentinel/idempotent ``close``); ``load_runner`` returns ``(rc: int, output:
     str)`` with nonzero ``rc`` → :class:`PyroLoadError`.
     """
@@ -402,15 +435,21 @@ class DeviceConfig:
     # transport.  When set, it takes precedence over iface: the PF is bound to
     # qdma-pf, so the netdev does not exist while the char-dev does.
     chardev: Optional[str] = field(default_factory=_sampled_chardev)
-    expected_spec16: int = PYRO_SHELL_SPEC16             # expected SPEC16 (R81)
+    # expected SPEC16 (R81)
+    expected_spec16: int = PYRO_SHELL_SPEC16
     probe_timeout_s: float = PYRO_PROBE_TIMEOUT          # per attempt (R84)
     probe_attempts: int = PYRO_PROBE_ATTEMPTS            # attempt count (R84)
-    src_mac: bytes = b"\x02\x00\x00\x00\x00\x01"         # example LA host MAC (R78.10)
-    dst_mac: bytes = b"\xff\xff\xff\xff\xff\xff"          # broadcast (MAC-independent)
+    # example LA host MAC (R78.10)
+    src_mac: bytes = b"\x02\x00\x00\x00\x00\x01"
+    # broadcast (MAC-independent)
+    dst_mac: bytes = b"\xff\xff\xff\xff\xff\xff"
     # -- JTAG load (R85/R86.5); hw_server from PYRO_HW_SERVER (R68) ----------
-    hw_server: str = field(default_factory=_sampled_hw_server)  # Vivado hw_server URL
-    vivado_dir: str = field(default_factory=_default_vivado_dir)  # PINNED_VIVADO_DIR
-    jtag_load_timeout_s: float = PYRO_JTAG_LOAD_TIMEOUT   # R84 (v2.2.2), transient
+    # Vivado hw_server URL
+    hw_server: str = field(default_factory=_sampled_hw_server)
+    vivado_dir: str = field(
+    default_factory=_default_vivado_dir)  # PINNED_VIVADO_DIR
+    # R84 (v2.2.2), transient
+    jtag_load_timeout_s: float = PYRO_JTAG_LOAD_TIMEOUT
     # R85a (v2.5.1) post-program in-band recovery; None disables (R86.5/R86.6)
     recover_cmd: Optional[Tuple[str, ...]] = PYRO_RECOVER_CMD
     # R78.9a (v2.6.0/P2c): frame payload bound.  FAIL-CLOSED default 1486;
@@ -418,7 +457,8 @@ class DeviceConfig:
     max_payload: int = MAX_PAYLOAD
     # -- spec-sanctioned private test seams (R86.6; None => real impl) -------
     cap_check: Optional[Callable[[], bool]] = None
-    transport_factory: Optional[Callable[["DeviceConfig"], "_Transport"]] = None
+    transport_factory: Optional[Callable[[
+        "DeviceConfig"], "_Transport"]] = None
     load_runner: Optional[Callable[[list, str, float], Tuple[int, str]]] = None
 
 
@@ -428,7 +468,8 @@ class DeviceConfig:
 
 # R83 canonical unmet-condition clauses, in the fixed enumeration order
 # (v2.5.0/A4: the unconfigured-interface condition is condition 1 — you cannot
-# probe an interface you do not have — renumbering the previous two to 2 and 3).
+# probe an interface you do not have — renumbering the previous two to 2
+# and 3).
 _REASON_IFACE = "transport: PYRO_DEVICE_IFACE not configured"
 _REASON_PROBE = (
     "probe: no valid ID_REPLY (no reply within PYRO_PROBE_TIMEOUT, "
@@ -440,14 +481,18 @@ _REASON_CHARDEV = "transport: QDMA char-dev not accessible"
 
 
 def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
-    """Probe device usability (R86.4) — returns ``(usable, reason)``, never raises
+    """Probe device usability (R86.4) — returns ``(usable, reason)``, never
+    raises
     for any "not usable" condition.
 
     Order (R86.4 privilege-free guarantee): the ``CAP_NET_RAW`` gate (R83) is
-    checked **first**, privilege-free, so that when the capability is absent this
+    checked **first**, privilege-free, so that when the capability is absent
+    this
     returns ``(False, "device_usable=false — …transport: CAP_NET_RAW absent")``
-    **without** attempting any privileged ``AF_PACKET`` operation and never raises
-    ``PermissionError``.  When the capability is present, a live ``ID_REQUEST`` /
+    **without** attempting any privileged ``AF_PACKET`` operation and never
+    raises
+    ``PermissionError``.  When the capability is present, a live
+    ``ID_REQUEST`` /
     ``ID_REPLY`` handshake (up to ``probe_attempts`` × ``probe_timeout_s``, R84)
     validates the ``static_shell_id`` ``SPEC16`` (R81).
 
@@ -459,11 +504,13 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
     ``transport: PYRO_DEVICE_IFACE not configured`` as the **first** R83
     condition.  Never raises, never guesses a name, never scans the system for
     candidate interfaces (R70).  An injected ``transport_factory`` (R86.6
-    explicit config injection) needs no netdev, so the seam paths are unaffected.
+    explicit config injection) needs no netdev, so the seam paths are
+    unaffected.
 
     Returns ``(True, reason)`` only when **all** conditions hold; otherwise
     ``(False, <R83 canonical enumeration>)``.  May raise :class:`PyroFrameError`
-    only on a genuinely malformed reply frame (R86.4), which the caller treats as
+    only on a genuinely malformed reply frame (R86.4), which the caller treats
+    as
     not-usable.
     """
     # P2d (v2.7.0): with a configured char-dev the PF is bound to
@@ -479,7 +526,8 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
                else _has_cap_net_raw())
         # R68 (v2.5.0) fail-closed gate: the real AF_PACKET transport needs a
         # configured netdev; an injected transport (R86.6 seam) does not.
-        iface_missing = config.iface is None and config.transport_factory is None
+        iface_missing = (config.iface is None
+                         and config.transport_factory is None)
 
     static_shell_id: Optional[int] = None
     if cap and not iface_missing:
@@ -493,15 +541,17 @@ def probe_device(config: DeviceConfig) -> Tuple[bool, str]:
         except OSError:
             static_shell_id = None
 
-    probe_ok = (static_shell_id is not None
-                and (static_shell_id >> 16) == (config.expected_spec16 & 0xFFFF))
+    probe_ok = (
+    static_shell_id is not None and (
+        static_shell_id >> 16) == (
+            config.expected_spec16 & 0xFFFF))
 
     if cap and probe_ok:
         transport_note = ("QDMA char-dev present" if chardev_mode
                           else "CAP_NET_RAW present")
-        return (True,
-                f"device_usable=true — static_shell_id=0x{static_shell_id:08x}, "
-                f"transport: {transport_note}")
+        return (
+    True, f"device_usable=true — static_shell_id=0x{
+        static_shell_id:08x}, " f"transport: {transport_note}")
 
     # R83 canonical enumeration of exactly the unmet conditions, in fixed order
     # (1. iface not configured, 2. no valid ID_REPLY, 3. CAP_NET_RAW absent).
@@ -543,7 +593,8 @@ def _live_probe(config: DeviceConfig) -> Optional[int]:
 
     Precondition: ``CAP_NET_RAW`` is present (probe_device gates on it).  Up to
     ``probe_attempts`` attempts, each with a fresh ``seq`` and a
-    ``probe_timeout_s`` receive window (R84).  Malformed reply => PyroFrameError.
+    ``probe_timeout_s`` receive window (R84).  Malformed reply =>
+    PyroFrameError.
     """
     transport = _make_transport(config)
     try:
@@ -589,7 +640,8 @@ def _parse_id_reply(frame: bytes, expect_seq: int) -> Optional[int]:
     ethertype = struct.unpack(">H", frame[12:14])[0]
     if ethertype != ETHERTYPE:
         return None  # not a PYRO frame (R78.1) — ignore
-    dec = decode_frame(frame[14:])  # PyroFrameError on genuinely malformed header
+    # PyroFrameError on genuinely malformed header
+    dec = decode_frame(frame[14:])
     if dec.kind != KIND_ID_REPLY or dec.seq != expect_seq:
         return None  # not the reply we're waiting for — keep listening
     if dec.length < 12:
@@ -657,7 +709,8 @@ def read_perf_counters(config: DeviceConfig,
                 try:
                     dec = decode_frame(reply[14:])
                 except PyroFrameError:
-                    continue  # stray/garbled 0x88B5 frame — keep listening (N1)
+                    # stray/garbled 0x88B5 frame — keep listening (N1)
+                    continue
                 if dec.seq != seq:
                     continue  # not the reply we're waiting for
                 if dec.kind == KIND_STATUS:
@@ -801,8 +854,9 @@ def load_table(config: "DeviceConfig", image: bytes, *, slot: int = 1,
                     "dropped, R78.4)" % (kind, seq))
             if st.error:
                 raise PyroLoadError(
-                    "device raised table error %d on kind 0x%02x "
-                    "(bytes_received=%d)" % (st.error, kind, st.bytes_received))
+    "device raised table error %d on kind 0x%02x "
+    "(bytes_received=%d)" %
+     (st.error, kind, st.bytes_received))
             return st
 
         # BEGIN gates compatibility before a byte moves (§3).
@@ -867,7 +921,8 @@ def _engine_id_of(image: bytes) -> int:
 
 class _Transport:
     """The R86.7 ``Transport`` protocol (v2.2.3) — what ``transport_factory``
-    returns.  It carries **full Ethernet frames including the 14-byte L2 header**
+    returns.  It carries **full Ethernet frames including the 14-byte L2
+    header**
     (``dst/src/0x88B5``), so the transport is the layer that prepends/strips the
     L2 header around the R86.2/R86.3 PYRO portion and owns the 60-byte-minimum
     zero-padding (R78.9).
@@ -875,8 +930,10 @@ class _Transport:
       * ``send(frame: bytes) -> None`` — transmit one complete Ethernet frame.
       * ``recv(timeout: float) -> bytes | None`` — the next complete Ethernet
         frame, or ``None`` if none arrives within ``timeout`` seconds (the
-        ``None`` sentinel means *no-frame-within-timeout*, distinct from an empty
-        frame; a ``None`` at each attempt drives the ``probe: no valid ID_REPLY``
+        ``None`` sentinel means *no-frame-within-timeout*, distinct from an
+        empty
+        frame; a ``None`` at each attempt drives the ``probe: no valid
+        ID_REPLY``
         disposition, R84/R86.4).
       * ``close() -> None`` — release the transport; **idempotent**.
     """
@@ -895,18 +952,21 @@ class _EthTransport(_Transport):
     """Real ``AF_PACKET`` raw-socket transport on the ``onic`` netdev (R78/R83),
     conforming to the R86.7 ``Transport`` protocol.
 
-    Constructed only after the ``CAP_NET_RAW`` gate passes; still fully contained
+    Constructed only after the ``CAP_NET_RAW`` gate passes; still fully
+    contained
     so no ``OSError`` leaks (probe_device swallows OSError into "no reply").
     """
 
     def __init__(self, config: DeviceConfig):
-        import socket  # local import: keeps package import off the socket module
+        # local import: keeps package import off the socket module
+        import socket
         if config.iface is None:
             # R68 no-default rule (v2.5.0): no configured netdev to bind.
             # OSError keeps the R86.1 containment contract at every call site
             # (probe/perf swallow OSError into their (False, reason)/None paths)
             # instead of leaking a bind() TypeError.
-            raise OSError("PYRO_DEVICE_IFACE not configured (R68, fail-closed)")
+            raise OSError(
+                "PYRO_DEVICE_IFACE not configured (R68, fail-closed)")
         self._socket_mod = socket
         self._sock = socket.socket(
             socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETHERTYPE))
@@ -926,7 +986,8 @@ class _EthTransport(_Transport):
         self._sock.send(frame)
 
     def recv(self, timeout: float) -> Optional[bytes]:
-        # R86.7: return the next complete Ethernet frame, or None if none arrives
+        # R86.7: return the next complete Ethernet frame, or None if none
+        # arrives
         # within `timeout` (the None sentinel = no-frame-within-timeout).
         import select
         r, _, _ = select.select([self._sock], [], [], max(0.0, float(timeout)))
@@ -963,7 +1024,8 @@ class _CharDevTransport(_Transport):
         if config.chardev is None:
             # R68 no-default rule: no configured char-dev to open (fail-closed,
             # same contract as _EthTransport's unconfigured-iface OSError).
-            raise OSError("PYRO_QDMA_CHARDEV not configured (R68, fail-closed)")
+            raise OSError(
+                "PYRO_QDMA_CHARDEV not configured (R68, fail-closed)")
         import threading
         self._fd = os.open(config.chardev, os.O_RDWR)
         self._buf = bytearray()
@@ -1003,7 +1065,8 @@ class _CharDevTransport(_Transport):
         os.write(self._fd, frame)
 
     def _extract_frame(self) -> Optional[bytes]:
-        """Pop one complete Ethernet-framed R78 frame off the buffer, or None."""
+        """Pop one complete Ethernet-framed R78 frame off the buffer, or
+        None."""
         buf = self._buf
         while True:
             # Skip inter-frame zero padding (dst MAC never begins 0x00: config
@@ -1017,7 +1080,8 @@ class _CharDevTransport(_Transport):
             if len(buf) < hdr_end:
                 return None
             # Plausibility: R78 ethertype at L2 offset 12, MAGIC/VERSION at the
-            # PYRO header start.  On mismatch shift one byte and rescan (resync).
+            # PYRO header start.  On mismatch shift one byte and rescan
+            # (resync).
             if (buf[12] != (ETHERTYPE >> 8) or buf[13] != (ETHERTYPE & 0xFF)
                     or buf[self._ETH_HLEN] != MAGIC
                     or buf[self._ETH_HLEN + 1] != VERSION):
@@ -1153,7 +1217,8 @@ class _LoadTimeout(Exception):
 
 
 def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
-    """Load a partial bitstream into ``pyro_rp`` over JTAG via ``hw_server`` (R86.5).
+    """Load a partial bitstream into ``pyro_rp`` over JTAG via ``hw_server``
+    (R86.5).
 
     Runs a Vivado batch Tcl (``open_hw_manager`` / ``connect_hw_server`` /
     ``program_hw_devices``, R85).  Returns ``None`` on success; on any failure
@@ -1161,17 +1226,23 @@ def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
     bitstream, load error, timeout) raises :class:`PyroLoadError` with a
     diagnostic (R86.5).  ``PermissionError``/``OSError`` never leak (R86.1).
 
-    R85: this uses **JTAG only** and does **not** disturb the live PCIe link — the
+    R85: this uses **JTAG only** and does **not** disturb the live PCIe link —
+    the
     static shell owns PCIe and is bit-identical across configurations.  R85a
     (v2.5.1): a raw JTAG program leaves the child **unreachable** (no decoupler;
-    stuck QDMA C2H stream state), so after a successful program step this runs the
-    in-band recovery command (``config.recover_cmd``, default ``PYRO_RECOVER_CMD``
-    = ``sudo -n scripts/pyro_wedge_recover.sh``) through the same ``load_runner``
-    seam; the load succeeds only if both steps do.  Recovery transiently detaches
+    stuck QDMA C2H stream state), so after a successful program step this runs
+    the
+    in-band recovery command (``config.recover_cmd``, default
+    ``PYRO_RECOVER_CMD``
+    = ``sudo -n scripts/pyro_wedge_recover.sh``) through the same
+    ``load_runner``
+    seam; the load succeeds only if both steps do.  Recovery transiently
+    detaches
     the ``onic`` driver, so the netdev's MAC changes across a load.  Artifact
     admissibility (``payload_kind == "pr_bitstream"``, same-release, integrity —
     R72b/R82) is enforced by ``pyro_circuit_load`` upstream (R40); this function
-    performs the JTAG mechanism and surfaces mechanism failures as PyroLoadError.
+    performs the JTAG mechanism and surfaces mechanism failures as
+    PyroLoadError.
     """
     try:
         path = os.fspath(partial_bitstream_path)
@@ -1208,9 +1279,11 @@ def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
             rc, out = runner(cmd, workdir, float(config.jtag_load_timeout_s))
         except _LoadTimeout:
             # R84 (v2.2.2): a JTAG-load timeout is TRANSIENT — it maps to
-            # PYRO_E_NOT_RESIDENT/fallback (R65) upstream, not permanent fallback.
+            # PYRO_E_NOT_RESIDENT/fallback (R65) upstream, not permanent
+            # fallback.
             raise PyroLoadError(
-                f"JTAG hw_server load exceeded {config.jtag_load_timeout_s:g}s; "
+                f"JTAG hw_server load exceeded "
+                f"{config.jtag_load_timeout_s:g}s; "
                 f"process tree killed (R84/R85/R86.5)")
         except PyroLoadError:
             raise
@@ -1219,9 +1292,11 @@ def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
                 f"JTAG hw_server load could not launch vivado: {exc} (R86.5)"
             ) from exc
         except Exception as exc:
-            # N2: KeyboardInterrupt / SystemExit are BaseException (not Exception)
+            # N2: KeyboardInterrupt / SystemExit are BaseException (not
+            # Exception)
             # and deliberately propagate untouched so an operator interrupt is
-            # never masked as a load failure (mirrors toolchain.py's convention).
+            # never masked as a load failure (mirrors toolchain.py's
+            # convention).
             raise PyroLoadError(
                 f"JTAG hw_server load failed: {exc!r} (R86.5)") from exc
         if rc != 0:
@@ -1264,7 +1339,8 @@ def load_partial(config: DeviceConfig, partial_bitstream_path) -> None:
 
 def _resolve_vivado(config: DeviceConfig) -> str:
     """Resolve the ``vivado`` executable for the JTAG batch flow, else raise
-    :class:`PyroLoadError`.  Falls back to the R70a-pin PINNED_VIVADO_DIR when the
+    :class:`PyroLoadError`.  Falls back to the R70a-pin PINNED_VIVADO_DIR when
+    the
     config does not name an install dir (the pinned location is not filesystem
     scanning, R70)."""
     from .synth.toolchain import PINNED_VIVADO_DIR
@@ -1276,15 +1352,18 @@ def _resolve_vivado(config: DeviceConfig) -> str:
     return exe
 
 
-def _default_load_runner(cmd: list, cwd: str, timeout: float) -> Tuple[int, str]:
-    """The real R86.7 ``load_runner``: run the JTAG batch command with an R77-style
+def _default_load_runner(
+    cmd: list, cwd: str, timeout: float) -> Tuple[int, str]:
+    """The real R86.7 ``load_runner``: run the JTAG batch command with an
+    R77-style
     process-tree kill on timeout.
 
     Returns ``(rc: int, output: str)`` — the process exit code and combined tool
     log (R86.7).  ``rc != 0`` is mapped to :class:`PyroLoadError` by the caller
     (``load_partial``), with ``output`` in the diagnostic.  Raises
     :class:`_LoadTimeout` on deadline expiry (after killing the whole process
-    group; the timeout need not surface as an ``rc``, R86.7), or ``OSError`` if the
+    group; the timeout need not surface as an ``rc``, R86.7), or ``OSError``
+    if the
     process cannot be launched (mapped to PyroLoadError by the caller)."""
     import signal
     import subprocess

@@ -1,6 +1,8 @@
-"""R78.11 (v2.4.0): host-side PERF counter read-out — pyro.device.read_perf_counters.
+"""R78.11 (v2.4.0): host-side PERF counter read-out —
+pyro.device.read_perf_counters.
 
-LIVE (no hardware): drives read_perf_counters through the R86.6 transport_factory
+LIVE (no hardware): drives read_perf_counters through the R86.6
+transport_factory
 seam with scripted replies, asserting the R78.11 dispositions:
 
   * a PERF_REPLY yields ``(cycles, bytes)`` decoded as two 64-bit big-endian
@@ -32,12 +34,14 @@ def _perf_reply(seq, cycles=6, nbytes=6):
 
 
 def _status_reply(seq):
-    return ETH + pdev.encode_frame(pdev.KIND_STATUS, 1, seq, struct.pack(">I", 7))
+    return ETH + pdev.encode_frame(pdev.KIND_STATUS,
+                                   1, seq, struct.pack(">I", 7))
 
 
 class _FakeTransport:
     """send/recv/close per the R86.7 seam contract.  ``responder(seq, recv_i)``
-    builds the reply for the recv-call at index ``recv_i`` since the last send."""
+    builds the reply for the recv-call at index ``recv_i`` since the last
+    send."""
 
     def __init__(self, responder):
         self._responder = responder
@@ -73,7 +77,8 @@ def _read(responder, *, slot=1, attempts=3, timeout=0.02):
 
 
 def test_perf_reply_returns_cycles_and_bytes():  # R78.11
-    result, t = _read(lambda seq, i: _perf_reply(seq, 123456, 654321) if i == 0 else None)
+    result, t = _read(lambda seq, i: _perf_reply(
+        seq, 123456, 654321) if i == 0 else None)
     assert result == (123456, 654321)
     assert t.closes >= 1, "transport must be closed (R86.7)"
 
@@ -82,11 +87,13 @@ def test_request_on_wire_is_vector_f_after_eth_header():  # R78.10(f)
     result, t = _read(lambda seq, i: _perf_reply(seq) if i == 0 else None)
     assert result == (6, 6)
     pyro_portion = t.sends[0][14:]
-    assert pyro_portion == _hx("50 01 06 00  00 01  00 00 00 01  00 00  00 00"), (
+    assert pyro_portion == _hx(
+        "50 01 06 00  00 01  00 00 00 01  00 00  00 00"), (
         "first attempt must be the R78.10(f) PERF_REQUEST bytes (seq=1)")
 
 
-def test_no_reply_yields_none_counters_unavailable():  # R78.11 (pre-2.4.0 child)
+# R78.11 (pre-2.4.0 child)
+def test_no_reply_yields_none_counters_unavailable():
     result, t = _read(lambda seq, i: None)
     assert result is None, ("a silent child (drops unknown kind, R78.4) must "
                             "yield None — counters unavailable, never a fault")
@@ -102,7 +109,8 @@ def test_status_error_reply_yields_none():  # R78.11 (non-resident slot)
 def test_short_perf_reply_raises_frame_error():  # R78.11 (malformed reply)
     def responder(seq, i):
         if i == 0:
-            return ETH + pdev.encode_frame(pdev.KIND_PERF_REPLY, 1, seq, b"\x00" * 8)
+            return ETH + \
+                pdev.encode_frame(pdev.KIND_PERF_REPLY, 1, seq, b"\x00" * 8)
         return None
 
     try:
@@ -118,7 +126,8 @@ def test_stray_frames_are_ignored_then_real_reply_wins():  # R78.11/N1
         if i == 0:
             return b"\x00" * 40                      # not a PYRO frame (R78.1)
         if i == 1:
-            return _perf_reply(seq + 7)              # wrong seq — not our reply
+            # wrong seq — not our reply
+            return _perf_reply(seq + 7)
         if i == 2:
             return ETH + b"\x00\x01\x02"             # garbled PYRO portion
         if i == 3:
@@ -130,7 +139,8 @@ def test_stray_frames_are_ignored_then_real_reply_wins():  # R78.11/N1
 
 
 def test_wrong_slot_request_carries_slot():  # R78.11: slot selects the circuit
-    result, t = _read(lambda seq, i: _perf_reply(seq) if i == 0 else None, slot=2)
+    result, t = _read(lambda seq, i: _perf_reply(seq)
+                      if i == 0 else None, slot=2)
     dec = pdev.decode_frame(t.sends[0][14:])
     assert dec.slot == 2
     assert dec.kind == pdev.KIND_PERF_REQUEST

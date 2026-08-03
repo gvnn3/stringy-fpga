@@ -33,9 +33,8 @@ ENGINE_KIND_MODEL = 0
 # Flags whose semantics the compiler can faithfully encode (R9 inline/flags,
 # R24/R25).  UNICODE is a no-op for str and is auto-added by the parser; any
 # other flag bit (e.g. re.LOCALE, re.DEBUG) forces fallback (R25).
-SUPPORTED_FLAGS = (
-    re.ASCII | re.IGNORECASE | re.MULTILINE | re.DOTALL | re.VERBOSE | re.UNICODE
-)
+SUPPORTED_FLAGS = ( re.ASCII | re.IGNORECASE | re.MULTILINE |
+                   re.DOTALL | re.VERBOSE | re.UNICODE )
 
 MAXREPEAT = _sre.MAXREPEAT
 
@@ -95,9 +94,8 @@ def classify(pattern, flags: int = 0) -> Classification:
             return Classification(False, "pattern not UTF-8 encodable", None)
     try:
         parsed = _sre.parse(
-            bytes(pattern) if is_bytes and not isinstance(pattern, bytes) else pattern,
-            flags,
-        )
+    bytes(pattern) if is_bytes and not isinstance(
+        pattern, bytes) else pattern, flags, )
     except re.error as exc:  # invalid pattern -> not our decision to make
         return Classification(False, f"parse error: {exc}", None)
 
@@ -145,7 +143,8 @@ def _node_states(op, av, is_bytes, ignorecase, ascii_mode) -> int:
         return 0
     if op is _c.BRANCH:
         _none, branches = av
-        return sum(_walk(b, is_bytes, ignorecase, ascii_mode) for b in branches)
+        return sum(_walk(b, is_bytes, ignorecase, ascii_mode)
+                   for b in branches)
     if op is _c.SUBPATTERN:
         group, add_flags, del_flags, sub = av
         if (add_flags | del_flags) & ~int(SUPPORTED_FLAGS):
@@ -198,7 +197,9 @@ def _check_class(members, is_bytes, ignorecase, ascii_mode):
                 # Conservatively reject a range whose endpoints need full
                 # folding; interior full-fold chars in wide ranges are not
                 # deeply scanned (documented limitation).
-                if len(chr(lo).casefold()) != 1 or len(chr(hi).casefold()) != 1:
+                if len(
+    chr(lo).casefold()) != 1 or len(
+        chr(hi).casefold()) != 1:
                     raise _Reject("full case folding")
         elif iop is _c.CATEGORY:
             if iav not in _SUPPORTED_CATEGORY:

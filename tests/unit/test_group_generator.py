@@ -129,7 +129,8 @@ def test_hazard_b_overflow_still_retires_the_pending_entry():
     clear = rtl.index("pend[pend_idx] <= 1'b0;")
     captest = rtl.index("if (out_count < out_cap) begin")
     ovf = rtl.index("status <= status | 32'h0000_0008;  // OVF")
-    assert clear < captest < ovf, "clear must precede (and not be inside) the cap test"
+    assert clear < captest < ovf, (
+        "clear must precede (and not be inside) the cap test")
     assert "HAZARD (b)" in rtl
 
 
@@ -304,12 +305,14 @@ def test_estimate_group_width_scales_luts_and_the_harness_not_state_flops():
     assert e8["ffs"] > e1["ffs"]
     # the STATE flops are what is width-independent, not the FF total
     assert _fixed(e8)[1] == _fixed(e1)[1]
-    assert _fixed(e8)[0] - E._HARNESS_LUTS == 8 * (_fixed(e1)[0] - E._HARNESS_LUTS)
+    assert _fixed(e8)[0] - E._HARNESS_LUTS == 8 * \
+                  (_fixed(e1)[0] - E._HARNESS_LUTS)
     assert e8["pend_bits"] == 8 * e1["pend_bits"]
 
 
 def test_estimate_group_models_the_group_harness_registers():
-    """Every register `_emit_rtl_group` declares outside the automata is counted.
+    """Every register `_emit_rtl_group` declares outside the automata is
+    counted.
 
     Read against the emitter: `pend` (NPEND), `pend_base` (64), and the 1-deep
     skid (`skid_data` 8*w, `skid_keep` w when w>1, `skid_valid`, `skid_last`).
@@ -404,7 +407,9 @@ def test_group_circuit_lowers_nocase_in_bytes_mode():
     """The S1 silicon defect: a str-mode nocase lowering over-approximates to
     'any code point' and still passes completeness-only tests."""
     import pyro.snort.groups as G
-    slot = G.GroupSlot(0, b"abc", True, (G.RuleRef(1, 1, "raw-anchor", "", 1),))
+    slot = G.GroupSlot(
+    0, b"abc", True, (G.RuleRef(
+        1, 1, "raw-anchor", "", 1),))
     grp = G.RuleGroup("$HTTP_PORTS", 0, (slot,))
     c = G.group_circuit(grp)
     assert c.enc == _auto.ENC_BYTES

@@ -40,7 +40,8 @@ def _force_model():
     pyro.refresh_env()
 
 
-@pytest.mark.parametrize("entry", GROUP_PATTERNS, ids=[e[0] for e in GROUP_PATTERNS])
+@pytest.mark.parametrize("entry", GROUP_PATTERNS,
+                         ids=[e[0] for e in GROUP_PATTERNS])
 def test_hybrid_groups_byte_identical_forced_model(entry):
     """R18/R16: on the forced-model path, group extraction (groups/groupdict/
     span(n>0)/expand) is byte-identical to stock re."""
@@ -49,13 +50,19 @@ def test_hybrid_groups_byte_identical_forced_model(entry):
     oracle.assert_equivalent(pre, pattern, subject, 0, label=f"hybrid/{label}")
 
 
-@pytest.mark.parametrize("entry", GROUP_PATTERNS, ids=[e[0] for e in GROUP_PATTERNS])
+@pytest.mark.parametrize("entry", GROUP_PATTERNS,
+                         ids=[e[0] for e in GROUP_PATTERNS])
 def test_hybrid_groups_large_subject_model_path(entry):
     """R18/R21: with a >= S_min subject (model path), group spans/values remain
     byte-identical including code-point offset translation past the prefix."""
     label, pattern, subject = entry
     long_subject = LARGE_PREFIX + subject
-    oracle.assert_equivalent(pre, pattern, long_subject, 0, label=f"hybrid-large/{label}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    long_subject,
+    0,
+     label=f"hybrid-large/{label}")
 
 
 def test_expand_template_byte_identical():
@@ -67,7 +74,8 @@ def test_expand_template_byte_identical():
     m_pyro = pre.search(pattern, subject)
     m_std = stdre.search(pattern, subject)
     for tmpl in [r"\2-\1", r"\g<b>=\g<a>", r"[\g<0>]", r"\1\1"]:
-        assert m_pyro.expand(tmpl) == m_std.expand(tmpl), f"expand({tmpl!r}) mismatch"
+        assert m_pyro.expand(tmpl) == m_std.expand(
+            tmpl), f"expand({tmpl!r}) mismatch"
 
 
 def test_group0_only_access_correct():

@@ -1,10 +1,13 @@
 // *************************************************************************
 // PYRO Phase 2b - `pyro_rp` BLACK BOX stub (the frozen R80 boundary).
 //
-// An EMPTY module carrying exactly the R80 port list. Vivado elaborates an empty
-// module definition as a black box, which is what the DFX static synthesis needs:
+// An EMPTY module carrying exactly the R80 port list. Vivado elaborates an
+// empty
+// module definition as a black box, which is what the DFX static synthesis
+// needs:
 // the static shell is built with pyro_rp unpopulated, then
-// hw/dfx/build_static.tcl marks the cell HD.RECONFIGURABLE and links a real child
+// hw/dfx/build_static.tcl marks the cell HD.RECONFIGURABLE and links a real
+// child
 // in with `read_checkpoint -cell`.
 //
 // THIS FILE DEFINES THE CONTRACT. Every child -- the ID stub

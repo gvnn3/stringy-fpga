@@ -98,7 +98,11 @@ def test_global_inline_flags_canonicalize_to_same_identity(a, fa, b, fb):
 
 def test_scoped_inline_flags_are_not_canonicalized_away():
     # Scoped (?i:...) is semantic and must NOT collapse to the flagless form.
-    assert hdl.generate("(?i:abc)", 0).circ_id != hdl.generate("abc", 0).circ_id
+    assert hdl.generate(
+    "(?i:abc)",
+    0).circ_id != hdl.generate(
+        "abc",
+         0).circ_id
 
 
 def test_circ_flags_packs_num_patterns_high16():
@@ -132,7 +136,8 @@ def test_generate_rejects_ineligible_pattern():
 def test_iverilog_lints_generated_rtl(tmp_path):
     iverilog = shutil.which("iverilog")
     if iverilog is None:
-        pytest.skip("iverilog not on PATH; structural invariants asserted above")
+        pytest.skip(
+            "iverilog not on PATH; structural invariants asserted above")
     c = hdl.generate(r"^foo\d+(bar|baz)*$", 0)
     v = tmp_path / "circ.v"
     v.write_text(c.rtl)

@@ -53,12 +53,35 @@ All toolchain configuration is via **spec-named environment variables**
 `pyro.refresh_env()` — never on the per-call hot path (R5/R35a). Mid-process
 `os.environ` edits take effect only at the next sampling point (R35b).
 
-| Variable | Values | Default | Effect |
-|---|---|---|---|
-| `PYRO_TOOLCHAIN` | `mock` \| `vivado` | `mock` | Selects the synthesis toolchain (R70). Any unrecognized value is treated as `mock` — fail-safe: PYRO never silently attempts a real flow the operator didn't name. |
-| `PYRO_VIVADO` | install directory, e.g. `/usr/local/cad/2025.2/Vivado` | unset | Vivado install directory used when `PYRO_TOOLCHAIN=vivado`. **There is no default and no scanning** of the filesystem, `PATH`, or `XILINX_VIVADO` by library code (R70). If unset or it doesn't resolve to a working Vivado, the adapter is unavailable (`toolchain_present == false`) and every clause that needs it SKIPs (R71). Note (R70a-pin.2): the pinned install path is also available as the documented module constant `PINNED_VIVADO_DIR`, which `pyro.device.load_partial`'s JTAG loader resolves from when the device config doesn't override it — but `PYRO_VIVADO` itself has no library-side default; you must still set it explicitly to get the real OOC synthesis path. |
-| `PYRO_N_SYNTH` | integer | 1000 | Overrides the R4a synthesis-launch threshold (dispatch count before a pattern's circuit is enqueued for synthesis). An invalid value is ignored (default retained). |
-| `PYRO_CACHE_DIR` | filesystem path | runtime default | Location of the persistent bitstream cache (R4/R68). |
+- **`PYRO_TOOLCHAIN`**
+  - Values: `mock` | `vivado`
+  - Default: `mock`
+  - Effect: Selects the synthesis toolchain (R70). Any unrecognized value is
+    treated as `mock` — fail-safe: PYRO never silently attempts a real flow
+    the operator didn't name.
+- **`PYRO_VIVADO`**
+  - Values: install directory, e.g. `/usr/local/cad/2025.2/Vivado`
+  - Default: unset
+  - Effect: Vivado install directory used when `PYRO_TOOLCHAIN=vivado`.
+    **There is no default and no scanning** of the filesystem, `PATH`, or
+    `XILINX_VIVADO` by library code (R70). If unset or it doesn't resolve to a
+    working Vivado, the adapter is unavailable (`toolchain_present == false`)
+    and every clause that needs it SKIPs (R71). Note (R70a-pin.2): the pinned
+    install path is also available as the documented module constant
+    `PINNED_VIVADO_DIR`, which `pyro.device.load_partial`'s JTAG loader
+    resolves from when the device config doesn't override it — but
+    `PYRO_VIVADO` itself has no library-side default; you must still set it
+    explicitly to get the real OOC synthesis path.
+- **`PYRO_N_SYNTH`**
+  - Values: integer
+  - Default: 1000
+  - Effect: Overrides the R4a synthesis-launch threshold (dispatch count
+    before a pattern's circuit is enqueued for synthesis). An invalid value is
+    ignored (default retained).
+- **`PYRO_CACHE_DIR`**
+  - Values: filesystem path
+  - Default: runtime default
+  - Effect: Location of the persistent bitstream cache (R4/R68).
 
 Operators must set **both** `PYRO_TOOLCHAIN=vivado` and `PYRO_VIVADO=<dir>`
 to get the real flow; setting only one leaves the mock toolchain in effect
@@ -255,18 +278,39 @@ have been re-executed against 2025.2 specifically since the re-pin — the
 fresh confirmation run against the new pin is the honest next step before
 treating these rows as current evidence rather than inherited-from-2023.1.
 
-| Clause | Requires | Disposition |
-|---|---|---|
-| AC-2-1 — real OOC synth+P&R, honest manifest metrics fit budget + met timing, cache warm-reload | `toolchain_present` | **LIVE PASS** |
-| AC-2-1 — loadable PR bitstream produced | `pr_flow_present` | SKIP (`pr_flow_present=false`) |
-| AC-2-2 — on-device harness/identity/scan over >= 1 MiB | `device_usable` ∧ `pr_flow_present` | SKIP (`device_usable=false`) |
-| AC-2-3 — cold->warm real synth is minutes, async, never caller-blocking | `toolchain_present` | **LIVE PASS** |
-| AC-2-3 — warm->resident PR-load timing + resident dispatch on device | `device_usable` | SKIP (`device_usable=false`) |
-| AC-2-4 — estimator-vs-real P&R within R74 margin (calibration corpus); estimate-pass -> synth-fail -> permanent fallback on the real path | `toolchain_present` | **needs re-validation under 2025.2 (R74a)** — see §6 |
-| AC-2-5 — routing (R3-R5) asserted on model; native-hot-path R3b bound | (model) / (`R3c` gate) | routing **PASS**; R3b **SKIP** (measured 4.77x — precondition not yet met; becomes hard PASS at AC-3-3) |
-| AC-2-5 — resident-circuit throughput on hardware | `device_usable` | SKIP (`device_usable=false`) |
-| AC-2-6 — single-tenant PR arbitration, model-side (R64a) | (model) | **LIVE PASS** |
-| AC-2-6 — single-tenant PR arbitration on hardware | `device_usable` ∧ `pr_flow_present` | SKIP (`device_usable=false`) |
+- **AC-2-1 — real OOC synth+P&R, honest manifest metrics fit budget + met
+  timing, cache warm-reload**
+  - Requires: `toolchain_present`
+  - Disposition: **LIVE PASS**
+- **AC-2-1 — loadable PR bitstream produced**
+  - Requires: `pr_flow_present`
+  - Disposition: SKIP (`pr_flow_present=false`)
+- **AC-2-2 — on-device harness/identity/scan over >= 1 MiB**
+  - Requires: `device_usable` ∧ `pr_flow_present`
+  - Disposition: SKIP (`device_usable=false`)
+- **AC-2-3 — cold->warm real synth is minutes, async, never caller-blocking**
+  - Requires: `toolchain_present`
+  - Disposition: **LIVE PASS**
+- **AC-2-3 — warm->resident PR-load timing + resident dispatch on device**
+  - Requires: `device_usable`
+  - Disposition: SKIP (`device_usable=false`)
+- **AC-2-4 — estimator-vs-real P&R within R74 margin (calibration corpus);
+  estimate-pass -> synth-fail -> permanent fallback on the real path**
+  - Requires: `toolchain_present`
+  - Disposition: **needs re-validation under 2025.2 (R74a)** — see §6
+- **AC-2-5 — routing (R3-R5) asserted on model; native-hot-path R3b bound**
+  - Requires: (model) / (`R3c` gate)
+  - Disposition: routing **PASS**; R3b **SKIP** (measured 4.77x — precondition
+    not yet met; becomes hard PASS at AC-3-3)
+- **AC-2-5 — resident-circuit throughput on hardware**
+  - Requires: `device_usable`
+  - Disposition: SKIP (`device_usable=false`)
+- **AC-2-6 — single-tenant PR arbitration, model-side (R64a)**
+  - Requires: (model)
+  - Disposition: **LIVE PASS**
+- **AC-2-6 — single-tenant PR arbitration on hardware**
+  - Requires: `device_usable` ∧ `pr_flow_present`
+  - Disposition: SKIP (`device_usable=false`)
 
 Notes:
 

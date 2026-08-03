@@ -10,12 +10,16 @@ import ctypes
 import os
 import subprocess
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 LIB_PATH = os.path.join(REPO_ROOT, "build", "libpyro_rt.so")
 HEADER_PATH = os.path.join(REPO_ROOT, "include", "pyro_rt.h")
 
 ABI_2_0_0 = 0x00020000
-ABI_1_0_0 = 0x00010000  # Phase-0 historical checkpoint (R37 version-history note)
+# Phase-0 historical checkpoint (R37 version-history note)
+ABI_1_0_0 = 0x00010000
 
 # pyro_status (R38) — frozen, additive-only from ABI 2.0.0 (R37).
 PYRO_OK = 0
@@ -80,11 +84,13 @@ def _ensure_lib():
             break
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
-    return "cannot build libpyro_rt.so (no make/cc)" if not os.path.isfile(LIB_PATH) else None
+    return "cannot build libpyro_rt.so (no make/cc)" if not os.path.isfile(
+        LIB_PATH) else None
 
 
 def load():
-    """Return a configured CDLL, or raise OSError if unavailable (caller skips)."""
+    """Return a configured CDLL, or raise OSError if unavailable (caller
+    skips)."""
     reason = _ensure_lib()
     if reason:
         raise OSError(reason)
@@ -114,8 +120,15 @@ def load():
     lib.pyro_circuit_free.argtypes = [P]
 
     lib.pyro_scan.restype = c_int
-    lib.pyro_scan.argtypes = [P, P, ctypes.c_char_p, sz, ctypes.c_uint64,
-                              ctypes.POINTER(PyroMatch), sz, ctypes.POINTER(sz)]
+    lib.pyro_scan.argtypes = [
+    P,
+    P,
+    ctypes.c_char_p,
+    sz,
+    ctypes.c_uint64,
+    ctypes.POINTER(PyroMatch),
+    sz,
+     ctypes.POINTER(sz)]
 
     lib.pyro_caps_get.restype = c_int
     lib.pyro_caps_get.argtypes = [P, ctypes.POINTER(PyroCaps)]

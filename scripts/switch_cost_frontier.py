@@ -54,14 +54,20 @@ def run_point(tenants, budget, phase_s, switch_s, n_phases=6):
         if r["capture_mean"] > best:
             best, best_name = r["capture_mean"], name
     gain = (100 * (best / base - 1)) if base > 0 else float("nan")
-    return {"phase_s": phase_s, "switch_s": switch_s, "ratio": switch_s / phase_s,
-            "static": 100 * base, "best": 100 * best, "policy": best_name,
-            "gain_pct": gain}
+    return {
+    "phase_s": phase_s,
+    "switch_s": switch_s,
+    "ratio": switch_s / phase_s,
+    "static": 100 * base,
+    "best": 100 * best,
+    "policy": best_name,
+     "gain_pct": gain}
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+    description=__doc__,
+     formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
 
@@ -113,7 +119,11 @@ def main():
     if r_star:
         print("\n  requirement implied, at the measured PR cost of %.1f s:"
               % DL.PR_SWITCH_S)
-        print("  %-22s %-14s %s" % ("phase length", "max switch", "PR verdict"))
+        print(
+    "  %-22s %-14s %s" %
+    ("phase length",
+    "max switch",
+     "PR verdict"))
         print("  " + "-" * 56)
         for p, label in [(0.001, "1 ms (per-packet)"),
                          (1.0, "1 s"), (60.0, "1 min"),

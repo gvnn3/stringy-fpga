@@ -1,9 +1,11 @@
 """Public fault-injection seam ``pyro.testing`` (spec §9.1 R67).
 
-The seams are gated behind ``PYRO_ENABLE_TEST_HOOKS=1`` (sampled at R35a points),
+The seams are gated behind ``PYRO_ENABLE_TEST_HOOKS=1`` (sampled at R35a
+points),
 deterministic, observable via ``pyro.re.stats()`` (R66), and NEVER change
 caller-visible results relative to CPython (R16 — the fallback nets catch every
-injected fault).  All env mutation is via ``monkeypatch`` + ``refresh_env`` so the
+injected fault).  All env mutation is via ``monkeypatch`` + ``refresh_env`` so
+the
 cached snapshot is clean for the next test.
 """
 

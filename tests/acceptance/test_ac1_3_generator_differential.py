@@ -41,18 +41,30 @@ def test_construct_byte_identical_on_model(entry):
     byte-identical to stock re across all eight APIs."""
     label, pattern, flags, subject = entry
     _force_model()
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"gen/{label}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"gen/{label}")
 
 
-@pytest.mark.parametrize("entry", oracle.MUST_ADVANCE, ids=[e[0] for e in oracle.MUST_ADVANCE])
+@pytest.mark.parametrize("entry", oracle.MUST_ADVANCE,
+                         ids=[e[0] for e in oracle.MUST_ADVANCE])
 def test_must_advance_lazy_empty_byte_identical_on_model(entry):
     """R22/R16: lazy / empty-preferring quantifiers (a??, .*?, a*?, empty-branch
     alternations, empty-preferring-then-atom) served by the model circuit
-    reproduce CPython's must_advance finditer/findall/sub/split semantics exactly
+    reproduce CPython's must_advance finditer/findall/sub/split semantics
+    exactly
     — a post-empty retry demanding a non-empty match at the same start."""
     label, pattern, flags, subject = entry
     _force_model()
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"mustadv/{label}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"mustadv/{label}")
 
 
 def test_eligible_construct_has_resource_estimate():
@@ -61,23 +73,33 @@ def test_eligible_construct_has_resource_estimate():
     info = pre.explain(r"(\d+)-(\d+)")
     assert info["eligible"] is True
     est = info["est_resources"]
-    assert isinstance(est, dict) and est, "eligible pattern must expose est_resources"
+    assert isinstance(
+    est, dict) and est, "eligible pattern must expose est_resources"
     # numeric estimator fields
-    assert all(isinstance(v, int) for v in est.values() if not isinstance(v, dict)) or est
+    assert all(isinstance(v, int)
+               for v in est.values() if not isinstance(v, dict)) or est
 
 
-@pytest.mark.parametrize("entry", oracle.OVERCAP, ids=[e[0] for e in oracle.OVERCAP])
+@pytest.mark.parametrize("entry", oracle.OVERCAP,
+                         ids=[e[0] for e in oracle.OVERCAP])
 def test_over_budget_rejected_and_correct(entry):
-    """R11–R13/R12: a pattern whose generated circuit would exceed the advertised
+    """R11–R13/R12: a pattern whose generated circuit would exceed the
+    advertised
     complexity bound (MAX_REPEAT/MAX_STATES) is estimator-rejected to fallback
-    (circuit_status 'fallback_only'), yet still returns byte-identical results."""
+    (circuit_status 'fallback_only'), yet still returns byte-identical
+    results."""
     label, pattern, flags, subject = entry
     info = pre.explain(pattern, flags)
     assert info["eligible"] is False
     assert info["circuit_status"] == "fallback_only"
     assert info["est_resources"] is None
     _force_model()
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"overbudget/{label}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"overbudget/{label}")
 
 
 def _mib_corpus():
@@ -98,7 +120,9 @@ def test_one_mib_corpus_byte_identical():
     for pattern in (r"\berror\b|\bwarn\b|\bfail\b", r"\d+", r"path=\S+"):
         exp_fa = stdre.findall(pattern, corpus)
         act_fa = pre.findall(pattern, corpus)
-        assert act_fa == exp_fa, f"findall mismatch for {pattern!r} (n={len(exp_fa)})"
+        assert act_fa == exp_fa, f"findall mismatch for {
+    pattern!r} (n={
+        len(exp_fa)})"
         exp_sp = [m.span() for m in stdre.finditer(pattern, corpus)]
         act_sp = [m.span() for m in pre.finditer(pattern, corpus)]
         assert act_sp == exp_sp, f"finditer spans mismatch for {pattern!r}"

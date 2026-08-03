@@ -1,7 +1,8 @@
 # Policy experiment — control vs treatment, and what the A5 flat result meant
 
 - **Date:** 2026-07-30 · **Branch:** `fpga-scheduler-tenants`
-- **Tool:** `scripts/policy_experiment.py` · **Data:** `policy_experiment_data.json`
+- **Tool:** `scripts/policy_experiment.py` · **Data:**
+  `policy_experiment_data.json`
 - **Question:** the A5 study found every policy tied with a static pin. That
   was ambiguous between *"scheduling does not help here"* and *"that
   workload could not distinguish schedulers."* A control set discriminates.

@@ -47,7 +47,8 @@ def test_pr_tcl_decisive_query_is_scoped_to_rp_cell_r73a1():
     # clock (axis_aclk_0) and emptied the set, tripping R73a.3 on a partial that
     # met timing.  Cell scope alone captures the single-clock RP domain (F4).
     assert "GROUP == axis_aclk" not in TCL
-    # The scoped result carries its own marker, distinct from the whole-design one.
+    # The scoped result carries its own marker, distinct from the whole-design
+    # one.
     assert "PYRO_METRIC:RP_WNS:" in TCL
 
 

@@ -62,7 +62,8 @@ def test_full_lifecycle(manager_factory):
 def test_not_resident_is_ordinary_routing(manager_factory):
     # A cold pattern below threshold routes NOT_RESIDENT (not a device error).
     mgr = manager_factory(n_synth=1000)
-    assert mgr.note_eligible_dispatch("cold[0-9]+", 0, ENC) == ROUTE_NOT_RESIDENT
+    assert mgr.note_eligible_dispatch(
+    "cold[0-9]+", 0, ENC) == ROUTE_NOT_RESIDENT
 
 
 # --- single-tenant PR region + deterministic LRU eviction (R64) ------------
@@ -79,7 +80,8 @@ def test_single_tenant_eviction_lru(manager_factory):
     # A second circuit becoming resident evicts the first (single tenant, R64).
     _make_resident(mgr, "bbb[0-9]+")
     assert mgr.tier("bbb[0-9]+", 0, ENC) == TIER_RESIDENT
-    assert mgr.tier("aaa[0-9]+", 0, ENC) == TIER_WARM   # evicted -> back to warm
+    # evicted -> back to warm
+    assert mgr.tier("aaa[0-9]+", 0, ENC) == TIER_WARM
     s = mgr.stats()
     assert s["circuits_resident"] == 1
     assert s["circuits_evicted"] == 1
@@ -87,7 +89,8 @@ def test_single_tenant_eviction_lru(manager_factory):
 
 def test_eviction_progress_no_thrash(manager_factory):
     # Alternating two hot patterns must make progress (bounded PR loads/evicts),
-    # never loop forever; and a re-dispatch of the resident one does NOT reload.
+    # never loop forever; and a re-dispatch of the resident one does NOT
+    # reload.
     mgr = manager_factory(n_synth=1, pr_partitions=1)
     _make_resident(mgr, "x[0-9]+")
     _make_resident(mgr, "y[0-9]+")
@@ -106,7 +109,8 @@ def test_synthesis_failure_permanent_fallback(manager_factory):
     assert mgr.drain(10.0) is True
     assert mgr.tier("bad[0-9]+", 0, ENC) == TIER_FALLBACK_ONLY
     # Subsequent dispatch is permanent fallback and never retries synthesis.
-    assert mgr.note_eligible_dispatch("bad[0-9]+", 0, ENC) == ROUTE_PERMANENT_FALLBACK
+    assert mgr.note_eligible_dispatch(
+    "bad[0-9]+", 0, ENC) == ROUTE_PERMANENT_FALLBACK
     s = mgr.stats()
     assert s["synth_failed"] == 1
     assert s["synth_launched"] == 1   # not retried indefinitely (R65)
@@ -124,13 +128,16 @@ def test_failure_persists_and_is_not_retried(manager_factory):
 
 # --- R63e: a hung synthesis is reaped -> permanent fallback (R65/R66) -------
 def test_hung_synthesis_becomes_permanent_fallback(manager_factory):
-    # Toolchain latency far exceeds the per-job timeout, so the job never reports
-    # back before the client reaps it (models a hung real worker).  The reap MUST
+    # Toolchain latency far exceeds the per-job timeout, so the job never
+    # reports
+    # back before the client reaps it (models a hung real worker).  The reap
+    # MUST
     # unstick the synthesizing gauge, count synth_failed, and make the key a
     # permanent fallback that is not re-synthesizable.
     mgr = manager_factory(n_synth=1,
                           config=ToolchainConfig(latency=30.0))
-    mgr._timeout = 0.02   # tiny per-job timeout for the (lazily created) service
+    # tiny per-job timeout for the (lazily created) service
+    mgr._timeout = 0.02
     assert mgr.note_eligible_dispatch("hung[0-9]+", 0, ENC) == ROUTE_SYNTH
     assert mgr.stats()["circuits_synthesizing"] == 1        # gauge set
     procs = list(mgr._service._procs)
@@ -143,13 +150,15 @@ def test_hung_synthesis_becomes_permanent_fallback(manager_factory):
     assert mgr.note_eligible_dispatch(
         "hung[0-9]+", 0, ENC) == ROUTE_PERMANENT_FALLBACK   # not re-synthesized
     assert s["synth_launched"] == 1
-    mgr.reset()                                             # terminates the worker
+    # terminates the worker
+    mgr.reset()
     assert all(not p.is_alive() for p in procs)            # no zombie
 
 
 # --- Minor 2: hot reused-pattern dispatch does not re-stat the filesystem ---
 def test_second_dispatch_is_memoized_no_fs_stat(manager_factory, monkeypatch):
-    mgr = manager_factory(n_synth=1000)   # high threshold: stays cold, no launch
+    # high threshold: stays cold, no launch
+    mgr = manager_factory(n_synth=1000)
     calls = {"n": 0}
     real_is_file = pathlib.Path.is_file
 
@@ -158,11 +167,13 @@ def test_second_dispatch_is_memoized_no_fs_stat(manager_factory, monkeypatch):
         return real_is_file(self)
 
     monkeypatch.setattr(pathlib.Path, "is_file", counting_is_file)
-    mgr.note_eligible_dispatch("memo[0-9]+", 0, ENC)       # first: reads the fs
+    mgr.note_eligible_dispatch(
+    "memo[0-9]+", 0, ENC)       # first: reads the fs
     assert calls["n"] > 0
     calls["n"] = 0
     mgr.note_eligible_dispatch("memo[0-9]+", 0, ENC)       # second: memoized
-    assert calls["n"] == 0, "second dispatch of a memoized key must not stat the fs"
+    assert calls["n"] == 0, (
+        "second dispatch of a memoized key must not stat the fs")
 
 
 # --- R66 stats shape + monotonicity ----------------------------------------

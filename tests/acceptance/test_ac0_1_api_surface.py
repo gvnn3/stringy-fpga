@@ -16,7 +16,8 @@ def test_supported_runtime_is_cpython_3_11_plus():
     Signature/behaviour comparisons in this suite are made against stock re on a
     conforming interpreter; document the precondition."""
     assert sys.version_info[:2] >= (3, 11), (
-        f"PYRO requires CPython >= 3.11 (R26/P7); running {sys.version_info[:3]}"
+        f"PYRO requires CPython >= 3.11 (R26/P7); running "
+        f"{sys.version_info[:3]}"
     )
 
 MODULE_FUNCS = [
@@ -54,9 +55,13 @@ def test_flag_constants_alias_stock(name):
     """R26: flag constants A/I/M/S/X and long forms (+U/UNICODE no-op) are
     aliases of re's values."""
     assert hasattr(pre, name), f"pyro.re is missing flag {name}"
-    assert getattr(pre, name) == getattr(stdre, name), (
-        f"pyro.re.{name}={getattr(pre, name)!r} != re.{name}={getattr(stdre, name)!r}"
-    )
+    assert getattr(
+    pre, name) == getattr(
+        stdre, name), ( f"pyro.re.{name}={
+            getattr(
+                pre, name)!r} != re.{name}={
+                    getattr(
+                        stdre, name)!r}" )
 
 
 def test_flag_short_long_equal():

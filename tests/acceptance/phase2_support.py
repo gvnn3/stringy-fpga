@@ -1,4 +1,5 @@
-"""Phase-2 shared availability probes (R71) + the vivado-synthesis corpus fixture.
+"""Phase-2 shared availability probes (R71) + the vivado-synthesis corpus
+fixture.
 
 This is the SINGLE source of truth for the three R71 availability predicates so
 that every gated Phase-2 assertion cites the same probe (R71: "A single shared
@@ -8,15 +9,18 @@ availability probe SHOULD expose these three predicates"):
     pr_flow_present()   -> (bool, reason)
     device_usable()     -> (bool, reason)
 
-SKIP discipline (R71, normative): a clause that requires an ABSENT predicate MUST
-record a SKIP whose reason names the missing prerequisite; a SKIP is NEVER a PASS,
+SKIP discipline (R71, normative): a clause that requires an ABSENT predicate
+MUST
+record a SKIP whose reason names the missing prerequisite; a SKIP is NEVER a
+PASS,
 and a PASS comes ONLY from real execution of the clause with its predicate
 satisfied.  Tests call `pytest.skip(reason)` using the returned reason string.
 
 This module drives ONLY the public PYRO surface, the filesystem, and (read-only,
 non-perturbing) device probes.  It never reads pyro/ implementation source.
 Manifest fields are read back from the on-disk bitstream-cache JSON; the field
-names asserted (payload_kind, luts, ffs, fmax_mhz, met_timing, toolchain_version,
+names asserted (payload_kind, luts, ffs, fmax_mhz, met_timing,
+toolchain_version,
 shell_version) are NORMATIVE in the spec (R47b / R72 / R73 / R75), not scraped
 from the implementation.
 """
@@ -33,30 +37,46 @@ import pytest
 # This host's pinned toolchain (R70a-pin / R71 / §11 P1, v2.2.1: Vivado 2025.2
 # present at /usr/local/cad/2025.2/Vivado, synthesizes the target part with no
 # license error).  The spec forbids *library code* from scanning the filesystem/
-# PATH for Vivado (R70); the test harness MAY locate this known install to pin the
+# PATH for Vivado (R70); the test harness MAY locate this known install to pin
+# the
 # env for the acceptance run.
 KNOWN_VIVADO_INSTALL = "/usr/local/cad/2025.2/Vivado"
 VIVADO_PART = "xcu250-figd2104-2L-e"          # physical U250 part (R70a / R71)
-PROXY_CLOCK_MHZ = 250                          # R73 proxy clock (F4 250 MHz user box)
+# R73 proxy clock (F4 250 MHz user box)
+PROXY_CLOCK_MHZ = 250
 PROXY_CLOCK_PERIOD_NS = 4.000                  # R73 4.000 ns constraint
 MOCK_TOOLCHAIN_VERSION = 0x00000100            # R72a / R75 mock sentinel
 # R75 pinned toolchain_version for Vivado 2025.2 (YY=25=0x19, RR=2, build=0).
-VIVADO_TOOLCHAIN_VERSION = 0x19020000          # R70a-pin / R75 (v2.2.1 normative pin)
-# 2023.1's 0x17010000 is retained by the spec only as a historical example and is
-# NOT valid 2025.2 evidence (R74a); kept here to assert artifacts do NOT carry it.
-VIVADO_2023_1_TOOLCHAIN_VERSION = 0x17010000   # historical (R74a/R75 stale-pin)
-SHELL_VERSION_MODEL = 0x0A000001               # R75 model-harness shell version
-PYRO_SHELL_SPEC16 = 0x0202                      # R81: (spec_MAJOR<<8)|spec_MINOR for 2.2
-ESTIMATOR_CALIBRATION_MARGIN = 10              # R74 pre-registered constant (10x ceiling)
+# R70a-pin / R75 (v2.2.1 normative pin)
+VIVADO_TOOLCHAIN_VERSION = 0x19020000
+# 2023.1's 0x17010000 is retained by the spec only as a historical example and
+# is
+# NOT valid 2025.2 evidence (R74a); kept here to assert artifacts do NOT
+# carry it.
+# historical (R74a/R75 stale-pin)
+VIVADO_2023_1_TOOLCHAIN_VERSION = 0x17010000
+# R75 model-harness shell version
+SHELL_VERSION_MODEL = 0x0A000001
+# R81: (spec_MAJOR<<8)|spec_MINOR for 2.2
+PYRO_SHELL_SPEC16 = 0x0202
+# R74 pre-registered constant (10x ceiling)
+ESTIMATOR_CALIBRATION_MARGIN = 10
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-PHASE2_WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phase2_workers.py")
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
+PHASE2_WORKER = os.path.join(
+    os.path.dirname(
+        os.path.abspath(__file__)),
+         "phase2_workers.py")
 
 # A real Vivado OOC synth + P&R is minutes.  Poll deadline inside the worker and
 # the parent subprocess wall-clock deadline, both generous (R63/R77; AC-2-3 note
 # suggests a ~20 min ceiling).
 SYNTH_POLL_TIMEOUT_S = 1200        # worker-side poll deadline
-WORKER_SUBPROC_TIMEOUT_S = 1320    # parent-side subprocess deadline (poll + margin)
+# parent-side subprocess deadline (poll + margin)
+WORKER_SUBPROC_TIMEOUT_S = 1320
 
 
 # --------------------------------------------------------------------------
@@ -68,7 +88,8 @@ def _vivado_install_dir():
 
 
 def _vivado_executable_ok(install_dir):
-    """R71 note: probe for <dir>/bin/vivado existence + executability only; do NOT
+    """R71 note: probe for <dir>/bin/vivado existence + executability only; do
+    NOT
     launch it (the adapter handles its own libtinfo.so.5 shim on this host)."""
     exe = os.path.join(install_dir, "bin", "vivado")
     return os.path.isfile(exe) and os.access(exe, os.X_OK)
@@ -93,64 +114,95 @@ def toolchain_present():
         return (False,
                 f"toolchain_present=false — no executable Vivado at "
                 f"{install_dir}/bin/vivado; PYRO_VIVADO unresolved (R70/R71)")
-    # Pin the resolved selection for the acceptance run (sampled at worker import,
+    # Pin the resolved selection for the acceptance run (sampled at worker
+    # import,
     # R35a/R70).  conftest _ENV_KEYS saves/restores these so they never leak.
     os.environ["PYRO_VIVADO"] = install_dir
     os.environ["PYRO_TOOLCHAIN"] = "vivado"
     return (True, "")
 
 
-# R68 PR-substrate knob names.  No defaults; fail-loud/fail-closed (R68).  This is
-# TEST code sampling its own env (per this module's convention, cf. toolchain_present)
+# R68 PR-substrate knob names.  No defaults; fail-loud/fail-closed (R68).
+# This is
+# TEST code sampling its own env (per this module's convention, cf.
+# toolchain_present)
 # — the LIBRARY must not read these ad hoc (R5/R35a); conftest _ENV_KEYS saves/
-# clears/restores them per test so a both-polarity probe check leaves no residue.
-PYRO_PR_STATIC_DCP = "PYRO_PR_STATIC_DCP"        # -> ToolchainConfig.static_dcp (R82b, v2.2.4)
-PYRO_PR_REFERENCE_DCP = "PYRO_PR_REFERENCE_DCP"  # -> ToolchainConfig.reference_dcp (R82c, v2.2.4)
-# v2.2.5: the host-observable proxy for the one otherwise-Vivado-only R82d conjunct
-# (a passing pr_verify) — a pyro.synth.Manifest sidecar asserting a verified pr_bitstream.
-PYRO_PR_EVIDENCE_MANIFEST = "PYRO_PR_EVIDENCE_MANIFEST"  # -> ToolchainConfig.pr_evidence_manifest (R83a)
+# clears/restores them per test so a both-polarity probe check leaves no
+# residue.
+# -> ToolchainConfig.static_dcp (R82b, v2.2.4)
+PYRO_PR_STATIC_DCP = "PYRO_PR_STATIC_DCP"
+# -> ToolchainConfig.reference_dcp (R82c, v2.2.4)
+PYRO_PR_REFERENCE_DCP = "PYRO_PR_REFERENCE_DCP"
+# v2.2.5: the host-observable proxy for the one otherwise-Vivado-only R82d
+# conjunct
+# (a passing pr_verify) — a pyro.synth.Manifest sidecar asserting a verified
+# pr_bitstream.
+# -> ToolchainConfig.pr_evidence_manifest (R83a)
+PYRO_PR_EVIDENCE_MANIFEST = "PYRO_PR_EVIDENCE_MANIFEST"
 
 
 def pr_flow_present():
-    """R71/R82d/R83/R83a: availability of the PR link-flow for `pyro_rp`, evaluated by
+    """R71/R82d/R83/R83a: availability of the PR link-flow for `pyro_rp`,
+    evaluated by
     the exact host-observable R83a evidence predicate (v2.2.5).
 
-    R83a spells out the five conditions, in FIXED ORDER — the first that fails is named
-    in the canonical `pr_flow_present=false — <first unmet R83a condition>` reason
+    R83a spells out the five conditions, in FIXED ORDER — the first that fails
+    is named
+    in the canonical `pr_flow_present=false — <first unmet R83a condition>`
+    reason
     (which supersedes the earlier `<first missing R82d artifact>` wording, R83):
 
-      1. static DCP — `PYRO_PR_STATIC_DCP` configured AND path exists+readable (attests
-         the R82b locked static substrate + the R80/`pyro_rp` floorplan it carries).
+      1. static DCP — `PYRO_PR_STATIC_DCP` configured AND path exists+readable
+      (attests
+         the R82b locked static substrate + the R80/`pyro_rp` floorplan it
+         carries).
          Else: `static DCP not configured/unreadable (PYRO_PR_STATIC_DCP)`.
-      2. reference DCP — `PYRO_PR_REFERENCE_DCP` configured AND path exists+readable
+      2. reference DCP — `PYRO_PR_REFERENCE_DCP` configured AND path
+      exists+readable
          (attests the R82c `pr_verify` reference). Else:
          `reference DCP not configured/unreadable (PYRO_PR_REFERENCE_DCP)`.
-      3. evidence manifest configured — `PYRO_PR_EVIDENCE_MANIFEST` configured AND path
+      3. evidence manifest configured — `PYRO_PR_EVIDENCE_MANIFEST` configured
+      AND path
          exists+readable. Else:
-         `evidence manifest not configured/unreadable (PYRO_PR_EVIDENCE_MANIFEST)`.
-      4. evidence manifest parses — loads via the R47b-consistency-enforcing loader
-         `pyro.synth.Manifest.from_json(...)` WITHOUT raising (a corrupt or internally
+         `evidence manifest not configured/unreadable
+         (PYRO_PR_EVIDENCE_MANIFEST)`.
+      4. evidence manifest parses — loads via the R47b-consistency-enforcing
+      loader
+         `pyro.synth.Manifest.from_json(...)` WITHOUT raising (a corrupt or
+         internally
          inconsistent manifest — violating `pr_verified == (payload_kind ==
          'pr_bitstream')` — is rejected here, not silently accepted). Else:
          `evidence manifest not parseable`.
       5. evidence attests a verified PR bitstream — the parsed manifest carries
-         `payload_kind == 'pr_bitstream'` AND `pr_verified == true` (checked BOTH
-         defensively; R47b-consistency makes them agree once step 4 succeeds). Else:
-         `evidence manifest not pr_verified (no verified pr_bitstream attested)`.
+         `payload_kind == 'pr_bitstream'` AND `pr_verified == true` (checked
+         BOTH
+         defensively; R47b-consistency makes them agree once step 4 succeeds).
+         Else:
+         `evidence manifest not pr_verified (no verified pr_bitstream
+         attested)`.
 
     The predicate NEVER raises for an unmet condition (fail-closed): a missing/
-    unreadable/unparseable/not-`pr_verified` input yields `(False, <R83a reason>)`.  It
-    does NOT claim `device_usable` (a separate live-probe + `CAP_NET_RAW` predicate, R83)
-    and never promotes SKIP to PASS.  The manifest evidence is legitimate because a
-    `pr_bitstream`/`pr_verified==true` manifest can only be emitted after a passing
-    `pr_verify` (R82c) and R47b-consistency makes that claim un-fabricable at `from_json`.
+    unreadable/unparseable/not-`pr_verified` input yields `(False, <R83a
+    reason>)`.  It
+    does NOT claim `device_usable` (a separate live-probe + `CAP_NET_RAW`
+    predicate, R83)
+    and never promotes SKIP to PASS.  The manifest evidence is legitimate
+    because a
+    `pr_bitstream`/`pr_verified==true` manifest can only be emitted after a
+    passing
+    `pr_verify` (R82c) and R47b-consistency makes that claim un-fabricable at
+    `from_json`.
 
-    On THIS host the R68 knobs are UNSET by default (no default; fail-closed), so the
-    first unmet condition is the static DCP — the probe returns false with the R83a
+    On THIS host the R68 knobs are UNSET by default (no default; fail-closed),
+    so the
+    first unmet condition is the static DCP — the probe returns false with the
+    R83a
     canonical reason for condition 1.
     """
-    # R83a reads the three paths from config (here: this test module's own env sample,
-    # cf. toolchain_present); the LIBRARY reads them via ToolchainConfig, not ad hoc.
+    # R83a reads the three paths from config (here: this test module's own env
+    # sample,
+    # cf. toolchain_present); the LIBRARY reads them via ToolchainConfig, not
+    # ad hoc.
     static_dcp = os.environ.get(PYRO_PR_STATIC_DCP)
     reference_dcp = os.environ.get(PYRO_PR_REFERENCE_DCP)
     evidence = os.environ.get(PYRO_PR_EVIDENCE_MANIFEST)
@@ -163,28 +215,37 @@ def pr_flow_present():
 
     # (1) static DCP — configured + present + readable (R82b/R80).
     if not _readable(static_dcp):
-        return _false("static DCP not configured/unreadable (PYRO_PR_STATIC_DCP)")
-    # (2) reference DCP — configured + present + readable (R82c pr_verify reference).
+        return _false(
+            "static DCP not configured/unreadable (PYRO_PR_STATIC_DCP)")
+    # (2) reference DCP — configured + present + readable (R82c pr_verify
+    # reference).
     if not _readable(reference_dcp):
-        return _false("reference DCP not configured/unreadable (PYRO_PR_REFERENCE_DCP)")
+        return _false(
+            "reference DCP not configured/unreadable (PYRO_PR_REFERENCE_DCP)")
     # (3) evidence manifest — configured + present + readable.
     if not _readable(evidence):
         return _false(
-            "evidence manifest not configured/unreadable (PYRO_PR_EVIDENCE_MANIFEST)")
-    # (4) evidence manifest parses via the R47b-consistency-enforcing loader without
-    #     raising (rejects corrupt/inconsistent manifests).  Fail-closed: ANY exception
-    #     (read error, JSON error, R47b-consistency rejection) is condition-4 unmet.
+            "evidence manifest not configured/unreadable "
+            "(PYRO_PR_EVIDENCE_MANIFEST)")
+    # (4) evidence manifest parses via the R47b-consistency-enforcing loader
+    # without
+    # raising (rejects corrupt/inconsistent manifests).  Fail-closed: ANY
+    # exception
+    # (read error, JSON error, R47b-consistency rejection) is condition-4
+    # unmet.
     try:
         import pyro.synth as _psynth
         with open(evidence, "r", encoding="utf-8") as fh:
             manifest = _psynth.Manifest.from_json(fh.read())
     except Exception:  # noqa: BLE001 — probe NEVER raises (R83a fail-closed)
         return _false("evidence manifest not parseable")
-    # (5) evidence attests a verified PR bitstream — BOTH checks defensively (R47b).
+    # (5) evidence attests a verified PR bitstream — BOTH checks defensively
+    # (R47b).
     if not (getattr(manifest, "payload_kind", None) == "pr_bitstream"
             and getattr(manifest, "pr_verified", False) is True):
         return _false(
-            "evidence manifest not pr_verified (no verified pr_bitstream attested)")
+            "evidence manifest not pr_verified (no verified pr_bitstream "
+            "attested)")
     return (True, "")
 
 
@@ -195,8 +256,10 @@ _R83_TRANSPORT_UNMET = "transport: CAP_NET_RAW absent"
 
 
 def has_cap_net_raw():
-    """Read-only, non-perturbing check for CAP_NET_RAW (bit 13) in this process's
-    effective capability set (R83 gate (ii) / P2/P3).  False on the current host."""
+    """Read-only, non-perturbing check for CAP_NET_RAW (bit 13) in this
+    process's
+    effective capability set (R83 gate (ii) / P2/P3).  False on the current
+    host."""
     try:
         with open("/proc/self/status", "r", encoding="ascii") as fh:
             for line in fh:
@@ -211,15 +274,19 @@ def device_usable():
     """R71/R83: `device_usable` flips true iff BOTH (i) a live probe receives a
     valid ID_REPLY whose static_shell_id passes the R81 SPEC16 check within
     PYRO_PROBE_TIMEOUT (R84) AND (ii) transport privilege CAP_NET_RAW is present
-    (R83).  Established FALSE on this host: the PR shell is not yet flashed (so no
+    (R83).  Established FALSE on this host: the PR shell is not yet flashed
+    (so no
     valid ID_REPLY) and CAP_NET_RAW is not granted.
 
-    R83 canonical reason (supersedes the v2.1.3 literal): `device_usable=false — `
-    followed by a comma-separated enumeration, in fixed order, of EXACTLY the unmet
+    R83 canonical reason (supersedes the v2.1.3 literal): `device_usable=false
+    — `
+    followed by a comma-separated enumeration, in fixed order, of EXACTLY the
+    unmet
     conditions among the probe (i) and transport (ii) phrases.
 
     Probed READ-ONLY and non-perturbing: we never open or touch the device; the
-    probe condition (i) is unmet here because no PR shell answers (pr_flow absent).
+    probe condition (i) is unmet here because no PR shell answers (pr_flow
+    absent).
     """
     unmet = []
     # (i) probe: no flashed PR shell on this host => no valid ID_REPLY.
@@ -252,13 +319,16 @@ def find_manifests(cache_dir):
                     data = json.load(fh)
             except Exception:
                 continue
-            if isinstance(data, dict) and all(k in data for k in _MANIFEST_KEYS):
+            if isinstance(
+    data, dict) and all(
+        k in data for k in _MANIFEST_KEYS):
                 out.append((path, data))
     return out
 
 
 def ooc_manifests(cache_dir):
-    """The genuine-post-route ('ooc_metrics', R72a) manifests under cache_dir."""
+    """The genuine-post-route ('ooc_metrics', R72a) manifests under
+    cache_dir."""
     return [d for _p, d in find_manifests(cache_dir)
             if d.get("payload_kind") == "ooc_metrics"]
 
@@ -291,7 +361,9 @@ def run_phase2_worker(command, *args, cache_dir, extra_env=None,
         return json.loads(proc.stdout), proc.stdout, proc.stderr
     except json.JSONDecodeError:
         raise AssertionError(
-            f"phase2 worker {command} did not emit JSON:\n{proc.stdout}\n{proc.stderr}")
+    f"phase2 worker {command} did not emit JSON:\n{
+        proc.stdout}\n{
+            proc.stderr}")
 
 
 # --------------------------------------------------------------------------
@@ -299,7 +371,8 @@ def run_phase2_worker(command, *args, cache_dir, extra_env=None,
 # --------------------------------------------------------------------------
 def estimate_resources(pattern, flags=0):
     """L2 resource estimate for an HW-eligible pattern (R11/R12/R31), as a dict
-    with at least 'luts' and 'ffs'.  Returns None for a fallback-only pattern."""
+    with at least 'luts' and 'ffs'.  Returns None for a fallback-only
+    pattern."""
     import pyro.re as pre
     info = pre.explain(pattern, flags)
     return info.get("est_resources")
@@ -307,25 +380,33 @@ def estimate_resources(pattern, flags=0):
 
 # --------------------------------------------------------------------------
 # Shared session-scoped calibration corpus (R74 / AC-2-1 / AC-2-4).  Real Vivado
-# is minutes/pattern; synthesize each calibration pattern ONCE into its own cache
+# is minutes/pattern; synthesize each calibration pattern ONCE into its own
+# cache
 # dir and reuse across tests.  Kept to 4 patterns to stay within the suite's
 # ~25-min Vivado budget.  Each pattern uses only §5.1 constructs (R9).
 # --------------------------------------------------------------------------
 CALIBRATION_PATTERNS = [
-    (r"error|warn|fatal", 0, "an error and a warn then fatal"),  # alternation of literals
-    (r"[A-Za-z_]\w*", 0, "identifier_42 x9"),                    # class + \w* concat
-    (r"\d{1,6}", 0, "id 000123 tail"),                           # bounded repeat of a class
-    (r"(GET|POST) /\S*", 0, "GET /index.html POST /a"),          # group + class + concat
+    # alternation of literals
+    (r"error|warn|fatal", 0, "an error and a warn then fatal"),
+    # class + \w* concat
+    (r"[A-Za-z_]\w*", 0, "identifier_42 x9"),
+    # bounded repeat of a class
+    (r"\d{1,6}", 0, "id 000123 tail"),
+    # group + class + concat
+    (r"(GET|POST) /\S*", 0, "GET /index.html POST /a"),
 ]
 
 
 @pytest.fixture(scope="session")
 def vivado_corpus(tmp_path_factory):
     """Synthesize the calibration corpus once via the REAL vivado adapter and
-    expose {pattern: {cache, worker_json, manifest, est}} to AC-2-1/AC-2-3/AC-2-4.
+    expose {pattern: {cache, worker_json, manifest, est}} to
+    AC-2-1/AC-2-3/AC-2-4.
 
-    SKIPs the whole set when toolchain_present is false (R71) so the LIVE clauses
-    that depend on it record a SKIP naming the missing prerequisite, never a PASS.
+    SKIPs the whole set when toolchain_present is false (R71) so the LIVE
+    clauses
+    that depend on it record a SKIP naming the missing prerequisite, never a
+    PASS.
     """
     present, reason = toolchain_present()
     if not present:
@@ -341,8 +422,10 @@ def vivado_corpus(tmp_path_factory):
         cdir = str(root / f"p{i}")
         os.makedirs(cdir, exist_ok=True)
         # Per-pattern isolation: a worker CRASH (nonzero rc / timeout) on one
-        # pattern MUST NOT turn every dependent LIVE test into an ERROR.  Capture
-        # it into the entry so dependent tests fail/skip individually per pattern
+        # pattern MUST NOT turn every dependent LIVE test into an ERROR.
+        # Capture
+        # it into the entry so dependent tests fail/skip individually per
+        # pattern
         # and consumers can pick the first pattern whose worker actually ran.
         # A GRACEFUL synth failure (rc==0, synth_failed>0) is NOT a crash and is
         # recorded normally as worker_error=None with manifest=None.
@@ -350,7 +433,8 @@ def vivado_corpus(tmp_path_factory):
         try:
             res, _o, _e = run_phase2_worker(
                 "vivado_synth", pat, subject, cache_dir=cdir, extra_env=extra)
-        except Exception as exc:  # noqa: BLE001 — AssertionError (rc!=0) / TimeoutExpired
+        # noqa: BLE001 — AssertionError (rc!=0) / TimeoutExpired
+        except Exception as exc:
             worker_error = f"{type(exc).__name__}: {exc}"
         oocs = ooc_manifests(cdir)
         entries[pat] = {
@@ -367,8 +451,10 @@ def vivado_corpus(tmp_path_factory):
 
 
 def first_ran_pattern(corpus):
-    """The first calibration pattern whose vivado worker actually RAN (no crash),
-    regardless of whether synthesis then succeeded or gracefully failed.  Consumers
+    """The first calibration pattern whose vivado worker actually RAN (no
+    crash),
+    regardless of whether synthesis then succeeded or gracefully failed. 
+    Consumers
     that need at least one good pattern use this; returns None if every worker
     crashed (a genuine failure the caller should surface, not silently pass)."""
     for pat, _flags, _subject in CALIBRATION_PATTERNS:

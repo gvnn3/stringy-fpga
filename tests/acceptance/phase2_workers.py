@@ -3,14 +3,18 @@
 TEST SUPPORT (not a test module, not implementation): drives ONLY the public
 `pyro` / `pyro.re` surface (R62 prewarm, R66 stats, R31 explain, §7.1 API) and
 prints one JSON object to stdout for the parent test to assert against.  A real
-importable file with a __main__ guard so the synthesis service's spawn/forkserver
+importable file with a __main__ guard so the synthesis service's
+spawn/forkserver
 workers (R63) can re-import it.  Toolchain selection (PYRO_TOOLCHAIN=vivado /
-PYRO_VIVADO, R70) and PYRO_CACHE_DIR are inherited from the parent env and MUST be
+PYRO_VIVADO, R70) and PYRO_CACHE_DIR are inherited from the parent env and
+MUST be
 set BEFORE importing pyro (R35a sampling at import).
 
 Commands (argv[1]):
-  vivado_synth <pattern> [subject]   — enqueue REAL synth, prove non-blocking async
-  eviction <p1|p2|p3|...> [subject]  — single-tenant PR eviction on the model (R64)
+  vivado_synth <pattern> [subject]   — enqueue REAL synth, prove non-blocking
+  async
+  eviction <p1|p2|p3|...> [subject]  — single-tenant PR eviction on the model
+  (R64)
 """
 import json
 import os
@@ -18,7 +22,10 @@ import re as stdre
 import sys
 import time
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -43,13 +50,16 @@ def _canon(m):
 
 
 def cmd_vivado_synth(pattern, subject=None):
-    """AC-2-1/AC-2-3 (LIVE): enqueue a REAL Vivado synthesis for `pattern`, prove
+    """AC-2-1/AC-2-3 (LIVE): enqueue a REAL Vivado synthesis for `pattern`,
+    prove
     prewarm is non-blocking (R62/R63), that calls PROCEED via fallback and never
-    block/raise while synthesis is in flight (R63/AC-2-3), and drive the job to a
+    block/raise while synthesis is in flight (R63/AC-2-3), and drive the job
+    to a
     terminal state so the parent can read the honest manifest (R72/R73/R75)."""
     import pyro
     import pyro.re as pre
-    subject = subject if subject is not None else ("zz " + pattern + " zz " + pattern)
+    subject = subject if subject is not None else (
+        "zz " + pattern + " zz " + pattern)
     exp = _canon(stdre.search(pattern, subject))
 
     errors = []
@@ -69,7 +79,11 @@ def cmd_vivado_synth(pattern, subject=None):
             e = pre.explain(pattern)
             s = pre.stats()
             status = e["circuit_status"]
-            last = (status, s["synth_launched"], s["synth_succeeded"], s["synth_failed"])
+            last = (
+    status,
+    s["synth_launched"],
+    s["synth_succeeded"],
+     s["synth_failed"])
             # Exercise a real call CONCURRENTLY with synthesis; it MUST proceed
             # via fallback (byte-identical) and never raise (R63/AC-2-3).
             m = pre.search(pattern, subject)
@@ -81,7 +95,8 @@ def cmd_vivado_synth(pattern, subject=None):
             if s["synth_succeeded"] > 0 or s["synth_failed"] > 0:
                 reached_terminal = True
                 break
-        except BaseException as ex:  # noqa: BLE001 — any raise to the caller is a defect
+        # noqa: BLE001 — any raise to the caller is a defect
+        except BaseException as ex:
             errors.append(repr(ex))
         time.sleep(0.25)
     synth_wall_seconds = time.perf_counter() - synth_start
@@ -124,12 +139,15 @@ def _poll(pre, pattern, done, timeout=60.0):
 
 
 def cmd_eviction(patterns_csv, subject=None):
-    """AC-2-6 (model, LIVE): single-tenant PR arbitration/eviction (R64) exercised
+    """AC-2-6 (model, LIVE): single-tenant PR arbitration/eviction (R64)
+    exercised
     on the software model.  Load several distinct patterns' circuits toward
     residency; assert the resident gauge never exceeds the single-tenant budget,
-    that eviction is counted deterministically, and — the keystone — that results
+    that eviction is counted deterministically, and — the keystone — that
+    results
     stay byte-identical to stock re across evict/reload (R53/R64)."""
-    os.environ["PYRO_FORCE_MODEL"] = "1"           # dispatch via the model (R7/R51b)
+    # dispatch via the model (R7/R51b)
+    os.environ["PYRO_FORCE_MODEL"] = "1"
     import pyro
     import pyro.re as pre
     pyro.refresh_env()
@@ -146,10 +164,14 @@ def cmd_eviction(patterns_csv, subject=None):
         pyro.prewarm(p)
         _poll(pre, p, lambda e, s: e["circuit_status"] in ("warm", "resident")
               or s["synth_succeeded"] > 0 or s["synth_failed"] > 0, timeout=60)
-        pre.search(p, subj_for(p))                 # dispatch => residency bookkeeping
-        max_resident_gauge = max(max_resident_gauge, pre.stats()["circuits_resident"])
+        # dispatch => residency bookkeeping
+        pre.search(p, subj_for(p))
+        max_resident_gauge = max(
+    max_resident_gauge,
+     pre.stats()["circuits_resident"])
 
-    # Phase 2: re-access every pattern (some evicted, reloaded) — results MUST be
+    # Phase 2: re-access every pattern (some evicted, reloaded) — results MUST
+    # be
     # byte-identical to stock re regardless of eviction (R53/R64).
     per_pattern_eq = {}
     for p in pats:
@@ -158,7 +180,9 @@ def cmd_eviction(patterns_csv, subject=None):
         act = pre.search(p, subj)
         per_pattern_eq[p] = (
             (act.span() if act else None) == (exp.span() if exp else None))
-        max_resident_gauge = max(max_resident_gauge, pre.stats()["circuits_resident"])
+        max_resident_gauge = max(
+    max_resident_gauge,
+     pre.stats()["circuits_resident"])
 
     s = pre.stats()
     return {

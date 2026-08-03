@@ -3,7 +3,8 @@
 This is the behavioral twin of a **generated per-pattern circuit** (§2, R7).
 Unlike the Phase-0 :mod:`pyro._model` (which located group-0 windows by simply
 delegating to CPython ``re``), this model **executes the generator's automaton**
-(:mod:`pyro.hdl.automaton`, consumed via :mod:`pyro.hdl.generator`).  It does not
+(:mod:`pyro.hdl.automaton`, consumed via :mod:`pyro.hdl.generator`).  It does
+not
 re-derive the recognizer from the pattern independently, so a bug in the HDL
 generator's lowering surfaces as a missing/extra candidate window here rather
 than being masked (Task-5 brief, item 3).
@@ -22,7 +23,8 @@ Correctness contract (R19, "sound and complete for group 0"):
     bit never relieves the host of re-verification.
 
 Harness contract (§7.4).  The model exposes the normative CSR block (R45)
-including the baked **circuit-identity** registers (R47a), honors the result-ring
+including the baked **circuit-identity** registers (R47a), honors the
+result-ring
 overflow / ``OVF`` semantics (R47), single-issue serialization (R48), and the
 64-byte DMA-alignment contract (R49) — whose check is realized by the L3 binding
 as a defined ``PYRO_E_INVALID`` error, not an abort (R49a, v2.0.4).  It is
@@ -62,7 +64,8 @@ _WORD_BYTES = frozenset(
 
 
 class NotResident(Exception):
-    """Dispatch attempted against a non-resident circuit (PYRO_E_NOT_RESIDENT)."""
+    """Dispatch attempted against a non-resident circuit
+    (PYRO_E_NOT_RESIDENT)."""
 
 
 class IdentityMismatch(Exception):
@@ -81,7 +84,8 @@ def _assert_ok(at: int, buf: bytes, pos: int, is_bytes: bool) -> bool:
     (``AT_BEGINNING``/``AT_END`` vs. their ``*_LINE`` variants, see
     ``automaton._resolve_at``), so this evaluator needs no ambient flag.  Word
     boundaries ``\\b``/``\\B`` are exact in bytes mode; in str mode they are
-    OVER-APPROX'd to always-satisfiable (the constraint is dropped — a superset —
+    OVER-APPROX'd to always-satisfiable (the constraint is dropped — a
+    superset —
     and R19 re-verification restores exactness).
     """
     n = len(buf)
@@ -136,7 +140,8 @@ def _scan_windows(au: _auto.Automaton, buf: bytes, start_off: int
     A window ``[s, e)`` is reported for every start ``s`` from which the
     automaton reaches its accept state consuming ``buf[s:e]`` (``e`` is the
     longest such end — leftmost-longest; R17 reconciles to CPython's greedy span
-    at re-verification).  Windows are UNVERIFIED (bit0 clear): the automaton is a
+    at re-verification).  Windows are UNVERIFIED (bit0 clear): the automaton
+    is a
     superset recognizer and the host re-verifies each window (R19).
     """
     is_bytes = au.enc == ENC_BYTES
@@ -254,7 +259,8 @@ class CircuitModel:
     # -- R41 scan against a resident circuit -------------------------------
     def scan(self, buf: bytes, start_off: int = 0, out_cap: int = 1 << 62,
              ) -> Tuple[List[MatchWindow], bool]:
-        """Scan ``buf`` for candidate windows; returns ``(windows, overflowed)``.
+        """Scan ``buf`` for candidate windows; returns ``(windows,
+        overflowed)``.
 
         Requires the circuit resident (else :class:`NotResident`, R41).  On
         overflow (more windows than ``out_cap``) sets ``STATUS.OVF`` and returns
@@ -268,7 +274,8 @@ class CircuitModel:
         # abort/assert), i.e. the L3 ABI returns PYRO_E_INVALID for a misaligned
         # or malformed request (R49a, spec v2.0.4).  This Python model is driven
         # with host-encoded ``bytes`` (always suitably backed), so the binding
-        # layer (src/pyro_rt.c) owns the misalignment rejection; here we validate
+        # layer (src/pyro_rt.c) owns the misalignment rejection; here we
+        # validate
         # the ring capacity argument as the analogous defined-error guard.
         if out_cap < 0:
             raise ValueError("out_cap must be non-negative")
@@ -565,7 +572,8 @@ class CompletenessError(Exception):
     """The automaton missed a CPython match start — a generator lowering defect.
 
     R19 forbids false negatives for HW-eligible patterns; surfacing this as an
-    error (rather than silently dropping a match) is the whole point of executing
+    error (rather than silently dropping a match) is the whole point of
+    executing
     the generated automaton in the model.
     """
 
@@ -576,7 +584,8 @@ def _cached_stock(ptype, pattern, flags):
 
 
 def _stock_for(circuit: hdl.GeneratedCircuit):
-    """The stock-compiled pattern for a circuit, cached (M3 — no per-call recompile)."""
+    """The stock-compiled pattern for a circuit, cached (M3 — no per-call
+    recompile)."""
     return _cached_stock(type(circuit.pattern), circuit.pattern, circuit.flags)
 
 
@@ -585,7 +594,8 @@ def group0_finditer(circuit: hdl.GeneratedCircuit, subject
     """Byte-identical ``finditer`` group-0 spans via the R18/R19 hybrid.
 
     Span *enumeration* is delegated to CPython ``re`` — it is the oracle for
-    R22's ``must_advance`` empty-match iteration (post-3.7 finditer retries at the
+    R22's ``must_advance`` empty-match iteration (post-3.7 finditer retries at
+    the
     same position demanding a non-empty match before advancing), which a
     hand-rolled scanner is error-prone to reproduce and MUST NOT get wrong (a
     dropped empty match is an R19 false negative).

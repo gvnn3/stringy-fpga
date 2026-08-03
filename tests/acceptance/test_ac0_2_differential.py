@@ -30,17 +30,24 @@ def _apply_env(mode):
 
 
 @pytest.mark.parametrize("mode", ["default", "force_model"])
-@pytest.mark.parametrize("entry", oracle.SUPPORTED, ids=[e[0] for e in oracle.SUPPORTED])
+@pytest.mark.parametrize("entry", oracle.SUPPORTED,
+                         ids=[e[0] for e in oracle.SUPPORTED])
 def test_supported_construct_byte_identical(entry, mode):
     """R16/R29/R54: each §5.1 construct is byte-identical to stock re on all
     eight APIs, on both the fallback and the forced-model routing paths."""
     label, pattern, flags, subject = entry
     _apply_env(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", ["default", "force_model"])
-@pytest.mark.parametrize("entry", oracle.ANCHOR_ALT, ids=[e[0] for e in oracle.ANCHOR_ALT])
+@pytest.mark.parametrize("entry", oracle.ANCHOR_ALT,
+                         ids=[e[0] for e in oracle.ANCHOR_ALT])
 def test_anchored_alternation_group_selection(entry, mode):
     """R9/R16/R17/R18/R54: group-differentiating alternations with a trailing
     anchor that fails mid-string select the correct capturing branch — spans,
@@ -49,7 +56,12 @@ def test_anchored_alternation_group_selection(entry, mode):
     paths.  Covers the anchored end-context reconstruction case."""
     label, pattern, flags, subject = entry
     _apply_env(mode)
-    oracle.assert_equivalent(pre, pattern, subject, flags, label=f"{label}/{mode}")
+    oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"{label}/{mode}")
 
 
 @pytest.mark.parametrize("mode", ["default", "force_model"])
@@ -58,7 +70,12 @@ def test_greedy_lazy_group_boundaries(mode):
     boundaries return CPython leftmost-greedy spans byte-identically."""
     _apply_env(mode)
     for label, pattern, flags, subject in oracle.GREEDY_LAZY:
-        oracle.assert_equivalent(pre, pattern, subject, flags, label=f"{label}/{mode}")
+        oracle.assert_equivalent(
+    pre,
+    pattern,
+    subject,
+    flags,
+     label=f"{label}/{mode}")
 
 
 def test_compiled_pattern_methods_match_stock():

@@ -107,8 +107,11 @@ def log_hunter_pair(tmp_path_factory):
     root = tmp_path_factory.mktemp("p3_log_hunter")
     stock = p3.run_corpus("log_hunter", "stock", cache_dir=root / "stock")
     installed = p3.run_corpus(
-        "log_hunter", "installed", cache_dir=root / "pyro",
-        extra_env={"PYRO_N_SYNTH": 2})  # R4a knob: launch on the 2nd eligible dispatch
+    "log_hunter",
+    "installed",
+    cache_dir=root / "pyro",
+    extra_env={
+        "PYRO_N_SYNTH": 2}) # R4a knob: launch on the 2nd eligible dispatch
     return stock, installed
 
 
@@ -116,7 +119,10 @@ def log_hunter_pair(tmp_path_factory):
 def error_paths_pair(tmp_path_factory):
     root = tmp_path_factory.mktemp("p3_error_paths")
     stock = p3.run_corpus("error_paths", "stock", cache_dir=root / "stock")
-    installed = p3.run_corpus("error_paths", "installed", cache_dir=root / "pyro")
+    installed = p3.run_corpus(
+    "error_paths",
+    "installed",
+     cache_dir=root / "pyro")
     return stock, installed
 
 
@@ -129,11 +135,13 @@ class TestCorpusMachinery:
     def test_stock_worker_never_imports_pyro(self, log_hunter_pair):
         stock, _ = log_hunter_pair
         assert stock["done"]["pyro_in_sys_modules"] is False
-        assert stock["snaps"] == []  # no explain()/stats() surface in stock mode
+        # no explain()/stats() surface in stock mode
+        assert stock["snaps"] == []
 
     def test_log_hunter_sequences_identical(self, log_hunter_pair):
         stock, installed = log_hunter_pair
-        p3.assert_call_sequences_identical(stock, installed, label="log_hunter")
+        p3.assert_call_sequences_identical(
+    stock, installed, label="log_hunter")
 
     def test_log_hunter_mid_run_tier_transition(self, log_hunter_pair):
         """The AC-3-1 non-vacuity core, asserted from TEST code (never from the
@@ -142,7 +150,8 @@ class TestCorpusMachinery:
         _, installed = log_hunter_pair
         first_hot_at = p3.assert_tier_transition(installed, label="log_hunter")
         # The transition happened after the >=64 KiB pre-await calls...
-        assert first_hot_at >= 2, "transition before the R4a threshold could fire"
+        assert first_hot_at >= 2, (
+            "transition before the R4a threshold could fire")
         # ...and the worker's own await-poll agreed it completed.
         assert installed["done"]["transition_reached"] is True
 
@@ -177,9 +186,11 @@ class TestCorpusMachinery:
 
     def test_error_paths_sequences_identical(self, error_paths_pair):
         stock, installed = error_paths_pair
-        p3.assert_call_sequences_identical(stock, installed, label="error_paths")
+        p3.assert_call_sequences_identical(
+    stock, installed, label="error_paths")
 
-    def test_error_paths_actually_raised_and_captured_fields(self, error_paths_pair):
+    def test_error_paths_actually_raised_and_captured_fields(
+        self, error_paths_pair):
         """Non-vacuity of the exception comparator: the corpus really raised,
         and re.error was captured with msg/pos/pattern (trap 10), in BOTH
         modes, with a genuine matched pair on at least one compile error."""
@@ -187,16 +198,19 @@ class TestCorpusMachinery:
         for res, mode in ((stock, "stock"), (installed, "installed")):
             excs = [c["exc"] for c in res["calls"] if "exc" in c]
             assert len(excs) >= 5, f"{mode}: corpus raised too few exceptions"
-            re_errors = [e for e in excs if e["type"].endswith((".error",
-                                                                ".PatternError"))]
+            re_errors = [
+    e for e in excs if e["type"].endswith(
+        (".error", ".PatternError"))]
             assert re_errors, f"{mode}: no re.error captured"
             for e in re_errors:
                 assert e["str"], f"{mode}: empty str(e): {e}"
                 assert e["msg"], f"{mode}: re.error captured without .msg: {e}"
-                assert e["pos"] is not None, f"{mode}: re.error without .pos: {e}"
+                assert e["pos"] is not None, (
+                    f"{mode}: re.error without .pos: {e}")
                 assert e["pattern"] is not None, (
                     f"{mode}: re.error without .pattern: {e}")
-            type_errors = [e for e in excs if e["type"] == "builtins.TypeError"]
+            type_errors = [
+    e for e in excs if e["type"] == "builtins.TypeError"]
             assert type_errors, f"{mode}: no TypeError captured"
 
 
@@ -204,26 +218,32 @@ class TestCorpusMachinery:
 # 3. The comparators must be able to FAIL (negative controls).
 # ==========================================================================
 class TestComparatorsCanFail:
-    def test_sequence_comparator_catches_value_divergence(self, log_hunter_pair):
+    def test_sequence_comparator_catches_value_divergence(
+        self, log_hunter_pair):
         stock, installed = log_hunter_pair
         doctored = copy.deepcopy(installed)
         victim = doctored["calls"][0]
         victim["value"] = {"__match__": True, "span": [999, 1000],
-                           "group0": "WRONG", "groups": [], "spans": [[999, 1000]],
-                           "lastindex": None, "lastgroup": None, "groupdict": {}}
+                           "group0": "WRONG", "groups": [],
+                           "spans": [[999, 1000]], "lastindex": None,
+                           "lastgroup": None, "groupdict": {}}
         with pytest.raises(AssertionError, match="diverged under install"):
-            p3.assert_call_sequences_identical(stock, doctored, label="doctored")
+            p3.assert_call_sequences_identical(
+                stock, doctored, label="doctored")
 
-    def test_sequence_comparator_catches_exception_str_divergence(self, error_paths_pair):
+    def test_sequence_comparator_catches_exception_str_divergence(
+        self, error_paths_pair):
         """Trap 10: same exception TYPE but different str(e)/.msg must fail."""
         stock, installed = error_paths_pair
         doctored = copy.deepcopy(installed)
         victim = next(c for c in doctored["calls"] if "exc" in c)
         victim["exc"]["str"] = victim["exc"]["str"] + " (subtly different)"
         with pytest.raises(AssertionError, match="diverged under install"):
-            p3.assert_call_sequences_identical(stock, doctored, label="doctored")
+            p3.assert_call_sequences_identical(
+                stock, doctored, label="doctored")
 
-    def test_transition_assertion_catches_pinned_fallback_corpus(self, log_hunter_pair):
+    def test_transition_assertion_catches_pinned_fallback_corpus(
+        self, log_hunter_pair):
         """Trap 2's exact failure mode, synthesized: strip every warm/resident
         snapshot (a corpus that never left cold) — assert_tier_transition must
         REFUSE it, not pass it."""
@@ -236,7 +256,8 @@ class TestComparatorsCanFail:
         with pytest.raises(AssertionError, match="tier never reached"):
             p3.assert_tier_transition(doctored, label="doctored")
 
-    def test_transition_assertion_requires_calls_after_transition(self, log_hunter_pair):
+    def test_transition_assertion_requires_calls_after_transition(
+        self, log_hunter_pair):
         """Mid-run means calls AFTER the flip too: truncate the call list at
         the transition point and the assertion must fail."""
         _, installed = log_hunter_pair
@@ -248,7 +269,8 @@ class TestComparatorsCanFail:
         with pytest.raises(AssertionError, match="AFTER the tier transition"):
             p3.assert_tier_transition(doctored, label="doctored")
 
-    def test_transition_assertion_requires_synth_counters(self, log_hunter_pair):
+    def test_transition_assertion_requires_synth_counters(
+        self, log_hunter_pair):
         _, installed = log_hunter_pair
         doctored = copy.deepcopy(installed)
         doctored["done"]["stats"]["synth_launched"] = 0

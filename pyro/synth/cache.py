@@ -42,12 +42,13 @@ from .manifest import Manifest
 
 # R4/R47b key: descriptor_key prefix + toolchain/shell versions.
 BitstreamKey = Tuple[bytes, int, int, int, int, int]
-#              (pattern_bytes, enc, eff_flags, generator_ver, toolchain_ver, shell_ver)
+# (pattern_bytes, enc, eff_flags, generator_ver, toolchain_ver, shell_ver)
 
 
 def make_key(descriptor_key: tuple, toolchain_version: int,
              shell_version: int) -> BitstreamKey:
-    """Extend a :func:`pyro.hdl.identity.descriptor_key` with tool/shell versions.
+    """Extend a :func:`pyro.hdl.identity.descriptor_key` with tool/shell
+    versions.
 
     ``descriptor_key`` is ``(pattern_bytes, encoding, effective_flags,
     generator_version)``; appending ``toolchain_version`` and ``shell_version``
@@ -75,7 +76,8 @@ def key_digest(key: BitstreamKey) -> str:
 
 
 def default_root() -> Path:
-    """Default persistent cache root — under the user cache area (never the repo)."""
+    """Default persistent cache root — under the user cache area (never the
+    repo)."""
     override = os.environ.get("PYRO_CACHE_DIR")
     if override:
         return Path(override)
@@ -144,7 +146,11 @@ class BitstreamCache:
             return None
 
     # -- population (atomic writes, restart-safe) --------------------------
-    def put(self, key: BitstreamKey, payload: bytes, manifest: Manifest) -> CacheEntry:
+    def put(
+    self,
+    key: BitstreamKey,
+    payload: bytes,
+     manifest: Manifest) -> CacheEntry:
         """Write a successful artifact + manifest (R63d).  Overwrites any prior
         negative entry for the key (a later success supersedes a failure)."""
         d = self._dir(key)
