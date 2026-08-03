@@ -86,8 +86,9 @@ def match_on_device(cfg, subject, slot=1, seq=900):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--group", default="$SSH_PORTS/0")
     ap.add_argument("--slot", type=int, default=1)
     ap.add_argument("--jumbo", action="store_true", default=True)

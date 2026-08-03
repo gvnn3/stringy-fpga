@@ -45,9 +45,10 @@
   .card { background:var(--surface); border:1px solid var(--border);
           border-radius:8px; padding:12px 14px; min-width:0; }
   .card h2 { margin:0 0 8px; font-size:12px; font-weight:600;
-             color:var(--muted); letter-spacing:.05em; text-transform:uppercase; }
-  .big  { font-size:30px; font-weight:600; }   /* proportional figures — not
-                                                  tabular — per stat-tile spec */
+             color:var(--muted); letter-spacing:.05em;
+             text-transform:uppercase; }
+  /* proportional figures, not tabular — per the stat-tile spec */
+  .big  { font-size:30px; font-weight:600; }
   .unit { font-size:13px; color:var(--muted); }
   .note { font-size:11px; color:var(--muted); margin-top:6px; }
   .kv   { display:grid; grid-template-columns:auto 1fr; gap:2px 12px;
@@ -80,7 +81,8 @@
 <header>
   <h1>PYRO overlay telemetry</h1>
   <span class="badge" id="dev">device: waiting…</span>
-  <span class="sub" id="meta">polling /snapshot.json every 2 s, /history.json every 10 s</span>
+  <span class="sub" id="meta">polling /snapshot.json every 2 s,
+    /history.json every 10 s</span>
 </header>
 <main>
 
@@ -427,8 +429,8 @@ function render(s) {
     ["load_open", t.load_open, false],
     ["commit_err", t.commit_err, true],
   ].map(([k, v, bad]) =>
-    `<span class="flag ${v ? (bad ? "err" : "ok") : ""}">${k}${v ? "" : ": no"}` +
-    `</span>`).join("")
+    `<span class="flag ${v ? (bad ? "err" : "ok") : ""}">` +
+    `${k}${v ? "" : ": no"}</span>`).join("")
     : `<span class="flag">no card</span>`;
 
   const p = d.perf || {};

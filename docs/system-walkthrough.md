@@ -174,7 +174,8 @@ a PASS, and no simulated PASS is ever recorded.
   the RP by design of the flow; recovery is in-band and automatic:
   `scripts/pyro_wedge_recover.sh` (user reset `0x014` + QDMA soft reset
   `0x00C` + `onic` reload).
-- **Data-plane swap:** `sudo scripts/pyro_dataplane_swap.sh {data|control|status}`.
+- **Data-plane swap:**
+  `sudo scripts/pyro_dataplane_swap.sh {data|control|status}`.
   Swap back to `onic` only on a healthy RP — swapping onto a wedged card
   panics in `onic_q_handler` (recover first).
 - **Bring-up after a power cycle:** check `onic.ko` vermagic against the
@@ -189,7 +190,7 @@ a PASS, and no simulated PASS is ever recorded.
 | Path | What |
 |---|---|
 | `specs/python-regex-offload.md` | PYRO spec (v2.7.0) — the R-numbers |
-| `specs/snort-rule-offload.md` | SNORT-PF spec (v1.0.2) — the SR/SF/AC numbers |
+| `specs/snort-rule-offload.md` | SNORT-PF spec — the SR/SF/AC numbers |
 | `pyro/hdl/` | automaton, Verilog generator, `rp_wrapper`, identity |
 | `pyro/snort/` | rules parser, triage, report, grouping |
 | `pyro/synth/` | synthesis service, toolchains, cache, residency |
@@ -198,7 +199,7 @@ a PASS, and no simulated PASS is ever recorded.
 | `hw/dfx/` | DFX shell build, locked static DCP |
 | `scripts/` | `pyro_hw.py` transport CLI, swap/recover scripts |
 | `tests/` | unit / acceptance / hw (xsim) / c |
-| `.superpowers/pr-builds/` | Vivado PR build drivers + artifacts (crash-fragile: verify after unclean reboot) |
+| `.superpowers/pr-builds/` | Vivado PR drivers + artifacts (crash-fragile) |
 | `docs/` | demo, notebook, plans, bring-up, toolchain notes |
 
 ## 9. Where it is going
@@ -217,7 +218,7 @@ corpus, but instantaneous resident coverage is one group ≈ 256 rules
 prefilter's value is bounded by how well group rotation tracks the traffic
 mix — which is exactly what S3 exists to measure.
 
-## 10. The system file by file — an OS for FPGA-resident functionality (2026-08-03)
+## 10. The system file by file — an OS for the FPGA (2026-08-03)
 
 **The thesis the whole tree serves:** treat a partially-reconfigurable
 FPGA region the way an OS treats a CPU and its memory: circuits are
@@ -230,13 +231,13 @@ the product. The dictionary:
 
 | OS primitive | This system |
 |---|---|
-| CPU + memory | the `pyro_rp` region on SLR2 (80k LUT / 160 BRAM / 64 URAM, SF2) |
+| CPU + memory | the `pyro_rp` region on SLR2 (SF2 budget) |
 | process image | a generated circuit (bitstream) or an overlay *table* (data) |
 | exec (heavyweight) | JTAG partial reconfiguration — measured 13.6 s |
-| context switch (cheap) | A5 overlay table write — measured 13.9 ms + 0.150 ms/KB |
+| context switch (cheap) | A5 table write — 13.9 ms + 0.150 ms/KB |
 | PID / generation | `CIRC_ID` + `TABLE_ID` (CRC-32C) + `EPOCH` |
 | scheduler | value-aware residency scoring `V(g)` |
-| benign page fault | an SR5 over-nomination — Snort re-verifies, so wrong-but-safe |
+| benign page fault | SR5 over-nomination — Snort re-verifies |
 | /proc, perf counters | R45a cycles/bytes CSRs + the telemetry surface |
 
 ### `hw/` — the machine itself

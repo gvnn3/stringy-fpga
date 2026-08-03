@@ -25,8 +25,8 @@
 set outdir [expr {$argc > 0 ? [lindex $argv 0] : "."}]
 file mkdir $outdir
 
-set rtl [file join [file dirname [file dirname [file normalize [info script]]]] \
-             hw rtl pyro_overlay_engine.v]
+set here [file dirname [file dirname [file normalize [info script]]]]
+set rtl  [file join $here hw rtl pyro_overlay_engine.v]
 
 # Expected floor for the full-corpus configuration (MAX_STATES = 40960):
 # bitmap is 256 b wide x 40960 deep = 40 URAM288, oidx is 64 b x 40960 = 10.
@@ -35,7 +35,8 @@ set MIN_URAM 40
 set PERIOD   4.000
 
 read_verilog $rtl
-synth_design -top pyro_overlay_engine -part xcu250-figd2104-2L-e -mode out_of_context
+synth_design -top pyro_overlay_engine -part xcu250-figd2104-2L-e \
+    -mode out_of_context
 create_clock -period $PERIOD -name clk [get_ports clk]
 
 set critwarn [get_msg_config -severity {CRITICAL WARNING} -count]
@@ -72,7 +73,8 @@ if {[llength $bad]} {
 } elseif {$wns eq "NONE"} {
     puts "PYRO_VERDICT: INVALID -- no timing paths found"
 } elseif {$wns < 0} {
-    puts "PYRO_VERDICT: FAIL -- negative slack $wns ns at [format %.0f [expr {1000.0/$PERIOD}]] MHz"
+    set mhz [format %.0f [expr {1000.0 / $PERIOD}]]
+    puts "PYRO_VERDICT: FAIL -- negative slack $wns ns at $mhz MHz"
 } else {
     puts "PYRO_VERDICT: PASS -- WNS $wns ns, $n_uram URAM, $n_bram BRAM"
 }

@@ -1,4 +1,4 @@
-# Amendment A5 (DRAFT) — overlay table-write protocol and the TABLE_ID identity layer
+# Amendment A5 (DRAFT) — overlay table writes and TABLE_ID identity
 
 - **Status:** ☑ **APPROVED by the owner, 2026-07-30.** The loadable-table
   slot is open, with the §2–§5 identity layer as its binding precondition:
@@ -56,9 +56,9 @@ Two consequences must both be handled:
 
 | layer | attests | mechanism | lifetime |
 |---|---|---|---|
-| `CIRC_ID` (exists, R47a) | which **engine** | 128-bit hash baked into CIRC_ID0..3 | per bitstream |
-| **`TABLE_ID`** (new) | which **rules** | CRC-32C computed on-device over the received table image | per commit |
-| **`EPOCH`** (new) | **when** | monotonic counter, incremented on commit, tagged into every reply | per commit |
+| `CIRC_ID` (R47a) | the **engine** | 128b hash, CIRC_ID0..3 | image |
+| **`TABLE_ID`** (new) | the **rules** | device CRC-32C of image | commit |
+| **`EPOCH`** (new) | **when** | counter ++ on commit, in every reply | commit |
 
 The engine bitstream becomes generic and near-immutable; the table becomes
 the thing that changes and the thing that must be attested.
@@ -107,17 +107,18 @@ Memory is the constraint, and it forces a choice:
 
 | option | memory | blind window | fits SF2's 2.25 MB URAM? |
 |---|---|---|---|
-| full double-buffer, 16 B cap | 2 × 1.33 = 2.66 MB | **zero** | **no** (needs URAM+BRAM) |
+| double-buffer, 16 B cap | 2.66 MB | **zero** | **no** (URAM+BRAM) |
 | full double-buffer, 8 B cap | 2 × 0.68 = 1.36 MB | zero | yes |
 | **single region + quiesce** | 1.33 MB | **~0.6–1.2 ms** | yes |
 
 **Recommendation: start single-region with quiesce.** The blind window is
 ~0.54 ms of table write plus a verify pass — four orders of magnitude below
 PR's 13.6 s, and inside the frontier for any phase length above **2 ms**
-(`0.6 ms / 0.3`). Paying 2× URAM to remove a window that is already negligible is
-the wrong trade at this stage. Epoch tagging is specified regardless: it
-costs a few bits, it guards against protocol bugs during quiesce, and it is
-what makes the banked mode a drop-in later.
+(`0.6 ms / 0.3`). Paying 2× URAM to remove a window that is already
+negligible is the wrong trade at this stage. Epoch tagging is
+specified regardless: it costs a few bits, it guards against
+protocol bugs during quiesce, and it is what makes the banked mode
+a drop-in later.
 
 ## 3. Wire protocol (R78 extension)
 
@@ -137,10 +138,10 @@ Header format is unchanged (`>BBBBHIHH`, 14 bytes).
 before a single byte is transferred:
 
 ```
-u32 table_format_version    u32 engine_id      (must equal resident CIRC_ID low-32)
+u32 table_format_version    u32 engine_id     (= resident CIRC_ID low-32)
 u64 total_bytes             u32 expected_crc32c (over the FINAL image)
-u16 mode                    u16 reserved        (0 = full, 1 = delta-from-active)
-u32 n_states                u32 n_patterns      (both must be <= engine capacity)
+u16 mode                    u16 reserved      (0 = full, 1 = delta)
+u32 n_states                u32 n_patterns    (both <= engine capacity)
 ```
 
 The device rejects on any mismatch — wrong engine, unknown format, capacity
@@ -202,11 +203,11 @@ cannot detect a content change at all.
 
 | condition | required behaviour |
 |---|---|
-| after any reset or reconfiguration | `TABLE_ACTIVE_ID = 0`, epoch = 0 → host must reload. Tables are volatile; the device MUST NOT come up holding stale content that reads as valid. |
+| any reset / reconfig | `TABLE_ACTIVE_ID=0`, epoch 0 — must reload |
 | transfer interrupted | shadow stays invalid; `TABLE_COMMIT` refused |
 | CRC mismatch at commit | refuse, keep active table, report error |
 | `TABLE_ID` readback ≠ expected | host routes to unfiltered (SR14′) |
-| engine/format/capacity mismatch | reject at `TABLE_BEGIN`, before any transfer |
+| engine/format/capacity mismatch | reject at `TABLE_BEGIN` |
 
 The `TABLE_ID = 0 means nothing valid` convention mirrors the existing
 forced-non-zero `rp_child_id`, so "zero" is unambiguous in both layers.
@@ -215,7 +216,7 @@ forced-non-zero `rp_child_id`, so "zero" is unambiguous in both layers.
 
 The frontier requires `s ≤ 0.3 · P`. With `s ≈ table_bytes / rate + commit`:
 
-| phase length P | max switch | full 1.33 MB table needs | verdict on measured 2.3 GiB/s |
+| phase length P | max switch | 1.33 MB table needs | verdict at 2.3 GiB/s |
 |---|---|---|---|
 | 1 s | 300 ms | 4.4 MB/s | trivial |
 | 100 ms | 30 ms | 44 MB/s | comfortable |

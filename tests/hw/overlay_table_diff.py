@@ -32,7 +32,8 @@ import subprocess
 import sys
 import tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO)
 
 import pyro.device as pdev                      # noqa: E402
@@ -123,7 +124,8 @@ def main(argv=None):
     off = 0
     while off < len(image):
         n = min(cap, len(image) - off)
-        add(pdev.KIND_TABLE_DATA, struct.pack(">QI", off, n) + image[off:off + n],
+        add(pdev.KIND_TABLE_DATA,
+            struct.pack(">QI", off, n) + image[off:off + n],
             "data@%d" % off)
         off += n
     add(pdev.KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0), "commit")
@@ -160,7 +162,8 @@ def main(argv=None):
             struct.pack(">QI", off, n) + bytes(corrupt[off:off + n]),
             "data-corrupt@%d" % off)
         off += n
-    add(pdev.KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0), "commit-corrupt")
+    add(pdev.KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0),
+        "commit-corrupt")
 
     beats = [b for f in frames for b in frame_to_beats(f)]
     print("driving %d frames / %d beats" % (len(frames), len(beats)))
@@ -183,12 +186,15 @@ def main(argv=None):
             fk.write("%016x\n" % keep)
             fl.write("%d\n" % (1 if last else 0))
 
-    env = dict(os.environ, PATH=os.path.join(vivado, "bin") + ":" + os.environ["PATH"])
+    env = dict(os.environ,
+               PATH=os.path.join(vivado, "bin") + ":" + os.environ["PATH"])
 
     def run(cmd):
-        p = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True)
+        p = subprocess.run(cmd, cwd=work, env=env, capture_output=True,
+                           text=True)
         if p.returncode != 0:
-            print("FAIL: %s\n%s\n%s" % (cmd[0], p.stdout[-3000:], p.stderr[-2000:]))
+            print("FAIL: %s\n%s\n%s"
+                  % (cmd[0], p.stdout[-3000:], p.stderr[-2000:]))
             sys.exit(1)
         return p.stdout
 
@@ -229,7 +235,8 @@ def main(argv=None):
         d = by_seq.get(s)
         if d is None or d.kind != pdev.KIND_TABLE_STATUS_REPLY:
             return None
-        a, sh, ep, fl, nb, caps, err = struct.unpack(">IIIIQII", d.payload[0:32])
+        a, sh, ep, fl, nb, caps, err = struct.unpack(">IIIIQII",
+                                                     d.payload[0:32])
         return pdev.TableStatus(a, sh, ep, fl, nb, caps, err)
 
     for s, kind, tag in plan:
@@ -271,12 +278,15 @@ def main(argv=None):
             # PYRO control header around them is big-endian.  Mixing the two
             # up reads 10 as 0x0A00000000000000, which looks like a device
             # fault and is not one -- cf. xsim_diff.expect_match.
-            start, end, pid, flags = struct.unpack("<QQII", dm.payload[base:base + 24])
+            start, end, pid, flags = struct.unpack(
+                "<QQII", dm.payload[base:base + 24])
             got.add((pid, end))
         want = {(m.pattern_id, m.end) for m in ref_matches}
-        print("MATCH_REPLY: count=%d status=0x%x epoch=%d" % (count, mstat, epoch))
+        print("MATCH_REPLY: count=%d status=0x%x epoch=%d"
+              % (count, mstat, epoch))
         if epoch != ref_epoch:
-            errors.append("MATCH_REPLY epoch %d != %d (SR14')" % (epoch, ref_epoch))
+            errors.append("MATCH_REPLY epoch %d != %d (SR14')"
+                          % (epoch, ref_epoch))
         if got != want:
             errors.append("matches differ:\n  device %s\n  model  %s"
                           % (sorted(got), sorted(want)))
@@ -284,7 +294,8 @@ def main(argv=None):
     s_perf = [s for s, k, t in plan if t == "perf"][0]
     dp = by_seq.get(s_perf)
     if dp is None or dp.kind != pdev.KIND_PERF_REPLY:
-        errors.append("no PERF_REPLY (kind=%s)" % (hex(dp.kind) if dp else None))
+        errors.append("no PERF_REPLY (kind=%s)"
+                      % (hex(dp.kind) if dp else None))
     else:
         cycles, nbytes = struct.unpack(">QQ", dp.payload[0:16])
         print("PERF_REPLY: cycles=%d bytes=%d (%.2f cyc/B over %d B subject)"
@@ -311,7 +322,8 @@ def main(argv=None):
         errors.append("out-of-order chunk NOT refused: error=%d (want %d)"
                       % (stb.error, pdev.PYRO_E_TABLE_SEQUENCE))
     else:
-        print("out-of-order chunk refused with error %d (as designed)" % stb.error)
+        print("out-of-order chunk refused with error %d (as designed)"
+              % stb.error)
 
     s_after = [s for s, k, t in plan if t == "status-after-bad"][0]
     sta = status_of(s_after)

@@ -28,7 +28,8 @@ NOPASSWD-sudo for this user; nothing else needs root.
   `46186bf`, `build_timestamp=0x07260427`), activated by the 2026-07-26
   cold cycle and verified on silicon: `lspci -d 10ee: -nn` shows
   `10ee:903f` at `02:00.0` and `h2cstats` reads live counters.
-* `.superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit`
+* `.superpowers/pr-builds/`
+  `pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit`
   matches this static (fmax 260.8 MHz) and is the bit to `pyro_hw.py load`.
 * **2026-07-30: the resident child is the A5 overlay engine** (§10) —
   full-corpus capacity (40,960 states), PR-linked at 251.32 MHz,
@@ -65,11 +66,12 @@ sudo scripts/pyro_wedge_recover.sh     # user reset + QDMA soft reset + onic
 #    - PYRO regex demos (§§2-5): the x4 frame-parallel child
 #    - SNORT-PF demo (§8):       the 253-slot group child
 #    - overlay demo (§10):       the A5 overlay engine (current resident)
+B=.superpowers/pr-builds
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
-    .superpowers/pr-builds/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit
+    $B/pattern_becf73e88b6f1c561308914848c69ab0_x4_partial.bit
 # or:
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
-    .superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
+    $B/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
 # or:
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
     .superpowers/pr-builds/overlay_engine_partial.bit
@@ -86,7 +88,8 @@ The resident child answers R78 frames on `ens2`. The loaded pattern is
 
 ```sh
 # One MATCH round-trip — returns candidate windows the host re-verifies:
-PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py match "xyzabcafxyz"
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py \
+    match "xyzabcafxyz"
 # -> MATCH_REPLY count=1 ... entry[0]: start=0 end=8 pattern_id=0
 
 # On-chip performance counters for the most recent scan (R78.11):
@@ -141,7 +144,8 @@ as expected performance.
 | 1 queue, W=8 | **~2.2–2.3 GiB/s** | zero-loss, the reliable demo number |
 | 4 queues, W=1 | ~0.31 GiB/s | |
 | 4 queues, W=16–32 | ~2.5–2.7 GiB/s | best 4q on a fresh boot; expect RETX≥1 |
-| 4 queues, after heavy mq traffic | 0.002–0.9 GiB/s, erratic | degraded state, §0; windows can fail outright |
+| 4 queues, after heavy mq traffic | 0.002–0.9 GiB/s, erratic |
+  degraded state (§0); windows can be silently lost |
 
 Env knobs:
 
@@ -155,7 +159,8 @@ accounted, metrics emitted) is AC-3-3:
 
 ```sh
 PYRO_DEVICE_IFACE=ens2 PYRO_QDMA_CHARDEV=/dev/qdma02000-ST-0 \
-    .venv-pyro/bin/pytest tests/acceptance/test_ac3_3_benchmark.py -k hardware -rA
+    .venv-pyro/bin/pytest \
+        tests/acceptance/test_ac3_3_benchmark.py -k hardware -rA
 ```
 
 ## 5. H2C loss instrumentation (new in the flashed shell)
@@ -184,12 +189,15 @@ loss measurement. Details in `docs/notebook.md` and the AMD case doc.
 
 ## 6. Recovery cheat-sheet
 
-| Symptom | Fix |
-|---|---|
-| Probe times out / DMA reads all time out (`tm 10000` in dmesg) | `sudo scripts/pyro_wedge_recover.sh` then re-probe |
-| After JTAG partial load, child unreachable | (automatic — `load` runs recovery; manual: same script) |
-| Bench numbers degrade run-over-run | reset + fresh `data` swap; if still degraded, cold boot (EQDMA state decay, §0) |
-| Back to control path | `sudo scripts/pyro_dataplane_swap.sh control` (pulses resets first — safe against the 2026-07-25 panic) |
+- **Probe times out / DMA reads all time out** (`tm 10000` in
+  dmesg) — `sudo scripts/pyro_wedge_recover.sh`, then probe again.
+- **After JTAG partial load, child unreachable** — automatic: `load`
+  runs recovery itself; manual recovery is the same script.
+- **Bench numbers degrade run-over-run** — reset + fresh `data` swap;
+  if still degraded, cold boot per `power-cycle-bringup`.
+- **Back to control path** —
+  `sudo scripts/pyro_dataplane_swap.sh control` (pulses resets first,
+  safe on a sick card).
 
 ## 7. Optional: IOMMU domain experiment mode
 
@@ -198,9 +206,10 @@ domain at runtime (drivers are unbound and must be re-swapped afterward):
 
 ```sh
 sudo scripts/pyro_dataplane_swap.sh iommu PYRO_IOMMU_TYPE=DMA       # strict
-sudo scripts/pyro_dataplane_swap.sh iommu PYRO_IOMMU_TYPE=identity  # pt-equiv (experiments only)
+sudo scripts/pyro_dataplane_swap.sh iommu \
+    PYRO_IOMMU_TYPE=identity            # pt-equiv (experiments only)
 sudo scripts/pyro_dataplane_swap.sh iommu PYRO_IOMMU_TYPE=DMA-FQ    # default
-sudo scripts/pyro_dataplane_swap.sh data                            # rebind + queues
+sudo scripts/pyro_dataplane_swap.sh data        # rebind + queues
 ```
 
 ## 8. SNORT-PF demo — 256 Snort rules in one circuit
@@ -219,8 +228,9 @@ This child is no longer the one resident (the A5 overlay engine is, §10)
 ### 8.1 Load and probe
 
 ```sh
+B=.superpowers/pr-builds
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
-    .superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
+    $B/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_partial.bit
 # -> load_partial OK in ~14 s (in-band recovery included)
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py probe
 # -> device_usable=true — static_shell_id=0x02020000, ...
@@ -261,7 +271,10 @@ Anchors dedup, so one slot can nominate several rules:
 ```sh
 python3 -c "
 import json
-s = json.load(open('.superpowers/pr-builds/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0_snortpf_sidecar.json'))
+B = '.superpowers/pr-builds'
+s = json.load(open(B +
+    '/group_e1e145ba35391796ea6ac7a89af1c8e6_HTTPPORTS_0'
+    '_snortpf_sidecar.json'))
 print('slot 40 ->', s['slots']['40'])   # ['1:848', '1:849']  view-source rules
 print('slot 85 ->', s['slots']['85'])   # ['1:900', '1:901']  webspirs.cgi rules
 print(s['rp_child_id_low32'])           # 0xfc18a4b1"
@@ -293,13 +306,14 @@ The S1 demo — one FTP rule (sid 1927, `authorized_keys`, nocase) through
 pcap -> nomination -> Snort re-verification. Child at generator 2.3.0:
 
 ```sh
+B=.superpowers/pr-builds
 # Load the S1 child (replaces the group; reload §8.1 afterwards):
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
-    .superpowers/pr-builds/pattern_95b1d1d193f3dd33db89110a8801fed1_x1_partial.bit
+    $B/pattern_95b1d1d193f3dd33db89110a8801fed1_x1_partial.bit
 
 # Nominate from pcaps (positive: mixed-case 'RETR AuthoRized_Keys'):
 PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 tests/data/snortpf/ac_s1_2.py \
-    .superpowers/pr-builds/pattern_95b1d1d193f3dd33db89110a8801fed1_x1_snortpf_sidecar.json \
+    $B/pattern_95b1d1d193f3dd33db89110a8801fed1_x1_snortpf_sidecar.json \
     /path/to/s1_positive.pcap /path/to/s1_negative.pcap
 # -> positive corpus: 1 nomination  1:1927 offset=0..20
 #    negative corpus: 0 nomination(s)
@@ -307,9 +321,12 @@ PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 tests/data/snortpf/ac_s1_2.py \
 # (Regenerate pcaps with tests/data/snortpf/make_s1_pcaps.py <pos> <neg>.)
 
 # Snort re-verifies the nomination (needs -c for the variable table):
-grep -h "sid:1927" third_party/snort3-community-rules/snort3-community.rules > /tmp/sid1927.rules
+grep -h "sid:1927" \
+    third_party/snort3-community-rules/snort3-community.rules \
+    > /tmp/sid1927.rules
 LD_LIBRARY_PATH=/home/gnn/opt/snort3/lib:/home/gnn/opt/snort3/lib64 \
-    /home/gnn/opt/snort3/bin/snort -q -c /home/gnn/opt/snort3/etc/snort/snort.lua \
+    /home/gnn/opt/snort3/bin/snort -q \
+        -c /home/gnn/opt/snort3/etc/snort/snort.lua \
     -R /tmp/sid1927.rules -r /path/to/s1_positive.pcap -A alert_fast
 # -> [1:1927:8] "PROTOCOL-FTP authorized_keys" ... ; negative pcap: silence
 ```
@@ -329,10 +346,12 @@ Corpus inspection without hardware (parse/triage/pack all 4,017 rules):
 
 ```sh
 .venv-pyro/bin/python3 -m pyro.snort.triage \
-    third_party/snort3-community-rules/snort3-community.rules -o /tmp/report.json
+    third_party/snort3-community-rules/snort3-community.rules \
+    -o /tmp/report.json
 .venv-pyro/bin/python3 -c "
 from pyro.snort import triage_file, pack_groups
-gs = pack_groups(triage_file('third_party/snort3-community-rules/snort3-community.rules'))
+corpus = 'third_party/snort3-community-rules/snort3-community.rules'
+gs = pack_groups(triage_file(corpus))
 print(len(gs), 'groups;', {g.port_class for g in gs})
 g = next(g for g in gs if g.port_class=='\$HTTP_PORTS' and g.index==0)
 print('AC-S2-2 group:', g.rule_count, 'rules ->', g.n_slots, 'slots')"
@@ -384,10 +403,12 @@ sudo env PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
 ### 9.3 Building all 21 groups (AC-S3-1, overnight)
 
 ```sh
+B=.superpowers/pr-builds
 env PYRO_VIVADO=/usr/local/cad/2025.2/Vivado \
     PYRO_PR_STATIC_DCP=$PWD/hw/dfx/build/dcp/static_routed_locked.dcp \
     PYRO_PR_REFERENCE_DCP=$PWD/hw/dfx/build/dcp/static_full_config0.dcp \
-    .venv-pyro/bin/python3 .superpowers/pr-builds/pr_build_driver_s3_all_groups.py
+    .venv-pyro/bin/python3 \
+        $B/pr_build_driver_s3_all_groups.py
 # 2 concurrent jobs (~9.4 GB each), SR9 cache-resumable: re-run after a
 # crash and only missing groups rebuild. --dry-run shows cache state;
 # --only '$HTTP_PORTS/1,any/0' builds a subset. Summary lands in
@@ -444,7 +465,7 @@ seg2 starts b'urce?f=x HTTP/'...  -> NOMINATE 1:848, 1:849 end=16
                                       neither segment contains the anchor alone)
 ```
 
-## 10. Overlay engine demo — run-time rule swapping + telemetry (current resident)
+## 10. Overlay engine demo — rule swapping + telemetry (resident)
 
 State as of 2026-07-30: the resident child is the **A5 overlay engine** —
 one Aho-Corasick circuit whose rule table is NOT baked into the bitstream
@@ -487,15 +508,18 @@ table size is not the bottleneck; round trips and host CRC are.
 ```sh
 # One pyro-telemetry/1 JSON document — device surface (identity, epoch,
 # perf counters, commit status) + host surface (daemon/scheduler stats):
-PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --snapshot
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_telemetry_demo.py --snapshot
 
 # Scripted on-hardware sequence: status -> build two group tables ->
 # load A (timed) -> ~20 MATCH round-trips -> swap to B (timed) -> more
 # scans -> swap back -> final JSON report:
-PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --demo
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_telemetry_demo.py --demo
 
 # Live view — one background thread owns the wire, HTTP only reads its ring:
-PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --serve 8080
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_telemetry_demo.py --serve 8080
 # -> dashboard at http://localhost:8080/  (web/pyro_dashboard.html)
 #    Prometheus exposition at /metrics; Grafana provisioning under grafana/
 ```
@@ -523,14 +547,35 @@ every device field degrades to "–", never NaN.
 
 **Six panels**, one per question an operator actually asks:
 
-| panel | what it shows | reading it |
-|---|---|---|
-| **Switch time** (wide) | last swap in ms + full swap history on a **log axis** with the measured 13.6 s JTAG-PR baseline drawn across the top | the point of the whole system in one picture: every dot sits ~3 orders below the baseline; dot height tracks table size (13.9 ms + 0.150 ms/KB) |
-| **Rules matched** (wide) | nominations/s + top-10 bar chart by `gid:sid` | `pattern_id` resolves through the resident group's slot table, so bars are *rules*, not slots; subtitle counts total nominations, scans, and OVF events |
-| **Packets dropped** | netdev drops headline + kv table: `rx_dropped/rx_errors/rx_missed/tx_dropped`, requests sent, replies, request-loss % | the note states the honest limits: netdev counters zero on onic reload, and EQDMA ≥2-queue loss is invisible to them — sent-vs-replied is the cross-check |
-| **Rules missed** | a green banner — "0 hard misses among resident rules, SR3 **verified invariant**, not a measurement" — over a segmented bar decomposing the countable channels: OVF truncations, non-resident rules, lowering-dropped | if the segmented bar is dominated by non-resident (it is: ~3.9k of 4,017), that is the *capacity* story from the working-set study, not a defect |
-| **Table identity** | `active`/`shadow` TABLE_IDs (hex), epoch, capacity, bytes received + status flags `active_valid` / `load_open` / `commit_err` | `commit_err` lights red when the engine refused a commit (A5 §5 fail-closed); `active` should always equal the host's CRC of what it sent |
-| **Throughput** | bytes/cycle + MB/s sparkline from the R45a counters | most-recent-scan only (the wrapper resets counters per scan); ~0.1–0.2 B/cyc is the overlay engine's honest 5–10 cyc/B, not a fault |
+- **Switch time** (wide) — last swap in ms plus the full swap history
+  on a **log axis**, with the measured 13.6 s JTAG-PR baseline drawn
+  across the top. The point of the whole system in one picture: every
+  dot sits ~3 orders below the baseline, and dot height tracks table
+  size (13.9 ms + 0.150 ms/KB).
+- **Rules matched** (wide) — nominations/s plus a top-10 bar chart by
+  `gid:sid`. `pattern_id` resolves through the resident group's slot
+  table, so bars are *rules*, not slots; the subtitle counts total
+  nominations, scans, and OVF events.
+- **Packets dropped** — netdev drops headline over a kv table
+  (`rx_dropped`/`rx_errors`/`rx_missed`/`tx_dropped`, requests sent,
+  replies, request-loss %). The note states the honest limits: netdev
+  counters zero on onic reload, and EQDMA ≥2-queue loss is invisible
+  to them — sent-vs-replied is the cross-check.
+- **Rules missed** — a green banner first: "0 hard misses among
+  resident rules — SR3 **verified invariant**, not a measurement" —
+  over a segmented bar decomposing the countable channels: OVF
+  truncations, non-resident rules, lowering-dropped. The bar being
+  dominated by non-resident (~3.9k of 4,017) is the *capacity* story
+  from the working-set study, not a defect.
+- **Table identity** — `active`/`shadow` TABLE_IDs (hex), epoch,
+  capacity, bytes received, plus status flags `active_valid` /
+  `load_open` / `commit_err`. `commit_err` lights red when the engine
+  refused a commit (A5 §5 fail-closed); `active` should always equal
+  the host's CRC of what it sent.
+- **Throughput** — bytes/cycle + MB/s sparkline from the R45a
+  counters, most-recent-scan only (the wrapper resets counters per
+  scan); ~0.1–0.2 B/cyc is the overlay engine's honest 5–10 cyc/B,
+  not a fault.
 
 One rendering note, learned the hard way: everything per-tick in the
 chart plumbing is a fixed point — the design height is latched once in

@@ -61,8 +61,9 @@ module tb_pyro_rp_wd;
         @(posedge clk);
         w = w + 1;
         if (w > STALLCYC) begin
-          $display("TB_HANG: beat %0d not accepted after %0d cycles; dut.state=%0d",
-                   i, w, dut.state);
+          $display("TB_HANG: beat %0d not accepted after %0d cycles;",
+                   i, w);
+          $display("TB_HANG: dut.state=%0d", dut.state);
           $fclose(fo);
           $finish;
         end

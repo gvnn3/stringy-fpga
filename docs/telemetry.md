@@ -37,11 +37,16 @@ swapped-out data plane, or a lost frame. Only a preceding successful
 the device matches. There are two entirely different switch mechanisms with a
 ~1000× gap between them, and the gap is the reason the A5 overlay exists:
 
-| Mechanism | Measured | What changes |
-|---|---|---|
-| Overlay table load+commit (2564 B image) | **12.3 ms** | The AC table, in-band over R78 |
-| Full 1.64 MB corpus table, wire time | **0.66 ms** at 2.3 GiB/s | (wire component only; wall time adds per-chunk round trips + host CRC) |
-| JTAG partial-reconfiguration child swap | **13.6 s** | The bitstream itself |
+- **Overlay table load+commit (2564 B image)**
+  - Measured: **12.3 ms**
+  - What changes: The AC table, in-band over R78
+- **Full 1.64 MB corpus table, wire time**
+  - Measured: **0.66 ms** at 2.3 GiB/s
+  - What changes: (wire component only; wall time adds per-chunk round trips +
+    host CRC)
+- **JTAG partial-reconfiguration child swap**
+  - Measured: **13.6 s**
+  - What changes: The bitstream itself
 
 **Where it comes from.** Host-derived, and only host-derived: neither
 `pyro.device.load_table` nor `pyro.snort.scheduler.jtag_load_pipeline` takes
@@ -192,61 +197,316 @@ are extractable today, "internal" rows are not.
 
 ### 3.1 Wire-extractable metrics
 
-| Metric | Source | Extraction | Caveats |
-|---|---|---|---|
-| device_usable + reason | 0x01/0x02 ID handshake | `pyro.device.probe_device(DeviceConfig(iface='ens2', chardev=None, max_payload=MAX_PAYLOAD_JUMBO, probe_timeout_s=2.0))` → `(bool, reason)` | CAP_NET_RAW gate first; up to 3 × 2.0 s attempts (R84). Only the SPEC16 high 16 bits of static_shell_id are checked (R81) — wrong BUILD16 still passes. |
-| static_shell_id (SPEC16<<16 \| BUILD16) | 0x02 ID_REPLY payload[0:4] u32 BE | `struct.unpack('>I', dec.payload[0:4])[0]` (`_parse_id_reply`) | Compile-time constant, not a health signal. BUILD16 defaults 0 for pattern children (S11) unless `PYRO_BUILD16` injected. probe_device surfaces it only inside its reason string. |
-| wire harness_version | 0x02 ID_REPLY payload[4:8] u32 BE | hand-rolled: `struct.unpack('>I', dec.payload[4:8])[0]` — no public helper parses past payload[0:4] | Namespace hazard: this is the R45/R78.5b WIRE namespace (0x00010000), distinct from the PYROART1 artifact HARNESS_VERSION (0x00020100+) *and* the overlay engine's CSR-default 0x00020300. Never compare across namespaces. |
-| rp_child_id (resident child) | 0x02 ID_REPLY payload[8:12] u32 BE | `struct.unpack('>I', dec.payload[8:12])[0]`; verify via `rp_child_id_from_hash(pattern_hash_hex)` | 0 = default ID stub. Identifies the child *bitstream*, not the table — for the A5 child the table identity is `active_table_id`. |
-| slot/seq echo | any reply, PYRO header bytes 4–5 / 6–11 | `dec = decode_frame(frame[14:]); dec.slot, dec.seq` | The only request-reply correlation mechanism; matching is the host's job (`if dec.seq != seq: continue`) — the device detects neither gaps nor duplicates. |
-| match count | 0x04 MATCH_REPLY payload[0:2] u16 BE | `struct.unpack('>HH', dec.payload[0:4])` — `scripts/pyro_overlay_bringup.py:74` | Wrapper-counted, capped at min(requested cap, OUT_CAP=61); 61+OVF = "at least 61". |
-| OVF bit | 0x04 payload[2:4] u16 BE bit0 | `bool(status & 1)` | OR-latch of engine A_STATUS bit3 across ST_DRAIN; means truncated at 61 — re-scan/resume. Bits 1–15 currently always 0. |
-| match epoch (SR14′ gate) | 0x04 payload[4:8] u32 BE | `struct.unpack('>I', dec.payload[4:8])[0]` | 0 = pre-A5 child or no table ever committed. Latched in ST_TBL_STAT, exact because commits serialize through the same single-frame FSM. Compare against the device's commit-time epoch, not a fresh model's. |
-| per-match entry | 0x04 payload[8+24i:32+24i] LE `<QQII` | `_s, end, pid, _f = struct.unpack('<QQII', ...)` per entry | LE inside BE header. `start` always 0 (recompute `end−len+1`); `end` relative to this request's corpus; `pattern_id` = slot index → gid:sid list via sidecar; `flags = (epoch[15:0]<<16) \| 1`. |
-| scan cycles (R45a) | 0x07 PERF_REPLY payload[0:8] u64 BE (CSR 0x0058/0x005C) | `read_perf_counters(cfg, slot=1)` → `(cycles, bytes)` or None | **Most recent scan only** — wrapper writes CTRL.RESET before every scan (W4); destroyed by the next MATCH_REQUEST. Works on generated children AND (since 2026-07-31) the A5 overlay child, whose CYCLES include feed stalls; a pre-fix overlay child returns the 0x0002030000020300 constant, which `pyro.telemetry` fingerprints and nulls. On a v4 multi-core child, routes to the last-done core. None is not a fault. |
-| scan bytes (R45a) | 0x07 payload[8:16] u64 BE (CSR 0x0060/0x0064) | second element of `read_perf_counters` | Same caveats. Counts bytes the *engine* consumed (post W5 clamp), ≤ declared length if the host lied. cycles/bytes gives cyc/B: generated group engines ~1 B/cyc/core; the overlay child ~8–10 cyc/B — now wire-readable (sim-measured 9.28 cyc/B; per-scan overhead shrinks the gap on longer subjects). |
-| active_table_id | 0x0C TABLE_STATUS_REPLY payload[0:4] (CSR 0x0068 A_TBL_ACTIVE) | `read_table_status(cfg, slot=1).active_table_id`; non-mutating; every table op also returns full TableStatus | = CRC-32C of the committed image; verify vs `pyro.overlay.table.table_id(image)`. 0 = nothing valid resident, never "unknown". Unchanged by a refused commit. None = child predates A5 §3. |
-| shadow_table_id | 0x0C payload[4:8] (CSR 0x006C A_TBL_SHADOW) | `.shadow_table_id` | Live running CRC (`~shadow_crc`) of bytes received so far; must equal declared CRC at commit. Reset to seed (reads 0) by BEGIN/ABORT; meaningful only while load_open. |
-| epoch | 0x0C payload[8:12] (CSR 0x0070 A_TBL_EPOCH) | `.epoch` | Increments only on CRC-verified commit; cumulative since engine reset — compare deltas or the device's commit-time value. 0 = never committed. |
-| status_flags | 0x0C payload[12:16] (CSR 0x0074 A_TBL_STATUS) | bit0 bytes≠0 (`& 0x1`), bit1 `.load_open`, bit2 `.active_valid`, bit3 commit_err (`& 0x8`) | bit3 clears on the *next* successful commit; the engine's sticky refused-commit flag (A_STATUS bit2) never clears except reset and is not host-visible — the two diverge after refuse-then-succeed. |
-| bytes_received | 0x0C payload[16:24] u64 BE (CSR 0x0078 A_TBL_BYTES) | `.bytes_received`; also embedded in every `PyroLoadError` ("device took %d of %d bytes") | 32-bit in hardware, wire high word wrapper-zeroed (fine: largest table ~2.1 MB). Reset by BEGIN/ABORT. Also the sequential-delivery gate: DATA offset ≠ bytes_received → error 8. §3.1 spec divergence: 0x007C is TBL_CTRL in the RTL, not TABLE_BYTES_HI. |
-| capacity_states | 0x0C payload[24:28] (CSR 0x0080 A_TBL_CAPS) | `.capacity_states` | Build constant (40960 = 10 URAM banks × 4096 on the full-corpus build; full corpus needs 39,647), not a measurement; < 39647 identifies a non-full-corpus build. Commit also enforces `hdr_n_states ≤ MAX_STATES` in hardware. |
-| table error | 0x0C payload[28:32] (wrapper register `tbl_err`) | `.error` — 0 ok; 8 = PYRO_E_TABLE_SEQUENCE (chunk rejected, shadow untouched, restart from BEGIN) | Per-operation, cleared at each op's ST_CLASSIFY. Engine-side commit *refusal* does NOT set it — that shows as flags bit3 + unchanged active_table_id (the fail-closed signature). |
-| STATUS/ERROR code | 0x05 payload[0:4] u32 BE | `struct.unpack('>I', ...)` — wrapper emits exactly one code: PYRO_E_NOT_RESIDENT = 7 (op addressed to slot ≠ 1) | The only "wrong slot" signal; indistinguishable from "other-tenant slot empty" by design (single-tenant, R87). `read_perf_counters` maps it to None; `_table_op` raises. |
-| A5-capability fingerprint | wire *absence* | `read_table_status` None ⇒ child predates A5 §3; `read_perf_counters` None ⇒ pre-v2.4.0 (or no transport) | Defined expected outcomes, never faults — but silence is overloaded (wedged card / swapped plane / EQDMA drop look identical); only meaningful after a passing probe. |
+- **device_usable + reason**
+  - Source: 0x01/0x02 ID handshake
+  - Extraction: `pyro.device.probe_device(DeviceConfig(iface='ens2',
+    chardev=None, max_payload=MAX_PAYLOAD_JUMBO, probe_timeout_s=2.0))` →
+    `(bool, reason)`
+  - Caveats: CAP_NET_RAW gate first; up to 3 × 2.0 s attempts (R84). Only the
+    SPEC16 high 16 bits of static_shell_id are checked (R81) — wrong BUILD16
+    still passes.
+- **static_shell_id (SPEC16<<16 | BUILD16)**
+  - Source: 0x02 ID_REPLY payload[0:4] u32 BE
+  - Extraction: `struct.unpack('>I', dec.payload[0:4])[0]` (`_parse_id_reply`)
+  - Caveats: Compile-time constant, not a health signal. BUILD16 defaults 0
+    for pattern children (S11) unless `PYRO_BUILD16` injected. probe_device
+    surfaces it only inside its reason string.
+- **wire harness_version**
+  - Source: 0x02 ID_REPLY payload[4:8] u32 BE
+  - Extraction: hand-rolled: `struct.unpack('>I', dec.payload[4:8])[0]` — no
+    public helper parses past payload[0:4]
+  - Caveats: Namespace hazard: this is the R45/R78.5b WIRE namespace
+    (0x00010000), distinct from the PYROART1 artifact HARNESS_VERSION
+    (0x00020100+) *and* the overlay engine's CSR-default 0x00020300. Never
+    compare across namespaces.
+- **rp_child_id (resident child)**
+  - Source: 0x02 ID_REPLY payload[8:12] u32 BE
+  - Extraction: `struct.unpack('>I', dec.payload[8:12])[0]`; verify via
+    `rp_child_id_from_hash(pattern_hash_hex)`
+  - Caveats: 0 = default ID stub. Identifies the child *bitstream*, not the
+    table — for the A5 child the table identity is `active_table_id`.
+- **slot/seq echo**
+  - Source: any reply, PYRO header bytes 4–5 / 6–11
+  - Extraction: `dec = decode_frame(frame[14:]); dec.slot, dec.seq`
+  - Caveats: The only request-reply correlation mechanism; matching is the
+    host's job (`if dec.seq != seq: continue`) — the device detects neither
+    gaps nor duplicates.
+- **match count**
+  - Source: 0x04 MATCH_REPLY payload[0:2] u16 BE
+  - Extraction: `struct.unpack('>HH', dec.payload[0:4])` —
+    `scripts/pyro_overlay_bringup.py:74`
+  - Caveats: Wrapper-counted, capped at min(requested cap, OUT_CAP=61); 61+OVF
+    = "at least 61".
+- **OVF bit**
+  - Source: 0x04 payload[2:4] u16 BE bit0
+  - Extraction: `bool(status & 1)`
+  - Caveats: OR-latch of engine A_STATUS bit3 across ST_DRAIN; means truncated
+    at 61 — re-scan/resume. Bits 1–15 currently always 0.
+- **match epoch (SR14′ gate)**
+  - Source: 0x04 payload[4:8] u32 BE
+  - Extraction: `struct.unpack('>I', dec.payload[4:8])[0]`
+  - Caveats: 0 = pre-A5 child or no table ever committed. Latched in
+    ST_TBL_STAT, exact because commits serialize through the same single-frame
+    FSM. Compare against the device's commit-time epoch, not a fresh model's.
+- **per-match entry**
+  - Source: 0x04 payload[8+24i:32+24i] LE `<QQII`
+  - Extraction: `_s, end, pid, _f = struct.unpack('<QQII', ...)` per entry
+  - Caveats: LE inside BE header. `start` always 0 (recompute `end−len+1`);
+    `end` relative to this request's corpus; `pattern_id` = slot index →
+    gid:sid list via sidecar; `flags = (epoch[15:0]<<16) | 1`.
+- **scan cycles (R45a)**
+  - Source: 0x07 PERF_REPLY payload[0:8] u64 BE (CSR 0x0058/0x005C)
+  - Extraction: `read_perf_counters(cfg, slot=1)` → `(cycles, bytes)` or None
+  - Caveats: **Most recent scan only** — wrapper writes CTRL.RESET before
+    every scan (W4); destroyed by the next MATCH_REQUEST. Works on generated
+    children AND (since 2026-07-31) the A5 overlay child, whose CYCLES include
+    feed stalls; a pre-fix overlay child returns the 0x0002030000020300
+    constant, which `pyro.telemetry` fingerprints and nulls. On a v4 multi-
+    core child, routes to the last-done core. None is not a fault.
+- **scan bytes (R45a)**
+  - Source: 0x07 payload[8:16] u64 BE (CSR 0x0060/0x0064)
+  - Extraction: second element of `read_perf_counters`
+  - Caveats: Same caveats. Counts bytes the *engine* consumed (post W5 clamp),
+    ≤ declared length if the host lied. cycles/bytes gives cyc/B: generated
+    group engines ~1 B/cyc/core; the overlay child ~8–10 cyc/B — now wire-
+    readable (sim-measured 9.28 cyc/B; per-scan overhead shrinks the gap on
+    longer subjects).
+- **active_table_id**
+  - Source: 0x0C TABLE_STATUS_REPLY payload[0:4] (CSR 0x0068 A_TBL_ACTIVE)
+  - Extraction: `read_table_status(cfg, slot=1).active_table_id`; non-
+    mutating; every table op also returns full TableStatus
+  - Caveats: = CRC-32C of the committed image; verify vs
+    `pyro.overlay.table.table_id(image)`. 0 = nothing valid resident, never
+    "unknown". Unchanged by a refused commit. None = child predates A5 §3.
+- **shadow_table_id**
+  - Source: 0x0C payload[4:8] (CSR 0x006C A_TBL_SHADOW)
+  - Extraction: `.shadow_table_id`
+  - Caveats: Live running CRC (`~shadow_crc`) of bytes received so far; must
+    equal declared CRC at commit. Reset to seed (reads 0) by BEGIN/ABORT;
+    meaningful only while load_open.
+- **epoch**
+  - Source: 0x0C payload[8:12] (CSR 0x0070 A_TBL_EPOCH)
+  - Extraction: `.epoch`
+  - Caveats: Increments only on CRC-verified commit; cumulative since engine
+    reset — compare deltas or the device's commit-time value. 0 = never
+    committed.
+- **status_flags**
+  - Source: 0x0C payload[12:16] (CSR 0x0074 A_TBL_STATUS)
+  - Extraction: bit0 bytes≠0 (`& 0x1`), bit1 `.load_open`, bit2
+    `.active_valid`, bit3 commit_err (`& 0x8`)
+  - Caveats: bit3 clears on the *next* successful commit; the engine's sticky
+    refused-commit flag (A_STATUS bit2) never clears except reset and is not
+    host-visible — the two diverge after refuse-then-succeed.
+- **bytes_received**
+  - Source: 0x0C payload[16:24] u64 BE (CSR 0x0078 A_TBL_BYTES)
+  - Extraction: `.bytes_received`; also embedded in every `PyroLoadError`
+    ("device took %d of %d bytes")
+  - Caveats: 32-bit in hardware, wire high word wrapper-zeroed (fine: largest
+    table ~2.1 MB). Reset by BEGIN/ABORT. Also the sequential-delivery gate:
+    DATA offset ≠ bytes_received → error 8. §3.1 spec divergence: 0x007C is
+    TBL_CTRL in the RTL, not TABLE_BYTES_HI.
+- **capacity_states**
+  - Source: 0x0C payload[24:28] (CSR 0x0080 A_TBL_CAPS)
+  - Extraction: `.capacity_states`
+  - Caveats: Build constant (40960 = 10 URAM banks × 4096 on the full-corpus
+    build; full corpus needs 39,647), not a measurement; < 39647 identifies a
+    non-full-corpus build. Commit also enforces `hdr_n_states ≤ MAX_STATES` in
+    hardware.
+- **table error**
+  - Source: 0x0C payload[28:32] (wrapper register `tbl_err`)
+  - Extraction: `.error` — 0 ok; 8 = PYRO_E_TABLE_SEQUENCE (chunk rejected,
+    shadow untouched, restart from BEGIN)
+  - Caveats: Per-operation, cleared at each op's ST_CLASSIFY. Engine-side
+    commit *refusal* does NOT set it — that shows as flags bit3 + unchanged
+    active_table_id (the fail-closed signature).
+- **STATUS/ERROR code**
+  - Source: 0x05 payload[0:4] u32 BE
+  - Extraction: `struct.unpack('>I', ...)` — wrapper emits exactly one code:
+    PYRO_E_NOT_RESIDENT = 7 (op addressed to slot ≠ 1)
+  - Caveats: The only "wrong slot" signal; indistinguishable from "other-
+    tenant slot empty" by design (single-tenant, R87). `read_perf_counters`
+    maps it to None; `_table_op` raises.
+- **A5-capability fingerprint**
+  - Source: wire *absence*
+  - Extraction: `read_table_status` None ⇒ child predates A5 §3;
+    `read_perf_counters` None ⇒ pre-v2.4.0 (or no transport)
+  - Caveats: Defined expected outcomes, never faults — but silence is
+    overloaded (wedged card / swapped plane / EQDMA drop look identical); only
+    meaningful after a passing probe.
 
 ### 3.2 Internal-only CSRs (sim/debug; never cross the wire)
 
-| CSR | Contents | Why you cannot read it on silicon |
-|---|---|---|
-| 0x0014 A_STATUS | bit0 BUSY, bit1 DONE (level, W4 polling-safe), bit2 sticky commit-refused, bit3 OVF | Wrapper-internal polling only (ST_WAIT_BUSY, ST_DRAIN); bit2 never clears except full reset and is never copied into any reply. |
-| 0x0018 A_CIRC_ID0 | MAGIC 0x5059524F ("PYRO") | Never read by the wrapper. Host-visible identity is enforced at commit instead: TABLE_BEGIN carries engine_id (image header byte 12, LE, via `_engine_id_of`) and the engine refuses unless it equals 0x0A5E0001. |
-| 0x0048 A_OUT_CAP / 0x004C A_OUT_COUNT | cap written per scan (ST_CAP, min(host cap, 61)); engine's own emit count | Wrapper never reads them for a reply — wire count is the wrapper's independent capture counter; divergence is unobservable from the host. |
-| 0x0058–0x0064 CYCLES/BYTES | R45a perf counters | Generated children and (since 2026-07-31) the A5 overlay engine — 64-bit, per-scan, CYCLES incl. feed stalls. Pre-fix overlay children fall to default rdata 0x00020300. |
-| 0x0084 A_TBL_EXPECT | host-declared CRC from TABLE_BEGIN (frame offset 44), written before load opens (two-stage ST_TBL_OPEN) | Write-only in practice; reads return the engine default. Exists because a self-computed CRC is self-consistent and therefore useless as a check — measured on silicon: an in-flight-corrupted transfer once committed cleanly and destroyed the working table. |
-| (contract) | CSR read latency | The overlay engine *registers* csr_rdata: address in cycle N → data in N+2; generated engines are combinational (N+1). The wrapper's table paths insert spacer cycles; ST_PERF assumes N+1 — exactly why PERF against the overlay child is garbage, and why an early ST_TBL_SEQ read "would compare the chunk offset against a stale register and reject valid chunks". Any future CSR consumer must know which engine it faces. |
+- **0x0014 A_STATUS**
+  - Contents: bit0 BUSY, bit1 DONE (level, W4 polling-safe), bit2 sticky
+    commit-refused, bit3 OVF
+  - Why you cannot read it on silicon: Wrapper-internal polling only
+    (ST_WAIT_BUSY, ST_DRAIN); bit2 never clears except full reset and is never
+    copied into any reply.
+- **0x0018 A_CIRC_ID0**
+  - Contents: MAGIC 0x5059524F ("PYRO")
+  - Why you cannot read it on silicon: Never read by the wrapper. Host-visible
+    identity is enforced at commit instead: TABLE_BEGIN carries engine_id
+    (image header byte 12, LE, via `_engine_id_of`) and the engine refuses
+    unless it equals 0x0A5E0001.
+- **0x0048 A_OUT_CAP / 0x004C A_OUT_COUNT**
+  - Contents: cap written per scan (ST_CAP, min(host cap, 61)); engine's own
+    emit count
+  - Why you cannot read it on silicon: Wrapper never reads them for a reply —
+    wire count is the wrapper's independent capture counter; divergence is
+    unobservable from the host.
+- **0x0058–0x0064 CYCLES/BYTES**
+  - Contents: R45a perf counters
+  - Why you cannot read it on silicon: Generated children and (since
+    2026-07-31) the A5 overlay engine — 64-bit, per-scan, CYCLES incl. feed
+    stalls. Pre-fix overlay children fall to default rdata 0x00020300.
+- **0x0084 A_TBL_EXPECT**
+  - Contents: host-declared CRC from TABLE_BEGIN (frame offset 44), written
+    before load opens (two-stage ST_TBL_OPEN)
+  - Why you cannot read it on silicon: Write-only in practice; reads return
+    the engine default. Exists because a self-computed CRC is self-consistent
+    and therefore useless as a check — measured on silicon: an in-flight-
+    corrupted transfer once committed cleanly and destroyed the working table.
+- **(contract)**
+  - Contents: CSR read latency
+  - Why you cannot read it on silicon: The overlay engine *registers*
+    csr_rdata: address in cycle N → data in N+2; generated engines are
+    combinational (N+1). The wrapper's table paths insert spacer cycles;
+    ST_PERF assumes N+1 — exactly why PERF against the overlay child is
+    garbage, and why an early ST_TBL_SEQ read "would compare the chunk offset
+    against a stale register and reject valid chunks". Any future CSR consumer
+    must know which engine it faces.
 
 ## 4. Full inventory — host side
 
-| Metric | Source | Extraction | Caveats |
-|---|---|---|---|
-| SR19 daemon stats | `pyro.snort.daemon.Stats.snapshot` | `daemon.stats.snapshot()` → nominations_by_tier, reverify {confirms, rejects, rejects_by_class}, tripwire_hits, identity_mismatches, ovf {resumes, anchored_floods}, requests, segments, resident {group, rp_child_id, rules}, unfiltered_seconds (includes the open window), swaps | All monotonic except resident gauges. reverify_* have no live producer (nothing calls `Stats.reverified()`) — read 0 unless the Snort loop is wired externally. identity_mismatches increments *without* `Stats._lock` (daemon.py:513) — snapshots can race it. `requests` counts attempts, not answered scans. |
-| Port-mix histogram (scheduler input) | `PortMixHistogram.snapshot` | `daemon.histogram.snapshot()` → {dst_port: decayed bytes}; half-life 60 s; fed per client→server segment | max_ports=256, coldest port evicted — long-tail scan traffic under-represented. Decay applied lazily at read. Per-port granularity is load-bearing: class aggregation measured to elect ~1%-coverage groups over ~28% ones (`docs/studies/a5-working-set.md`). |
-| Port-mix by class (display only) | `PortMixHistogram.snapshot_by_class` | `snapshot_by_class()` → {port_class: decayed_bytes}; class via `VarTable.most_specific_class` | Explicitly NOT a scheduling input. Inherits snapshot() caveats; 'any' never counted. |
-| Residency value V(g) | `pyro.snort.scheduler.ResidencyScheduler.scores` | `scheduler.scores()` → {group: Σ_ports decayed_bytes × rules_that_could_fire} | Only "available" groups appear. `_fire_cache` keyed (group, port), never invalidated — stale if the SR13 VarTable mutates at runtime. Not thread-safe vs concurrent group-list changes. |
-| Swap/residency events | `ResidencyScheduler.tick` | `tick()` → new resident name or None; `stats.swaps`; blind time → `stats.unfiltered_seconds` (clock starts before load_fn) | A FAILED load or identity mismatch is silent except unfiltered_seconds — no load_failures counter — and still arms `_last_swap`, delaying retry by min_dwell_s (300 s default). |
-| Triage tiers (rules not expressible) | `pyro.snort.report.build_report` | `python -m pyro.snort.triage third_party/snort3-community-rules/snort3-community.rules -o report.json` → aggregates: tiers {95/3896/26}, subtiers {1759/2137}, parse_error_rules (SF15: parse failures → always-forward, never exceptions), pcre, buffer histos, header | "Not expressible" = always-forward tier ⊇ parse_error_rules; per-rule `reason` says why. invariant_failures emitted only when corpus sha256 matches the profiled snapshot — SF8–SF13 oracle numbers do not transfer to other rulesets. Run from repo root with `.venv-pyro`. |
-| Per-rule dropped conjuncts / OA classes | `pyro.snort.lowering.lower_rule` → `LoweredSlot` | `.dropped` (SR4 list), `.oa_classes` ⊆ {dropped_conjuncts, anchor_strip, case_fold, chunk_overlap}, `.fused_pcre`, `.chain_len`, `.tail_span`; flows to `RuleRef.dropped/.oa` → `RuleGroup.manifest()` | Lowering is total: any internal surprise degrades to anchor-only, so `dropped` can silently grow — the manifest records what *shipped*, not what was lowerable. chunk_overlap is always present. |
-| Group packing shape | `pyro.snort.groups.pack_groups` / `RuleGroup.manifest` | 21 groups / 8 classes on current corpus; largest $HTTP_PORTS/0 = 256 rules → 253 slots. Per group: n_slots, rule_count, max_anchor_len, max_tail_span, overlap_tail (= max_tail_span − 1), `sidecar()`; manifest emits group_hash, rp_child_id, over_approx_classes | pattern_id = slot index; slot → *list* of gid:sid. Tombstones only after `repack_with_tombstones` (index retained, never renumbered); fresh packs have none. Sidecar/dropped/oa are manifest data, never hashed. |
-| Table image metrics | `pyro.overlay.table.stats` / `table_id` / `manifest` | `stats(ac, image)` → TableStats(n_states, n_patterns, n_transitions, n_outputs, image_bytes); `table_id` = CRC-32C (Castagnoli, final inversion, forced non-zero — matches the RTL loop); `strong_id` = 128-bit domain-separated SHA-256 (host identity of record) | CRC-32C, **not** `zlib.crc32` (IEEE) — zlib disagreed with the device on first run. table_id 0 reserved. Case-correct group tables (`build_for_group` → CaseSplitTable) run two automata; n_states = ci + cs combined. |
-| Overlay precision give-up | `pyro.overlay.table.precision_delta` | `precision_delta(group, subject)` → {ac_nominations, lowered_nominations, extra, missed, sound} | `missed` must be 0 (soundness assertion — checked, not assumed). Per-subject; needs representative traffic. |
-| On-device perf (host wrapper) | `pyro.device.read_perf_counters` | `read_perf_counters(cfg, slot=1)` → (cycles, bytes) or None; ~8 cyc/B at 250 MHz is the utilization anchor | Hardware access — verifier agent's domain. None overloaded (pre-v2.4.0 / non-resident / no transport / OSError). Counters restart on PR reconfig; no epoch field → cross-swap deltas invalid. |
-| A5 table status (host wrapper) | `pyro.device.read_table_status` | `read_table_status(cfg, slot=1)` → TableStatus or None; `.load_open`, `.active_valid` | Hardware access. None expected against pre-A5 child. epoch *does* increment per commit → usable to detect table churn between reads (unlike perf). |
-| Switch timing | caller-timed `load_table` / `pyro.telemetry.timed_load_table` | see §2.1 | No internal timing anywhere; anchors 12.3 ms / 0.66 ms wire / 13.6 s PR. |
-| netdev drop counters | `/sys/class/net/ens2/statistics/` | read as integers; before/after deltas | Zeroed on onic reload (every JTAG swap via wedge recovery); blind to EQDMA multi-queue loss (13% with clean counters, measured); ens2 control binding only — says nothing about the tapped data link. |
-| OVF/truncation aggregate | `Stats.ovf_resumes` / `ovf_anchored_floods` + MATCH_REPLY bit0 | `snapshot()['ovf']` | Resume re-sends trimmed corpus and re-labels host-side (start_off never read — the hardware-real S2 form); counts resume *events*, not entries lost. |
-| Tripwire hits by class | `Stats.tripwire_hits` (fed by `tripwire_class`) | `snapshot()['tripwire_hits']` → {content_encoding, chunked_te, percent_density}; counted once per FLOW, then every segment nominates kind='tripwire' | Deliberately byte-level and over-eager (forces forwarding — always sound). First 2048 bytes of a segment only; percent-density threshold 0.05 on the HTTP request line. |
-| Unified snapshot / Prometheus | `pyro.telemetry.collect_snapshot` / `prometheus_text` | `collect_snapshot(cfg=None, ...)` → dict (cfg=None ⇒ host-only, `device.usable: false`, never raises); `prometheus_text(snapshot)` | include_corpus defaults to `cfg is not None` — host-only snapshots skip the multi-second pack_groups. Null values omitted from /metrics, never zeroed; every metric carries HELP text embedding its caveat. |
+- **SR19 daemon stats**
+  - Source: `pyro.snort.daemon.Stats.snapshot`
+  - Extraction: `daemon.stats.snapshot()` → nominations_by_tier, reverify
+    {confirms, rejects, rejects_by_class}, tripwire_hits, identity_mismatches,
+    ovf {resumes, anchored_floods}, requests, segments, resident {group,
+    rp_child_id, rules}, unfiltered_seconds (includes the open window), swaps
+  - Caveats: All monotonic except resident gauges. reverify_* have no live
+    producer (nothing calls `Stats.reverified()`) — read 0 unless the Snort
+    loop is wired externally. identity_mismatches increments *without*
+    `Stats._lock` (daemon.py:513) — snapshots can race it. `requests` counts
+    attempts, not answered scans.
+- **Port-mix histogram (scheduler input)**
+  - Source: `PortMixHistogram.snapshot`
+  - Extraction: `daemon.histogram.snapshot()` → {dst_port: decayed bytes};
+    half-life 60 s; fed per client→server segment
+  - Caveats: max_ports=256, coldest port evicted — long-tail scan traffic
+    under-represented. Decay applied lazily at read. Per-port granularity is
+    load-bearing: class aggregation measured to elect ~1%-coverage groups over
+    ~28% ones (`docs/studies/a5-working-set.md`).
+- **Port-mix by class (display only)**
+  - Source: `PortMixHistogram.snapshot_by_class`
+  - Extraction: `snapshot_by_class()` → {port_class: decayed_bytes}; class via
+    `VarTable.most_specific_class`
+  - Caveats: Explicitly NOT a scheduling input. Inherits snapshot() caveats;
+    'any' never counted.
+- **Residency value V(g)**
+  - Source: `pyro.snort.scheduler.ResidencyScheduler.scores`
+  - Extraction: `scheduler.scores()` → {group: Σ_ports decayed_bytes ×
+    rules_that_could_fire}
+  - Caveats: Only "available" groups appear. `_fire_cache` keyed (group,
+    port), never invalidated — stale if the SR13 VarTable mutates at runtime.
+    Not thread-safe vs concurrent group-list changes.
+- **Swap/residency events**
+  - Source: `ResidencyScheduler.tick`
+  - Extraction: `tick()` → new resident name or None; `stats.swaps`; blind
+    time → `stats.unfiltered_seconds` (clock starts before load_fn)
+  - Caveats: A FAILED load or identity mismatch is silent except
+    unfiltered_seconds — no load_failures counter — and still arms
+    `_last_swap`, delaying retry by min_dwell_s (300 s default).
+- **Triage tiers (rules not expressible)**
+  - Source: `pyro.snort.report.build_report`
+  - Extraction: `python -m pyro.snort.triage third_party/snort3-community-
+    rules/snort3-community.rules -o report.json` → aggregates: tiers
+    {95/3896/26}, subtiers {1759/2137}, parse_error_rules (SF15: parse
+    failures → always-forward, never exceptions), pcre, buffer histos, header
+  - Caveats: "Not expressible" = always-forward tier ⊇ parse_error_rules; per-
+    rule `reason` says why. invariant_failures emitted only when corpus sha256
+    matches the profiled snapshot — SF8–SF13 oracle numbers do not transfer to
+    other rulesets. Run from repo root with `.venv-pyro`.
+- **Per-rule dropped conjuncts / OA classes**
+  - Source: `pyro.snort.lowering.lower_rule` → `LoweredSlot`
+  - Extraction: `.dropped` (SR4 list), `.oa_classes` ⊆ {dropped_conjuncts,
+    anchor_strip, case_fold, chunk_overlap}, `.fused_pcre`, `.chain_len`,
+    `.tail_span`; flows to `RuleRef.dropped/.oa` → `RuleGroup.manifest()`
+  - Caveats: Lowering is total: any internal surprise degrades to anchor-only,
+    so `dropped` can silently grow — the manifest records what *shipped*, not
+    what was lowerable. chunk_overlap is always present.
+- **Group packing shape**
+  - Source: `pyro.snort.groups.pack_groups` / `RuleGroup.manifest`
+  - Extraction: 21 groups / 8 classes on current corpus; largest $HTTP_PORTS/0
+    = 256 rules → 253 slots. Per group: n_slots, rule_count, max_anchor_len,
+    max_tail_span, overlap_tail (= max_tail_span − 1), `sidecar()`; manifest
+    emits group_hash, rp_child_id, over_approx_classes
+  - Caveats: pattern_id = slot index; slot → *list* of gid:sid. Tombstones
+    only after `repack_with_tombstones` (index retained, never renumbered);
+    fresh packs have none. Sidecar/dropped/oa are manifest data, never hashed.
+- **Table image metrics**
+  - Source: `pyro.overlay.table.stats` / `table_id` / `manifest`
+  - Extraction: `stats(ac, image)` → TableStats(n_states, n_patterns,
+    n_transitions, n_outputs, image_bytes); `table_id` = CRC-32C (Castagnoli,
+    final inversion, forced non-zero — matches the RTL loop); `strong_id` =
+    128-bit domain-separated SHA-256 (host identity of record)
+  - Caveats: CRC-32C, **not** `zlib.crc32` (IEEE) — zlib disagreed with the
+    device on first run. table_id 0 reserved. Case-correct group tables
+    (`build_for_group` → CaseSplitTable) run two automata; n_states = ci + cs
+    combined.
+- **Overlay precision give-up**
+  - Source: `pyro.overlay.table.precision_delta`
+  - Extraction: `precision_delta(group, subject)` → {ac_nominations,
+    lowered_nominations, extra, missed, sound}
+  - Caveats: `missed` must be 0 (soundness assertion — checked, not assumed).
+    Per-subject; needs representative traffic.
+- **On-device perf (host wrapper)**
+  - Source: `pyro.device.read_perf_counters`
+  - Extraction: `read_perf_counters(cfg, slot=1)` → (cycles, bytes) or None;
+    ~8 cyc/B at 250 MHz is the utilization anchor
+  - Caveats: Hardware access — verifier agent's domain. None overloaded
+    (pre-v2.4.0 / non-resident / no transport / OSError). Counters restart on
+    PR reconfig; no epoch field → cross-swap deltas invalid.
+- **A5 table status (host wrapper)**
+  - Source: `pyro.device.read_table_status`
+  - Extraction: `read_table_status(cfg, slot=1)` → TableStatus or None;
+    `.load_open`, `.active_valid`
+  - Caveats: Hardware access. None expected against pre-A5 child. epoch *does*
+    increment per commit → usable to detect table churn between reads (unlike
+    perf).
+- **Switch timing**
+  - Source: caller-timed `load_table` / `pyro.telemetry.timed_load_table`
+  - Extraction: see §2.1
+  - Caveats: No internal timing anywhere; anchors 12.3 ms / 0.66 ms wire /
+    13.6 s PR.
+- **netdev drop counters**
+  - Source: `/sys/class/net/ens2/statistics/`
+  - Extraction: read as integers; before/after deltas
+  - Caveats: Zeroed on onic reload (every JTAG swap via wedge recovery); blind
+    to EQDMA multi-queue loss (13% with clean counters, measured); ens2
+    control binding only — says nothing about the tapped data link.
+- **OVF/truncation aggregate**
+  - Source: `Stats.ovf_resumes` / `ovf_anchored_floods` + MATCH_REPLY bit0
+  - Extraction: `snapshot()['ovf']`
+  - Caveats: Resume re-sends trimmed corpus and re-labels host-side (start_off
+    never read — the hardware-real S2 form); counts resume *events*, not
+    entries lost.
+- **Tripwire hits by class**
+  - Source: `Stats.tripwire_hits` (fed by `tripwire_class`)
+  - Extraction: `snapshot()['tripwire_hits']` → {content_encoding, chunked_te,
+    percent_density}; counted once per FLOW, then every segment nominates
+    kind='tripwire'
+  - Caveats: Deliberately byte-level and over-eager (forces forwarding —
+    always sound). First 2048 bytes of a segment only; percent-density
+    threshold 0.05 on the HTTP request line.
+- **Unified snapshot / Prometheus**
+  - Source: `pyro.telemetry.collect_snapshot` / `prometheus_text`
+  - Extraction: `collect_snapshot(cfg=None, ...)` → dict (cfg=None ⇒ host-
+    only, `device.usable: false`, never raises); `prometheus_text(snapshot)`
+  - Caveats: include_corpus defaults to `cfg is not None` — host-only
+    snapshots skip the multi-second pack_groups. Null values omitted from
+    /metrics, never zeroed; every metric carries HELP text embedding its
+    caveat.
 
 ## 5. Gaps — what you cannot measure, honestly
 
@@ -341,7 +601,8 @@ given; they never guess a netdev. `--demo` refuses to run without
 that run belongs to the verifier role.
 
 ```sh
-# One JSON snapshot (host-only without --iface; device sections null, not zeroed)
+# One JSON snapshot (host-only without --iface; device sections
+# null, never an error):
 .venv-pyro/bin/python3 scripts/pyro_telemetry_demo.py --snapshot
 
 # JSON-lines every 5 s

@@ -115,7 +115,8 @@ module pyro_overlay_engine #(
     // asserted BUSY, so the table would load and then never match anything.
     // These three registers make the streaming engine answer the handshake.
     localparam [15:0] A_CTRL       = 16'h0010;   // bit0 START, bit1 RESET
-    localparam [15:0] A_STATUS     = 16'h0014;   // bit0 BUSY, bit1 DONE, bit3 OVF
+    // A_STATUS bits: 0 BUSY, 1 DONE, 3 OVF
+    localparam [15:0] A_STATUS     = 16'h0014;
     localparam [15:0] A_CIRC_ID0   = 16'h0018;
     localparam [15:0] A_OUT_CAP    = 16'h0048;
     localparam [15:0] A_OUT_COUNT  = 16'h004C;
@@ -330,10 +331,14 @@ module pyro_overlay_engine #(
     // and the add to base.
     wire [2:0] sel_lane = cur_byte[7:5];
     wire [4:0] sub_bit  = cur_byte[4:0];
-    wire [31:0] lane0 = d_bitmap_q[31:0];    wire [31:0] lane1 = d_bitmap_q[63:32];
-    wire [31:0] lane2 = d_bitmap_q[95:64];   wire [31:0] lane3 = d_bitmap_q[127:96];
-    wire [31:0] lane4 = d_bitmap_q[159:128]; wire [31:0] lane5 = d_bitmap_q[191:160];
-    wire [31:0] lane6 = d_bitmap_q[223:192]; wire [31:0] lane7 = d_bitmap_q[255:224];
+    wire [31:0] lane0 = d_bitmap_q[31:0];
+    wire [31:0] lane1 = d_bitmap_q[63:32];
+    wire [31:0] lane2 = d_bitmap_q[95:64];
+    wire [31:0] lane3 = d_bitmap_q[127:96];
+    wire [31:0] lane4 = d_bitmap_q[159:128];
+    wire [31:0] lane5 = d_bitmap_q[191:160];
+    wire [31:0] lane6 = d_bitmap_q[223:192];
+    wire [31:0] lane7 = d_bitmap_q[255:224];
     wire [31:0] sel_lane_bits =
         (sel_lane == 3'd0) ? lane0 : (sel_lane == 3'd1) ? lane1 :
         (sel_lane == 3'd2) ? lane2 : (sel_lane == 3'd3) ? lane3 :
@@ -566,8 +571,11 @@ module pyro_overlay_engine #(
                 if (pop) perf_bytes <= perf_bytes + 64'd1;
                 case ({push, pop})
                     2'b10: begin
-                        if (sk_n == 2'd0) begin sk0_d <= in_data; sk0_l <= in_last; end
-                        else              begin sk1_d <= in_data; sk1_l <= in_last; end
+                        if (sk_n == 2'd0) begin
+                            sk0_d <= in_data; sk0_l <= in_last;
+                        end else begin
+                            sk1_d <= in_data; sk1_l <= in_last;
+                        end
                         sk_n <= sk_n + 2'd1;
                     end
                     2'b01: begin
