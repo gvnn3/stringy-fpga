@@ -2949,3 +2949,25 @@ already banked.
 
 Renderer unit-tested without hardware (skips honestly without
 matplotlib, now in `.venv-pyro`); 936 unit tests green.
+
+## 2026-08-03 — Walkthrough §10: the tree re-read through the OS lens
+
+Added the file-by-file map to `docs/system-walkthrough.md` as §10,
+prompted by the owner asking how each file serves the actual goal —
+OS-style resource management on an FPGA. Writing it was a useful test of
+the reframe: every directory turned out to have a one-line role in the
+OS story without strain. `hw/dfx` is the motherboard and the locked
+static its kernel ABI; the ID stub is init; generated circuits and
+overlay tables are two kinds of process image behind one ABI
+(`rp_wrapper`); `pyro/synth` is exec at 13.6 s, `pyro/overlay` the
+13.9 ms + 0.150 ms/KB context switch; `V(g)` is the scheduler, SR5
+over-nomination the benign page fault, TABLE_ID/EPOCH the PID and
+generation, `pyro/telemetry` is `/proc`. The dictionary table at the
+top of §10 is the whole project in eight rows.
+
+§§1–9 were left untouched as the S2-era record, with a header note
+sending scheduling-focused readers to §10 first. A walkthrough that
+rewrote its own history would be less useful than one that shows the
+system before and after the reframe — the delta between §8's "where
+things live" and §10's version of the same map *is* the story of what
+the last week changed.
