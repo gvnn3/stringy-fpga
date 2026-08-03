@@ -506,6 +506,40 @@ interface is never guessed). The full metric inventory — what each number
 means, where it actually comes from, and what it cannot tell you — is
 `docs/telemetry.md`.
 
+### 9.x The telemetry UI (`web/pyro_dashboard.html`)
+
+What `--serve` puts at `/`. One self-contained dark-theme page — inline
+CSS/JS, canvas-drawn charts, **zero external requests** — because it is
+served on lab hosts with no outbound network and must not care. It polls
+`/snapshot.json` every 2 s and `/history.json` every 10 s; charts have
+hover tooltips (exact values per swap / per SID / per miss segment). Add
+`--drive` to `--serve` if you want the page to show live *change*: a
+passive server is correct but has an empty switch history, since a fresh
+process has performed no swaps of its own.
+
+**Header** — a device badge (`device: up (ens2)` green / `no card` red)
+and the last-snapshot timestamp. Without a card the page stays up and
+every device field degrades to "–", never NaN.
+
+**Six panels**, one per question an operator actually asks:
+
+| panel | what it shows | reading it |
+|---|---|---|
+| **Switch time** (wide) | last swap in ms + full swap history on a **log axis** with the measured 13.6 s JTAG-PR baseline drawn across the top | the point of the whole system in one picture: every dot sits ~3 orders below the baseline; dot height tracks table size (13.9 ms + 0.150 ms/KB) |
+| **Rules matched** (wide) | nominations/s + top-10 bar chart by `gid:sid` | `pattern_id` resolves through the resident group's slot table, so bars are *rules*, not slots; subtitle counts total nominations, scans, and OVF events |
+| **Packets dropped** | netdev drops headline + kv table: `rx_dropped/rx_errors/rx_missed/tx_dropped`, requests sent, replies, request-loss % | the note states the honest limits: netdev counters zero on onic reload, and EQDMA ≥2-queue loss is invisible to them — sent-vs-replied is the cross-check |
+| **Rules missed** | a green banner — "0 hard misses among resident rules, SR3 **verified invariant**, not a measurement" — over a segmented bar decomposing the countable channels: OVF truncations, non-resident rules, lowering-dropped | if the segmented bar is dominated by non-resident (it is: ~3.9k of 4,017), that is the *capacity* story from the working-set study, not a defect |
+| **Table identity** | `active`/`shadow` TABLE_IDs (hex), epoch, capacity, bytes received + status flags `active_valid` / `load_open` / `commit_err` | `commit_err` lights red when the engine refused a commit (A5 §5 fail-closed); `active` should always equal the host's CRC of what it sent |
+| **Throughput** | bytes/cycle + MB/s sparkline from the R45a counters | most-recent-scan only (the wrapper resets counters per scan); ~0.1–0.2 B/cyc is the overlay engine's honest 5–10 cyc/B, not a fault |
+
+One rendering note, learned the hard way: everything per-tick in the
+chart plumbing is a fixed point — the design height is latched once in
+`dataset.h` and the context transform set absolutely — because the first
+version derived height from an attribute it also wrote, and the panels
+grew geometrically at any devicePixelRatio > 1 (notebook, 2026-07-31).
+If the panels ever misbehave after an edit, hard-reload (Ctrl+Shift+R)
+first to rule out a cached copy.
+
 ### 9.x Paper-figure collection (`--paper`)
 
 ```bash
