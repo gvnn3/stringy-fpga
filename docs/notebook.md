@@ -2904,3 +2904,48 @@ windows and, on this card's record, wedged the RP long before finishing.
 For the record: the counter is 32-bit, so at this cadence wraparound is
 ~2,200 years out; epoch-based attribution is safe from that particular
 embarrassment.
+
+## 2026-08-01 — Paper mode: from a timed run to camera-ready figures
+
+Added the measurement-to-figure path a paper needs, `--paper SECONDS`,
+and split it where a deadline splits it: collection writes everything
+measured into `run.json` (with a CSV beside every figure — the artifact
+a reviewer actually checks), and `scripts/pyro_paper_figs.py` renders
+*from that file*, so restyling at camera-ready time never requires the
+card. A figure pipeline that needs live hardware at deadline hour is a
+figure pipeline that fails at deadline hour.
+
+The run drives a five-group rotation chosen to **span table size**
+(1 KB → 127 KB) rather than the demo's two-point contrast, swapping
+every 8 s and scanning every 0.4 s with a PERF read per scan. Three
+datasets collected on silicon and committed under
+`docs/studies/paper-data/`: run-30s (4 swaps / 71 scans), run-60s
+(8 / 141, one full rotation), and run-500s (63 / 1,171 — the paper
+dataset).
+
+Four figures, one claim each, Okabe–Ito / serif 8 pt / 3.35 in column /
+vector PDF:
+
+- **fig_switch_size** — the headline. Least-squares over 63 swaps:
+  **swap cost = 13.9 ms + 0.150 ms/KB.** The intercept is the protocol
+  floor (per-chunk round-trips, commit, host CRC); the slope is bytes on
+  the wire. The A5 design predicted both shapes; now there are 63 points
+  behind them, five clean size clusters sitting on one line.
+- **fig_switch_gap** — every swap against the measured 13.6 s PR
+  baseline on a log axis. The ~700× gap needs the log scale to fit on
+  one panel, which is rather the point.
+- **fig_scan_cost** — scan cycles vs bytes between the 5 and 8 cyc/B
+  guides. All 1,171 scans sit in the band; match density decides where.
+  The FSM floor of 5 (the same one that falsified my first test band)
+  is visible as the match-free edge.
+- **fig_nominations** — cumulative nominations with swap marks and a
+  residency strip. The line climbs straight through all 63 swaps: the
+  visual form of "attribution survives the context switch," which is
+  SR14′ doing its job.
+
+Epoch bookkeeping across the sessions: the card went 2718 → 2792 through
+these runs without a hiccup, on top of the ~2,700 the endurance accident
+already banked.
+
+Renderer unit-tested without hardware (skips honestly without
+matplotlib, now in `.venv-pyro`); 936 unit tests green.
