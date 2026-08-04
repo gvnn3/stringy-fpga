@@ -8,6 +8,7 @@ pyro/_fast*.so
 
 # Vivado / DFX build outputs and run detritus
 hw/dfx/build/
+hw/dfx/build-wiretap/
 clockInfo.txt
 cong/
 hd_visual/

@@ -38,15 +38,20 @@ PART="xcu250-figd2104-2L-e"
 FAST=0
 JOBS="$(nproc)"
 MAX_PKT_LEN=1518   # R78.9; 9600 = jumbo shell (R78.9a, P2c)
+OUT_OVERRIDE=""    # --out: keep spike builds away from the
+PLUGIN_OVERRIDE="" # production locked DCP (R82b substrate)
 while [ $# -gt 0 ]; do
   case "$1" in
     --fast) FAST=1 ;;
     --jobs) JOBS="$2"; shift ;;
     --max-pkt-len) MAX_PKT_LEN="$2"; shift ;;
+    --out) OUT_OVERRIDE="$2"; shift ;;
+    --plugin) PLUGIN_OVERRIDE="$2"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
 done
+[ -n "$PLUGIN_OVERRIDE" ] && PLUGIN="$PLUGIN_OVERRIDE"
 
 [ -f "$PYRO_VIVADO_DIR/settings64.sh" ] || {
   echo "ERROR: no Vivado at $PYRO_VIVADO_DIR (settings64.sh missing). Set" >&2
@@ -61,7 +66,7 @@ export TERM=xterm
 command -v vivado >/dev/null || \
   { echo "ERROR: vivado not on PATH" >&2; exit 1; }
 
-OUT="${DFX}/build"
+OUT="${OUT_OVERRIDE:-${DFX}/build}"
 DCP="${OUT}/dcp"
 mkdir -p "$DCP"
 log() { echo "=== [pyro-dfx] $* ==="; }

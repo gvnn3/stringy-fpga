@@ -32,6 +32,13 @@ module pyro_250mhz #(
   parameter int NUM_QDMA = 1,
   parameter int NUM_INTF = 1,
 
+  // OQ-2 wire-rate spike (docs/studies/wire-rate-spike.md).  0 keeps
+  // the Phase-2b tie-off byte-identical.  1 arbitrates CMAC RX into
+  // the RP ingress (packet-atomic, tuser src distinguishes wire
+  // 0x0040 from host 0x0001) and mirrors H2C to adap_tx so the CMAC
+  // TX domain is live (timing honesty + loopback injection).
+  parameter bit WIRE_TAP = 1'b0,
+
   // R81 identity, driven into the default ID-stub child baked into the static
   // image. BUILD16 is overridden per build by hw/dfx/build_static.tcl.
   parameter [15:0] PYRO_SPEC16          = 16'h0202,
@@ -149,6 +156,60 @@ module pyro_250mhz #(
 
     wire [47:0] c2h_tuser;
 
+    // RP ingress: fed directly by H2C (WIRE_TAP=0, Phase-2b identical)
+    // or by the 2:1 packet arbiter over {H2C, CMAC RX} (WIRE_TAP=1).
+    wire         rp_in_tvalid;
+    wire [511:0] rp_in_tdata;
+    wire  [63:0] rp_in_tkeep;
+    wire         rp_in_tlast;
+    wire  [47:0] rp_in_tuser;
+    wire         rp_in_tready;
+
+    if (WIRE_TAP) begin : g_tap
+      // Wire frames keep the adapter's tuser; RX size/src/dst are
+      // repacked the same way as H2C.
+      wire [47:0] rx_tuser;
+      assign rx_tuser[0+:16] =
+          s_axis_adap_rx_250mhz_tuser_size[`getvec(16, i)];
+      assign rx_tuser[16+:16] =
+          s_axis_adap_rx_250mhz_tuser_src[`getvec(16, i)];
+      assign rx_tuser[32+:16] =
+          s_axis_adap_rx_250mhz_tuser_dst[`getvec(16, i)];
+
+      pyro_axis_wire_arb arb_inst (
+        .clk       (axis_aclk),
+        .rstn      (axil_aresetn),
+
+        .s0_tvalid (s_axis_qdma_h2c_tvalid[i]),
+        .s0_tdata  (s_axis_qdma_h2c_tdata[`getvec(512, i)]),
+        .s0_tkeep  (s_axis_qdma_h2c_tkeep[`getvec(64, i)]),
+        .s0_tlast  (s_axis_qdma_h2c_tlast[i]),
+        .s0_tuser  (h2c_tuser),
+        .s0_tready (s_axis_qdma_h2c_tready[i]),
+
+        .s1_tvalid (s_axis_adap_rx_250mhz_tvalid[i]),
+        .s1_tdata  (s_axis_adap_rx_250mhz_tdata[`getvec(512, i)]),
+        .s1_tkeep  (s_axis_adap_rx_250mhz_tkeep[`getvec(64, i)]),
+        .s1_tlast  (s_axis_adap_rx_250mhz_tlast[i]),
+        .s1_tuser  (rx_tuser),
+        .s1_tready (s_axis_adap_rx_250mhz_tready[i]),
+
+        .m_tvalid  (rp_in_tvalid),
+        .m_tdata   (rp_in_tdata),
+        .m_tkeep   (rp_in_tkeep),
+        .m_tlast   (rp_in_tlast),
+        .m_tuser   (rp_in_tuser),
+        .m_tready  (rp_in_tready)
+      );
+    end else begin : g_notap
+      assign rp_in_tvalid = s_axis_qdma_h2c_tvalid[i];
+      assign rp_in_tdata  = s_axis_qdma_h2c_tdata[`getvec(512, i)];
+      assign rp_in_tkeep  = s_axis_qdma_h2c_tkeep[`getvec(64, i)];
+      assign rp_in_tlast  = s_axis_qdma_h2c_tlast[i];
+      assign rp_in_tuser  = h2c_tuser;
+      assign s_axis_qdma_h2c_tready[i] = rp_in_tready;
+    end
+
     // ---- the reconfigurable partition (R80) -----------------------------
     // Black box during static synthesis; marked HD.RECONFIGURABLE in
     // hw/dfx/build_static.tcl. dont_touch keeps the cell from being optimized
@@ -164,12 +225,12 @@ module pyro_250mhz #(
       .clk           (axis_aclk),
       .rstn          (axil_aresetn),
 
-      .s_axis_tvalid (s_axis_qdma_h2c_tvalid[i]),
-      .s_axis_tdata  (s_axis_qdma_h2c_tdata[`getvec(512, i)]),
-      .s_axis_tkeep  (s_axis_qdma_h2c_tkeep[`getvec(64, i)]),
-      .s_axis_tlast  (s_axis_qdma_h2c_tlast[i]),
-      .s_axis_tuser  (h2c_tuser),
-      .s_axis_tready (s_axis_qdma_h2c_tready[i]),
+      .s_axis_tvalid (rp_in_tvalid),
+      .s_axis_tdata  (rp_in_tdata),
+      .s_axis_tkeep  (rp_in_tkeep),
+      .s_axis_tlast  (rp_in_tlast),
+      .s_axis_tuser  (rp_in_tuser),
+      .s_axis_tready (rp_in_tready),
 
       .m_axis_tvalid (m_axis_qdma_c2h_tvalid[i]),
       .m_axis_tdata  (m_axis_qdma_c2h_tdata[`getvec(512, i)]),
@@ -187,18 +248,44 @@ module pyro_250mhz #(
     assign m_axis_qdma_c2h_tuser_src[`getvec(16, i)]  = c2h_tuser[16+:16];
     assign m_axis_qdma_c2h_tuser_dst[`getvec(16, i)]  = 16'h1 << i;
 
-    // ---- CMAC datapath tied off (Phase 2b) ------------------------------
-    // No traffic is sent to the network, and anything arriving from it is sunk.
-    // This is why bring-up needs no transceiver or link partner.
-    assign m_axis_adap_tx_250mhz_tvalid[i]              = 1'b0;
-    assign m_axis_adap_tx_250mhz_tdata[`getvec(512, i)] = 512'b0;
-    assign m_axis_adap_tx_250mhz_tkeep[`getvec(64, i)]  = 64'b0;
-    assign m_axis_adap_tx_250mhz_tlast[i]               = 1'b0;
-    assign m_axis_adap_tx_250mhz_tuser_size[`getvec(16, i)] = 16'b0;
-    assign m_axis_adap_tx_250mhz_tuser_src[`getvec(16, i)]  = 16'b0;
-    assign m_axis_adap_tx_250mhz_tuser_dst[`getvec(16, i)]  = 16'h1 << (6 + i);
+    if (WIRE_TAP) begin : g_tap_tx
+      // ---- CMAC TX: self-paced frame generator (spike) ----------------
+      // Keeps the TX clock domain live for the G2 timing verdict and,
+      // with CMAC near-end loopback, produces autonomous wire RX
+      // stimulus.  Deliberately NOT fed from H2C: the wire side must
+      // never be able to stall host control (R85a lesson).
+      pyro_wire_tx_gen #(
+        .GAP_CYCLES (32'd1024)
+      ) txgen_inst (
+        .clk        (axis_aclk),
+        .rstn       (axil_aresetn),
+        .m_tvalid   (m_axis_adap_tx_250mhz_tvalid[i]),
+        .m_tdata    (m_axis_adap_tx_250mhz_tdata[`getvec(512, i)]),
+        .m_tkeep    (m_axis_adap_tx_250mhz_tkeep[`getvec(64, i)]),
+        .m_tlast    (m_axis_adap_tx_250mhz_tlast[i]),
+        .m_tuser_size (m_axis_adap_tx_250mhz_tuser_size[`getvec(16, i)]),
+        .m_tready   (m_axis_adap_tx_250mhz_tready[i])
+      );
+      assign m_axis_adap_tx_250mhz_tuser_src[`getvec(16, i)] = 16'b0;
+      assign m_axis_adap_tx_250mhz_tuser_dst[`getvec(16, i)] =
+          16'h1 << (6 + i);
+      // RX tready is driven by the arbiter in g_tap.
+    end else begin : g_notap_cmac
+      // ---- CMAC datapath tied off (Phase 2b) --------------------------
+      // No traffic is sent to the network, and anything arriving from
+      // it is sunk. This is why bring-up needs no transceiver or link
+      // partner.
+      assign m_axis_adap_tx_250mhz_tvalid[i]              = 1'b0;
+      assign m_axis_adap_tx_250mhz_tdata[`getvec(512, i)] = 512'b0;
+      assign m_axis_adap_tx_250mhz_tkeep[`getvec(64, i)]  = 64'b0;
+      assign m_axis_adap_tx_250mhz_tlast[i]               = 1'b0;
+      assign m_axis_adap_tx_250mhz_tuser_size[`getvec(16, i)] = 16'b0;
+      assign m_axis_adap_tx_250mhz_tuser_src[`getvec(16, i)]  = 16'b0;
+      assign m_axis_adap_tx_250mhz_tuser_dst[`getvec(16, i)]  =
+          16'h1 << (6 + i);
 
-    assign s_axis_adap_rx_250mhz_tready[i]              = 1'b1;   // sink
+      assign s_axis_adap_rx_250mhz_tready[i]              = 1'b1; // sink
+    end
   end
   endgenerate
 

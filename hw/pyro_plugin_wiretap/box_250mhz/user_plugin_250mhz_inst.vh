@@ -1,5 +1,6 @@
 // *************************************************************************
-// PYRO Phase 2b - box_250mhz user-plugin instantiation.
+// OQ-2 wiretap spike - box_250mhz user-plugin instantiation
+// (WIRE_TAP=1). Production plugin: hw/pyro_plugin.
 //
 // Included by open_nic_shell.sv (via the plugin include_dirs). Instantiates
 // `pyro_250mhz` in place of the stock `p2p_250mhz`.
@@ -25,7 +26,8 @@ assign mod_rst_done[15:C_NUM_USER_BLOCK] = {(16-C_NUM_USER_BLOCK){1'b1}};
 
 pyro_250mhz #(
   .NUM_QDMA    (NUM_QDMA),
-  .NUM_INTF    (NUM_PHYS_FUNC)
+  .NUM_INTF    (NUM_PHYS_FUNC),
+  .WIRE_TAP    (1'b1)   // OQ-2 wire-rate spike
 ) pyro_250mhz_inst (
   .s_axil_awvalid                   (axil_p2p_awvalid),
   .s_axil_awaddr                    (axil_p2p_awaddr),
