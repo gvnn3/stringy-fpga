@@ -3058,3 +3058,107 @@ rewrote its own history would be less useful than one that shows the
 system before and after the reframe — the delta between §8's "where
 things live" and §10's version of the same map *is* the story of what
 the last week changed.
+
+## 2026-08-04 — Reference: anatomy of a context switch, and the automaton
+## under it
+
+Written up for the record after the owner asked to have the mechanism
+explained end to end. Two pieces: how a switch actually happens, and
+what the data structure being swapped actually is.
+
+### The context switch, phase by phase
+
+**Phase 0 — decision (host).** `scheduler.py` scores groups by
+`V(g) = Σ_ports decayed_bytes × rules-that-can-fire`; a challenger must
+beat the incumbent 2× before a swap fires. Policy is software; the
+fabric provides only mechanism — the same division of labor an OS uses.
+
+**Phase 1 — prepare (host, amortized).** `pyro/overlay/table.py`
+compiles the group's anchors to an Aho–Corasick automaton and
+serializes it: 56-byte header, then bitmap / base / dense / fail /
+out_idx / out_flat sections. The image's CRC-32C is its TABLE_ID —
+content-addressed identity, like everything else here.
+
+**Phase 2 — declare before transfer.** TABLE_BEGIN carries the total
+size and the **expected CRC**; the wrapper writes that CRC into
+`A_TBL_EXPECT` before the load opens. The engine can refuse (wrong
+engine, over capacity) before one content byte moves — and it now
+knows what the host *intends*, which is what makes the commit gate a
+check rather than a self-report.
+
+**Phase 3 — stream the shadow.** TABLE_DATA frames, up to 9,556 B each.
+The wrapper rejects any chunk whose offset is not exactly the bytes the
+engine already took (the CRC streams as bytes arrive, so out-of-order
+delivery would corrupt silently; error 8 instead). The engine routes
+each byte by `wr_addr` against the header offsets, accumulating whole
+words before writing URAM/BRAM — byte-wise RMW would need an async read
+and cost the arrays their BRAM inference. The old table keeps serving
+between frames.
+
+**Phase 4 — the switch, one clock edge.** TBL_CTRL[COMMIT] evaluates
+`bytes_rcvd != 0 && engine_id ok && n_states <= cap &&
+(~shadow_crc) == expect_crc` in a single cycle. All true: active_id,
+active_valid, epoch++ — the new program is live next cycle. Any false:
+**nothing changes** — old table, old epoch, commit_err raised. A
+transfer corrupted in flight degrades to "no switch", never to a
+silently wrong resident program (the §5 property bring-up proved
+missing and the CRC gate added).
+
+**Phase 5 — attribution.** Every MATCH_REPLY carries the epoch of the
+table that produced it, so a nomination in flight across a commit
+resolves against the *old* sidecar. SR14′ — and the reason the
+accidental ~2,700-swap endurance run stayed coherent.
+
+**Cost, decomposed (63 swaps):** 13.9 ms + 0.150 ms/KB. Intercept =
+protocol floor (per-chunk round trips, commit, host CRC); slope = wire
+bytes. Versus 13.6 s for the PR path — same semantics, ~1,100× cheaper,
+which is the entire reason the engine exists.
+
+### What an Aho–Corasick automaton is, and why it is the right shape
+
+Aho–Corasick (1975) answers: given N literal strings, find every
+occurrence of any of them in a subject, in one pass. Three parts:
+
+1. **A trie of all patterns.** Shared prefixes share states — "attack"
+   and "attach" walk the same path for six characters. One state per
+   distinct prefix; our full corpus is 39,647 states for 3,896 anchors.
+2. **Failure links.** When state S has no edge for the next byte, fall
+   back to the state for the *longest proper suffix* of S's prefix that
+   is also some pattern's prefix — precomputed, so the subject is never
+   re-scanned. This is what makes it one-pass: after "attac" fails on
+   'k'→'h' mismatch territory, you land exactly where the suffix you
+   have already read says you should.
+3. **Output sets, pre-unioned.** A state emits every pattern that ends
+   there — including patterns that are suffixes of others ("tack",
+   "ack" inside "attack"). We flatten these at build time so the
+   engine's emit loop just walks a list.
+
+Why AC and not per-pattern regex NFAs (the generated-circuit path)?
+Because the cost model inverts. A generated group circuit spends
+**fabric** per pattern — 253 slots ≈ 10,300 LUTs — and swapping
+patterns means new gates, hence Vivado and PR. AC spends **memory** per
+pattern: the automaton is a table, uniform in shape regardless of
+content, so one fixed engine (2,364 LUTs) walks whatever table is
+resident and "reprogramming" is a memory write. That single property is
+what turns a context switch from 13.6 s into 13 ms. The trade is
+throughput: table-walking costs ~5 cyc/B at the FSM floor (registered
+BRAM/URAM reads: IDLE→FETCH→FETCH2→RANK→RANK2) versus 1–8 B/cyc for
+compiled circuits — the honest price of holding every anchor at once.
+
+The hardware encoding: each state's 256 possible byte-edges compress to
+a **256-bit bitmap + popcount rank** — bit b set means an edge on byte
+b exists, and its target is `dense[base[S] + popcount(bits below b)]`.
+32 B/state instead of 1 KB/state for a full pointer array; the popcount
+is eight fixed 32-bit counts plus a lane-selected prefix sum, after the
+naive 256-bit barrel shifter blew timing by 1.3 ns. Failure links are a
+word per state; output lists are (offset, count) into a flat array.
+53–55 B/state total — which is how the *uncapped* corpus trie fits URAM
+when SF14's 64 B/state estimate said it could not.
+
+One soundness wrinkle worth remembering: case-insensitive patterns
+cannot be handled by folding the automaton alone — matching folded
+anchors against raw input produced 4 violations, and the "fix" of
+branching the trie on both cases went exponential on a 20-letter
+anchor. `CaseSplitTable` runs two automata instead: nocase patterns
+over a folded stream, exact patterns over the raw one. Composition
+beat cleverness.
