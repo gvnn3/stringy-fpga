@@ -397,7 +397,10 @@ def test_encode_max_payload_is_accepted_boundary():  # AC-2b-1 (R78.9/R86.2)
 # R86.2 (v2.4.0): sendable kinds are EXACTLY 0x01-0x07 (0x06/0x07 added by
 # R78.11).  0x00 is `reserved` and is NOT a message kind — encode_frame MUST
 # reject it, as must any value > 0x07.
-@pytest.mark.parametrize("bad_kind", [0x00, 0x08, 0x09, 0x10, 0x42, 0xFF])
+# 0x08-0x0D became VALID with amendment A5 §3 (table-load kinds,
+# approved 2026-07-30); the invalid space now starts at 0x0E.
+@pytest.mark.parametrize("bad_kind", [0x00, 0x0E, 0x0F, 0x10, 0x42,
+                                      0xFF])
 # AC-2b-1 (R78.4/R86.2)
 def test_encode_invalid_kind_raises_frame_error(bad_kind):
     _need_pdev()

@@ -77,9 +77,13 @@ def test_probe_privilege_free_exact_canonical_reason():
     probe
     and transport conditions unmet, fixed order)."""
     _need_pdev()
-    assert not phase2_support.has_cap_net_raw(), (
-        "precondition: this host must lack CAP_NET_RAW for the privilege-free "
-        "LIVE assertion")
+    # Environmental precondition, not a product property: on a host that
+    # HAS CAP_NET_RAW (any hardware-attached bench box) the privilege-free
+    # path cannot be observed live, so the honest disposition is skip —
+    # a hard assert here fails the suite for having hardware access.
+    if phase2_support.has_cap_net_raw():
+        pytest.skip("host has CAP_NET_RAW; the privilege-free LIVE "
+                    "assertion needs a host without it (R86.4)")
     try:
         usable, reason = pdev.probe_device(_make_config())
     # pragma: no cover - spec violation
