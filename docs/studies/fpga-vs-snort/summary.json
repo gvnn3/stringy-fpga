@@ -1,0 +1,562 @@
+{
+ "cells": [
+  {
+   "density": 0.0,
+   "fpga": {
+    "cyc_per_byte_med": 5.1146,
+    "epoch_after": 2798,
+    "epoch_before": 2797,
+    "load_s": 0.011996445013210177,
+    "lost": 0,
+    "n_states": 43,
+    "nominations": 0,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.993,
+    "scans": 20000,
+    "table_bytes": 2300
+   },
+   "group": "$FTP_PORTS/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 0,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 0,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 0,
+    "cpu_s_med": 0.080511,
+    "payload_bytes": 6984776,
+    "repeats": 5,
+    "run_s_med": 1.399,
+    "startup_s_med": 1.0319093730067834
+   }
+  },
+  {
+   "density": 0.01,
+   "fpga": {
+    "cyc_per_byte_med": 5.1146,
+    "epoch_after": 2799,
+    "epoch_before": 2798,
+    "load_s": 0.011985567049123347,
+    "lost": 0,
+    "n_states": 43,
+    "nominations": 200,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.994,
+    "scans": 20000,
+    "table_bytes": 2300
+   },
+   "group": "$FTP_PORTS/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 200,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 200,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 200,
+    "cpu_s_med": 0.08197499999999991,
+    "payload_bytes": 6996584,
+    "repeats": 5,
+    "run_s_med": 1.436,
+    "startup_s_med": 1.0315423359861597
+   }
+  },
+  {
+   "density": 0.1,
+   "fpga": {
+    "cyc_per_byte_med": 5.1253,
+    "epoch_after": 2800,
+    "epoch_before": 2799,
+    "load_s": 0.01199721300508827,
+    "lost": 0,
+    "n_states": 43,
+    "nominations": 2000,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.992,
+    "scans": 20000,
+    "table_bytes": 2300
+   },
+   "group": "$FTP_PORTS/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 2000,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 2000,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 2000,
+    "cpu_s_med": 0.0912329999999999,
+    "payload_bytes": 7053396,
+    "repeats": 5,
+    "run_s_med": 1.447,
+    "startup_s_med": 1.030520299100317
+   }
+  },
+  {
+   "density": 0.0,
+   "fpga": {
+    "cyc_per_byte_med": 5.0469,
+    "epoch_after": 2801,
+    "epoch_before": 2800,
+    "load_s": 0.016978460014797747,
+    "lost": 0,
+    "n_states": 559,
+    "nominations": 0,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.991,
+    "scans": 20000,
+    "table_bytes": 29260
+   },
+   "group": "$ORACLE_PORTS/1",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 0,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 0,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 0,
+    "cpu_s_med": 0.082098,
+    "payload_bytes": 7101836,
+    "repeats": 5,
+    "run_s_med": 1.429,
+    "startup_s_med": 1.0331099689938128
+   }
+  },
+  {
+   "density": 0.01,
+   "fpga": {
+    "cyc_per_byte_med": 5.0469,
+    "epoch_after": 2802,
+    "epoch_before": 2801,
+    "load_s": 0.016993721015751362,
+    "lost": 0,
+    "n_states": 559,
+    "nominations": 250,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.991,
+    "scans": 20000,
+    "table_bytes": 29260
+   },
+   "group": "$ORACLE_PORTS/1",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 250,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 250,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 250,
+    "cpu_s_med": 0.0835079999999997,
+    "payload_bytes": 7024948,
+    "repeats": 5,
+    "run_s_med": 1.461,
+    "startup_s_med": 1.033131098956801
+   }
+  },
+  {
+   "density": 0.1,
+   "fpga": {
+    "cyc_per_byte_med": 5.0469,
+    "epoch_after": 2803,
+    "epoch_before": 2802,
+    "load_s": 0.017977572046220303,
+    "lost": 0,
+    "n_states": 559,
+    "nominations": 2445,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.99,
+    "scans": 20000,
+    "table_bytes": 29260
+   },
+   "group": "$ORACLE_PORTS/1",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 2445,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 2445,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 2445,
+    "cpu_s_med": 0.09692999999999996,
+    "payload_bytes": 6963672,
+    "repeats": 5,
+    "run_s_med": 1.56,
+    "startup_s_med": 1.0321031169733033
+   }
+  },
+  {
+   "density": 0.0,
+   "fpga": {
+    "cyc_per_byte_med": 5.1146,
+    "epoch_after": 2804,
+    "epoch_before": 2803,
+    "load_s": 0.015992844942957163,
+    "lost": 0,
+    "n_states": 18,
+    "nominations": 0,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.993,
+    "scans": 20000,
+    "table_bytes": 1000
+   },
+   "group": "$SIP_PORTS/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 0,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 0,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 0,
+    "cpu_s_med": 0.08148999999999962,
+    "payload_bytes": 7102908,
+    "repeats": 5,
+    "run_s_med": 1.495,
+    "startup_s_med": 1.031432143994607
+   }
+  },
+  {
+   "density": 0.01,
+   "fpga": {
+    "cyc_per_byte_med": 5.1146,
+    "epoch_after": 2805,
+    "epoch_before": 2804,
+    "load_s": 0.0159826340386644,
+    "lost": 0,
+    "n_states": 18,
+    "nominations": 200,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.993,
+    "scans": 20000,
+    "table_bytes": 1000
+   },
+   "group": "$SIP_PORTS/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 200,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 200,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 200,
+    "cpu_s_med": 0.08165100000000036,
+    "payload_bytes": 6991220,
+    "repeats": 5,
+    "run_s_med": 1.422,
+    "startup_s_med": 1.0315047280164436
+   }
+  },
+  {
+   "density": 0.1,
+   "fpga": {
+    "cyc_per_byte_med": 5.1226,
+    "epoch_after": 2806,
+    "epoch_before": 2805,
+    "load_s": 0.012004654970951378,
+    "lost": 0,
+    "n_states": 18,
+    "nominations": 2000,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.994,
+    "scans": 20000,
+    "table_bytes": 1000
+   },
+   "group": "$SIP_PORTS/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 2000,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 2000,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 2000,
+    "cpu_s_med": 0.09252999999999956,
+    "payload_bytes": 6983400,
+    "repeats": 5,
+    "run_s_med": 1.507,
+    "startup_s_med": 1.0303900929866359
+   }
+  },
+  {
+   "density": 0.0,
+   "fpga": {
+    "cyc_per_byte_med": 7.842,
+    "epoch_after": 2807,
+    "epoch_before": 2806,
+    "load_s": 0.03299396997317672,
+    "lost": 0,
+    "n_states": 2416,
+    "nominations": 21211,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.992,
+    "scans": 20000,
+    "table_bytes": 126760
+   },
+   "group": "any/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 21211,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 21211,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 21211,
+    "cpu_s_med": 0.24001600000000067,
+    "payload_bytes": 7103696,
+    "repeats": 5,
+    "run_s_med": 1.493,
+    "startup_s_med": 1.044618760002777
+   }
+  },
+  {
+   "density": 0.01,
+   "fpga": {
+    "cyc_per_byte_med": 7.8472,
+    "epoch_after": 2808,
+    "epoch_before": 2807,
+    "load_s": 0.03299640608020127,
+    "lost": 0,
+    "n_states": 2416,
+    "nominations": 21447,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.993,
+    "scans": 20000,
+    "table_bytes": 126760
+   },
+   "group": "any/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 21447,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 21447,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 21447,
+    "cpu_s_med": 0.24267700000000048,
+    "payload_bytes": 7084468,
+    "repeats": 5,
+    "run_s_med": 1.512,
+    "startup_s_med": 1.0441807380411774
+   }
+  },
+  {
+   "density": 0.1,
+   "fpga": {
+    "cyc_per_byte_med": 7.8594,
+    "epoch_after": 2809,
+    "epoch_before": 2808,
+    "load_s": 0.0340025870827958,
+    "lost": 0,
+    "n_states": 2416,
+    "nominations": 23040,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.992,
+    "scans": 20000,
+    "table_bytes": 126760
+   },
+   "group": "any/0",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 23040,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 23040,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 23040,
+    "cpu_s_med": 0.24654799999999977,
+    "payload_bytes": 6919568,
+    "repeats": 5,
+    "run_s_med": 1.486,
+    "startup_s_med": 1.0442100410582498
+   }
+  },
+  {
+   "density": 0.0,
+   "fpga": {
+    "cyc_per_byte_med": 7.0469,
+    "epoch_after": 2810,
+    "epoch_before": 2809,
+    "load_s": 0.027986760949715972,
+    "lost": 0,
+    "n_states": 1662,
+    "nominations": 42553,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.992,
+    "scans": 20000,
+    "table_bytes": 87152
+   },
+   "group": "literal/3",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 42553,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 42553,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 42553,
+    "cpu_s_med": 0.3549490000000004,
+    "payload_bytes": 6956880,
+    "repeats": 5,
+    "run_s_med": 1.519,
+    "startup_s_med": 1.0381301229353994
+   }
+  },
+  {
+   "density": 0.01,
+   "fpga": {
+    "cyc_per_byte_med": 7.0469,
+    "epoch_after": 2811,
+    "epoch_before": 2810,
+    "load_s": 0.02699647401459515,
+    "lost": 0,
+    "n_states": 1662,
+    "nominations": 43138,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.993,
+    "scans": 20000,
+    "table_bytes": 87152
+   },
+   "group": "literal/3",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 43138,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 43138,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 43138,
+    "cpu_s_med": 0.36519600000000096,
+    "payload_bytes": 7053971,
+    "repeats": 5,
+    "run_s_med": 1.523,
+    "startup_s_med": 1.0378841330530122
+   }
+  },
+  {
+   "density": 0.1,
+   "fpga": {
+    "cyc_per_byte_med": 7.0658,
+    "epoch_after": 2812,
+    "epoch_before": 2811,
+    "load_s": 0.02699333499185741,
+    "lost": 0,
+    "n_states": 1662,
+    "nominations": 45036,
+    "ovf": 0,
+    "scan_wall_ms_med": 11.991,
+    "scans": 20000,
+    "table_bytes": 87152
+   },
+   "group": "literal/3",
+   "parity_fpga": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 45036,
+    "pass": true
+   },
+   "parity_snort": {
+    "extra": 0,
+    "missing": 0,
+    "oracle_hits": 45036,
+    "pass": true
+   },
+   "snort": {
+    "alerts": 45036,
+    "cpu_s_med": 0.37225399999999986,
+    "payload_bytes": 6996067,
+    "repeats": 5,
+    "run_s_med": 1.539,
+    "startup_s_med": 1.0382137480191886
+   }
+  }
+ ],
+ "date": "2026-08-04",
+ "schema": "pyro-quantify-summary/1",
+ "source": "build/quantify/run.json (uncommitted, 38 MB)"
+}

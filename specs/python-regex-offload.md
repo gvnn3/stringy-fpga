@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.7.0
+- **Version:** 2.7.1 (§4.1 as-built block diagram, 2026-08-04)
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted
   for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on
   `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame
@@ -487,6 +487,59 @@ and tested independently.
   **HW-eligible** (in the supported subset and within resource limits) or
   **fallback-only**, and this classification MUST be a pure function of the
   pattern and flags (deterministic, side-effect free).
+
+### 4.1 As-built block diagram (informative, 2026-08-04)
+
+The layer diagram above is the normative decomposition; this diagram is
+the system as it exists on hardware today (branch lineage
+`phase1-pyro` → `phase2-snort`): which box runs where, and over which
+physical paths the layers talk.
+
+```
+                    HOST (nf-server06, Linux 6.8)
++---------------------------------------------------------------------+
+| Python application                                                  |
+|   pyro.re (L1)          CPython re fallback (always present)        |
+|      |                                                              |
+|      v                                                              |
+| L2 compiler: regex -> AST -> automaton -> RTL   ---> R63 synthesis  |
+|      | HW-eligible only                              service        |
+|      v                                               (Vivado 2025.2:|
+| L3 runtime: tier/cache/residency (R4/R64),           OOC synth ->   |
+|   R78 codec (MATCH_REQUEST/MATCH_REPLY),             link vs locked |
+|   probe/honesty predicates (R71/R83)                 static DCP ->  |
+|      |                                               partial + mani-|
+|      v                                               fest -> cache) |
+| L4 transport: AF_PACKET on ens2, ethertype 0x88B5         |         |
+|   (alt: QDMA char-dev, single H2C queue only — SF20)      |         |
++------|----------------------------------------------------|--------+
+       | PCIe (onic / EQDMA DMA; frames <= 1486 B,           | JTAG/ICAP
+       |  jumbo 9568 B by explicit config)                   | load_partial
+       v                                                     v ~13.6 s
++---------------------------------------------------------------------+
+|                 ALVEO U250 — OpenNIC static shell                   |
+|                                                                     |
+|  CMAC (100G) --- packet adapter --- box_250mhz user plugin          |
+|                                        |                            |
+|                          +-------------v----------------+           |
+|                          | pyro_rp partition (slot 1,   |           |
+|                          |  single tenant)              |           |
+|                          |  rp_wrapper: R78 frame FSM,  |           |
+|                          |   CSR bridge, R45a counters  |           |
+|                          |  generated pattern circuit   |           |
+|                          |   (one regex, 8 B/cycle)     |           |
+|                          +------------------------------+           |
+|                                                                     |
+|  user reset 0x014 / QDMA soft reset 0x00C  (R85a in-band recovery)  |
++---------------------------------------------------------------------+
+```
+
+Notes: the R7 software model stands in for the whole U250 column when no
+device is present. Circuit swap on this path is a full partial
+reconfiguration over JTAG (~13.6 s); the table-programmable overlay
+engine that replaces PR-per-pattern-set with in-band table writes is
+specified separately (`docs/spec-amendments-a5-overlay.md`, SNORT-PF)
+and occupies the same `pyro_rp` slot.
 
 ---
 
@@ -4027,6 +4080,11 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.7.1** (2026-08-04) — *§4.1 as-built block diagram (PATCH —
+  informative), claude.* Adds an informative diagram of the deployed
+  system: host layer placement (L1-L4, R63 service), physical paths
+  (PCIe/onic vs JTAG/ICAP), and the `pyro_rp` contents as flashed.
+  No normative change.
 - **2.6.0** (2026-07-17) — *P2c: jumbo frame bound (R78.9a), config-in and
   fail-closed (MINOR — added requirement), spec-writer.* The R78.9 1518-byte
   bound is a property of the deployed shell's `MAX_PKT_LEN`, not the
