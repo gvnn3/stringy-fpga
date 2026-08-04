@@ -3162,3 +3162,27 @@ branching the trie on both cases went exponential on a 20-letter
 anchor. `CaseSplitTable` runs two automata instead: nocase patterns
 over a folded stream, exact patterns over the raw one. Composition
 beat cleverness.
+
+## 2026-08-04 (cont.) — Demo re-run: the sweep changed nothing on silicon
+
+Ran the scripted demo after the 80-column campaign, which had touched
+pyro/device.py, the rp_wrapper template, and the whole telemetry stack.
+Fourth consecutive run with a byte-identical result set:
+
+    SWITCHES : 3 swaps — 16.1 / 26.0 / 11.9 ms (mean 18.0; 756× under
+               the 13.6 s PR baseline)
+    MATCHING : 35 scans, 132 nominations, 37 sids (top 1:1325×21,
+               1:1327×20, 1:324×18)
+    PERF     : 248 cyc / 49 B = 5.06 cyc/B → 49.4 MB/s
+    LOSS     : 35/35 replied, zero loss, rx_dropped 0
+    MISSED   : hard 0 (SR3) | OVF 0 | non-resident 3,892 | lowering 26
+    IDENTITY : active 0x9c8f7ce9, epoch 2792 → 2795, capacity 40960
+
+Same 132 nominations across the same 37 sids, same 248/49 perf
+signature, swaps in the same size-dependent bands. The reflow was
+proven functionally identical by golden token-compare before it ever
+ran against hardware; this run is the on-silicon confirmation of the
+same claim through the full wire path. The card picked up at epoch
+2792 with literal/0's table resident (0xadfb7146, where the previous
+demo left it) and ended at 2795 — the epoch ledger unbroken across
+every commit since first bring-up.
