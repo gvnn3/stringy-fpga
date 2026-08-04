@@ -17,22 +17,24 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-2. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-3. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-4. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-5. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-6. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-7. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-8. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-9. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-10. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-11. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-12. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-13. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-14. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-15. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-16. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+1. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+   Userspace Snort](#4-aug-2026-192733) :complete:
+2. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+3. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+4. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+5. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+6. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+7. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+8. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+9. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+10. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+11. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+12. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+13. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+14. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+15. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+16. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+17. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -3273,3 +3275,116 @@ Mangione-Smith FCCM 2004 · Becchi & Crowley 2007 · Vipin & Fahmy CSUR
 Internal: spec-amendments-a5-overlay.md · studies/switch-cost-frontier
 · studies/a5-working-set · pyro_overlay_engine.v ·
 pyro/overlay/{table,model}.py · telemetry.md · system-walkthrough §10.
+
+---
+
+# EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs. Userspace Snort :complete:
+
+## 1. Hypothesis
+
+For an identical literal pattern set and byte-identical traffic, how
+much does matching on the A5 overlay engine differ from matching in a
+userspace Snort process — in throughput, rule-set switch cost, host
+CPU cost, and refereed match correctness?
+
+## 2. How
+
+- **Equipment:** Alveo U250 (static shell `0x02020000`), overlay
+  engine child resident in `pyro_rp` at 250 MHz, host `nf-server06`
+  (4 cores, Linux 6.8), transport AF_PACKET on `ens2`.
+- **Software:** Snort 2.9.20 GRE build 82 (Ubuntu debs extracted to
+  gitignored `build/snort-local/`, run unprivileged, search method
+  `ac-q` = full Aho-Corasick; alert clipping raised to 4096 at both
+  the `ac-q` match queue and the event queue), `pyro/quantify/`
+  harness (branch `pyro-quantify`), Python 3.12 `.venv-pyro`.
+- **Benchmarks:** 15 cells = 5 rule groups (`$SIP_PORTS/0` 1 KB …
+  `any/0` 124 KB tables; 68–1,205 patterns) × densities 0/0.01/0.10;
+  20,000 packets per cell (~7.2 MB payload, IMIX-style 64/576/1460 B,
+  seeded, pcap timestamps encode packet indices). Each group's anchor
+  set lowered BOTH to an A5 table (S2 emitter) and to content-only
+  Snort rules (`sid = 1000000 + pattern index`), so both sides search
+  the same literals over the same bytes. Referee: a direct
+  `bytes.find` oracle sharing no code with either engine.
+
+### Key commands
+
+```bash
+.venv-pyro/bin/python3 scripts/pyro_quantify.py software  # host side
+PYRO_DEVICE_IFACE=ens2 \
+  .venv-pyro/bin/python3 scripts/pyro_quantify.py fpga    # silicon
+.venv-pyro/bin/python3 scripts/pyro_quantify.py parity
+.venv-pyro/bin/python3 scripts/pyro_quantify.py collect
+.venv-pyro/bin/python3 scripts/pyro_quantify.py figs
+```
+
+## 3. Observations
+
+Match parity vs. the oracle
+: FPGA **15/15 cells exact**; Snort **15/15 cells exact**.
+
+Engine / search rate
+: FPGA **48.7–49.6 MB/s** on small tables (5.11 cyc/B, the FSM
+  floor); 35.5 / 31.9 MB/s at 85 / 124 KB (7.0 / 7.8 cyc/B).
+  Snort 4.5–5.0 MB/s raw payload; search-only cost not resolvable
+  above decode noise at this corpus size.
+
+Rule-set switch
+: FPGA **12.0–34.0 ms** (table write); Snort **1.030–1.045 s**
+  (process restart + AC build), flat in rule-set size.
+
+Host CPU per payload-GB
+: FPGA not instrumented (transport-bound path, see §4); Snort
+  11.5 s/GB quiet, rising to 53.2 s/GB at 45 k alerts.
+
+End-to-end feed
+: FPGA 0.026 MB/s (13 ms RTT, one frame in flight); Snort n/a
+  (reads the pcap locally).
+
+- 300,000 scans on silicon: **0 lost requests, 0 OVF**; epoch ledger
+  unbroken 2797 → 2812 across all 15 table loads.
+- 254,560 oracle hits refereed; the FPGA never used its SR5
+  over-nomination allowance — nomination set equaled the oracle
+  exactly, including `literal/3` cells with 45,036 hits.
+- Snort's default config silently clips alerts (`ac-q` queue 5,
+  event queue 8/3); dense cells lost up to 32 hits/cell until both
+  were raised to 4096. Found empirically by the build workflow.
+- Snort 2.9 appends to an existing fast-alert file: re-runs
+  double-counted alerts (1,431 = 3×477) until log dirs were cleared
+  per invocation.
+
+## 4. Data analysis
+
+Correctness transfers exactly: on identical bytes with identical
+literals, hardware and software agree with the referee to the last
+hit. The interesting quantities are the two gaps. (1) The **switch
+gap is 30–86×**: a table write costs 12–34 ms (slope ~0.18 ms/KB,
+consistent with the 13.9 ms + 0.150 ms/KB fit) while a Snort restart
+costs ~1.03 s regardless of set size, because process init dominates
+AC construction at these sizes. This is the quantity the OS-style
+scheduler trades on — swapping FPGA rule groups is two orders of
+magnitude cheaper than re-pointing the software matcher. (2) The
+**transport gap is ~1,000×**: the engine matches at 32–50 MB/s but
+the host-fed A5 frame path delivers 0.026 MB/s effective (13 ms RTT,
+one 1.5 KB scan per round trip). Engine throughput also shows the
+first measured table-size effect: 5.1 cyc/B (floor) for ≤29 KB
+tables, 7.0–7.8 cyc/B at 85–124 KB, i.e. large tables pay real
+URAM fetch stalls. Snort's raw 4.5–5.0 MB/s is decode-dominated at
+this corpus size — the empty-rules baseline runs within noise of the
+full runs, so the search-only rate was reported as unresolved rather
+than quoted from noise (the net-of-baseline column swings 35–500
+MB/s and goes negative once).
+
+## 5. Ideas for future experiments
+
+- Wire-rate ingest: put the engine on the CMAC path so E1 measures
+  the engine, not the host-fed transport; re-run this corpus.
+- Pipelined scans (window ≥ 2 in flight) to close most of the RTT
+  gap without RTL changes; the P2 study showed W=2 already saturates.
+- Much larger corpora (≥ 1 GB payload) to resolve Snort's
+  search-only cost above decode noise; sweep pattern-set size.
+- Snort 3 with hyperscan as the software comparator.
+- Measure FPGA-side host CPU once a DMA/wire feed exists (the honest
+  E3 number for the offload claim).
+- Table-size throughput curve (5.1 → 7.8 cyc/B): sweep intermediate
+  table sizes to locate the fetch-stall knee.
+
