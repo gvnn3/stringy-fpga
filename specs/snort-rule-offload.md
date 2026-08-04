@@ -1,7 +1,7 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 1.0.2 (SF21: AC-S2-2 measured group costs, 2026-07-28)
+- **Version:** 1.0.3 (§3.1 as-built block diagram, 2026-08-04)
 - **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
   post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
   adoption. Phases S1–S3 are authorized; S4 requires the further owner
@@ -303,6 +303,51 @@ Key properties, stated once:
    flag is advisory (R78.7); the daemon re-verifies before acting, identical
    to PYRO's R47a/R19 path. Snort continues to see **all** traffic in Phases
    S1–S3; the prefilter only prioritizes and attributes.
+
+### 3.1 As-built block diagram (informative, 2026-08-04)
+
+The Stage flow above is the S1 lineage (per-group partial bitstreams).
+As built today, S2/S3 replaced the per-group PR step with the **A5
+table-programmable overlay engine**: one partial bitstream is loaded
+once, and rule groups are thereafter swapped as table writes over the
+wire protocol (13.9 ms + 0.150 ms/KB measured, vs ~13.6 s JTAG PR).
+
+```
+snort3-community.rules (4,017 rules)
+     |
+     v
+SR1/SR2 triage -> prefilter IR -> pack_groups (SR6)     [host, cached]
+     |                                       ... per rule group ...
+     v
+S2 group emitter: anchors -> AC trie + failure links + pre-unioned
+outputs -> A5 table image (53-55 B/state; TABLE_ID = CRC-32C of image)
+     |
+     v
+pyro.device.load_table: TABLE_BEGIN / DATA* / COMMIT (kinds 0x08-0x0D)
+     |   sequential-only DATA; fail-closed commit gate (expected CRC,
+     |   engine id, state cap) -> EPOCH increments only on success
+     v
++----------------- U250: pyro_rp (PR-loaded ONCE) --------------------+
+| rp_wrapper (R78 + A5 FSM, CSR bridge)                               |
+|      <->  pyro_overlay_engine: table-programmable Aho-Corasick      |
+|           256-bit bitmap + popcount transitions; 50 URAM +          |
+|           108 BRAM36; 40,960-state capacity; 5-10 cyc/B @ 250 MHz   |
+|           R45a perf counters (CYCLES/BYTES, per-scan)               |
+|           every MATCH_REPLY carries the producing table's EPOCH     |
++---------------------------------------------------------------------+
+     |
+     v
+nominations: pattern_id -> gid:sid  (SR5: superset, advisory)
+     |
+     v
+daemon / scheduler: residency + group swap policy (OS-scheduler
+primitives: table = process image, EPOCH = generation, swap = context
+switch)          -> full software Snort re-verifies (R19)
+     |
+     v
+telemetry collector (pyro-telemetry/1): switch times, scans,
+nominations by sid, OVF, perf -> JSON / Prometheus -> dashboard
+```
 
 ---
 
@@ -718,6 +763,12 @@ from this file and the PYRO spec, not from each other. Additionally:
 
 ## 12. Changelog
 
+- **1.0.3** (2026-08-04) — *§3.1 as-built block diagram (PATCH —
+  informative), claude.* Adds an informative diagram of the system as
+  deployed: the A5 overlay-engine path (table swaps at 13.9 ms +
+  0.150 ms/KB replacing per-group PR), the resident `pyro_rp`
+  contents, nomination/re-verify flow, and telemetry. Notes that the
+  §3 Stage flow is the S1 lineage. No normative change.
 - **1.0.1** (2026-07-27) — SR2 amendment (per §11: the raw/normalized
   boundary changes only by spec amendment). (a) Snort 3 grammar correction:
   `http_header:field <name>` (and valued `http_param:`/`http_uri:` etc.)
