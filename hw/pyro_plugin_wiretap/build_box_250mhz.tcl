@@ -16,6 +16,8 @@ if {$num_qdma > 1} {
 read_verilog -quiet -sv [file normalize ../src/pyro_rp_stub.v]
 read_verilog -quiet -sv [file normalize ../pyro_plugin/pyro_250mhz.sv]
 read_verilog -quiet -sv \
+    [file normalize ../pyro_plugin/pyro_axis_skid.sv]
+read_verilog -quiet -sv \
     [file normalize ../pyro_plugin/pyro_axis_wire_arb.sv]
 read_verilog -quiet -sv \
     [file normalize ../pyro_plugin/pyro_wire_tx_gen.sv]

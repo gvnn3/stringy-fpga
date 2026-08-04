@@ -47,25 +47,61 @@ module pyro_axis_wire_arb (
   input             m_tready
 );
 
+  // Register isolation: a 2-deep skid on every face (both slaves and
+  // the master).  The first wiretap static build showed why — with a
+  // purely combinational arbiter, the QDMA-slice -> RP ingress path
+  // and the tready fan-back crossed an SLR boundary at 7 LUT levels
+  // (WNS -0.150 / -0.105 on axis_aclk_0).  With skids, every signal
+  // leaving this module is register-sourced in both directions.
+  wire         a0_tvalid, a1_tvalid;
+  wire [511:0] a0_tdata,  a1_tdata;
+  wire  [63:0] a0_tkeep,  a1_tkeep;
+  wire         a0_tlast,  a1_tlast;
+  wire  [47:0] a0_tuser,  a1_tuser;
+  wire         a0_tready, a1_tready;
+
+  pyro_axis_skid skid_s0 (
+    .clk (clk), .rstn (rstn),
+    .s_tvalid (s0_tvalid), .s_tdata (s0_tdata), .s_tkeep (s0_tkeep),
+    .s_tlast (s0_tlast), .s_tuser (s0_tuser), .s_tready (s0_tready),
+    .m_tvalid (a0_tvalid), .m_tdata (a0_tdata), .m_tkeep (a0_tkeep),
+    .m_tlast (a0_tlast), .m_tuser (a0_tuser), .m_tready (a0_tready)
+  );
+
+  pyro_axis_skid skid_s1 (
+    .clk (clk), .rstn (rstn),
+    .s_tvalid (s1_tvalid), .s_tdata (s1_tdata), .s_tkeep (s1_tkeep),
+    .s_tlast (s1_tlast), .s_tuser (s1_tuser), .s_tready (s1_tready),
+    .m_tvalid (a1_tvalid), .m_tdata (a1_tdata), .m_tkeep (a1_tkeep),
+    .m_tlast (a1_tlast), .m_tuser (a1_tuser), .m_tready (a1_tready)
+  );
+
+  wire         c_tvalid;
+  wire [511:0] c_tdata;
+  wire  [63:0] c_tkeep;
+  wire         c_tlast;
+  wire  [47:0] c_tuser;
+  wire         c_tready;
+
   // AXI-Stream stability: the grant freezes the moment a beat is
-  // PRESENTED (m_tvalid high), not merely accepted — otherwise the
-  // other port asserting tvalid during a stall would swap m_tdata
-  // under an asserted m_tvalid, which AXIS forbids.  The grant is
+  // PRESENTED (c_tvalid high), not merely accepted — otherwise the
+  // other port asserting tvalid during a stall would swap c_tdata
+  // under an asserted c_tvalid, which AXIS forbids.  The grant is
   // released only when the packet's tlast beat is accepted.
   reg  locked;      // grant frozen (presentation or mid-packet)
   reg  grant;       // 0 = s0, 1 = s1
   reg  last_grant;  // round-robin state
 
   wire idle_pick =
-      (last_grant == 1'b0) ? (s1_tvalid ? 1'b1 : 1'b0)
-                           : (s0_tvalid ? 1'b0 : 1'b1);
+      (last_grant == 1'b0) ? (a1_tvalid ? 1'b1 : 1'b0)
+                           : (a0_tvalid ? 1'b0 : 1'b1);
 
   wire cur = locked ? grant : idle_pick;
 
-  wire cur_tvalid = cur ? s1_tvalid : s0_tvalid;
-  wire cur_tlast  = cur ? s1_tlast  : s0_tlast;
+  wire cur_tvalid = cur ? a1_tvalid : a0_tvalid;
+  wire cur_tlast  = cur ? a1_tlast  : a0_tlast;
 
-  wire beat = cur_tvalid && m_tready;
+  wire beat = cur_tvalid && c_tready;
 
   always @(posedge clk) begin
     if (!rstn) begin
@@ -81,13 +117,21 @@ module pyro_axis_wire_arb (
     end
   end
 
-  assign m_tvalid = cur_tvalid;
-  assign m_tdata  = cur ? s1_tdata : s0_tdata;
-  assign m_tkeep  = cur ? s1_tkeep : s0_tkeep;
-  assign m_tlast  = cur_tlast;
-  assign m_tuser  = cur ? s1_tuser : s0_tuser;
+  assign c_tvalid = cur_tvalid;
+  assign c_tdata  = cur ? a1_tdata : a0_tdata;
+  assign c_tkeep  = cur ? a1_tkeep : a0_tkeep;
+  assign c_tlast  = cur_tlast;
+  assign c_tuser  = cur ? a1_tuser : a0_tuser;
 
-  assign s0_tready = (cur == 1'b0) && m_tready;
-  assign s1_tready = (cur == 1'b1) && m_tready;
+  assign a0_tready = (cur == 1'b0) && c_tready;
+  assign a1_tready = (cur == 1'b1) && c_tready;
+
+  pyro_axis_skid skid_m (
+    .clk (clk), .rstn (rstn),
+    .s_tvalid (c_tvalid), .s_tdata (c_tdata), .s_tkeep (c_tkeep),
+    .s_tlast (c_tlast), .s_tuser (c_tuser), .s_tready (c_tready),
+    .m_tvalid (m_tvalid), .m_tdata (m_tdata), .m_tkeep (m_tkeep),
+    .m_tlast (m_tlast), .m_tuser (m_tuser), .m_tready (m_tready)
+  );
 
 endmodule: pyro_axis_wire_arb

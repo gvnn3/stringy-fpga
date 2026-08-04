@@ -19,5 +19,6 @@ read_verilog -quiet -sv pyro_250mhz.sv
 # OQ-2 spike modules; instantiated only under WIRE_TAP=1 (dead code
 # in the production WIRE_TAP=0 build, read so elaboration never sees
 # an unresolved module in the inactive generate branch).
+read_verilog -quiet -sv pyro_axis_skid.sv
 read_verilog -quiet -sv pyro_axis_wire_arb.sv
 read_verilog -quiet -sv pyro_wire_tx_gen.sv

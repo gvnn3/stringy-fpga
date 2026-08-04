@@ -114,4 +114,21 @@ only moves the feed bottleneck, deliberately).
 
 ## 6. Results
 
-Pending.
+**Build 1 (2026-08-04, combinational arbiter).**  Full DFX build
+completed; pr_verify PASS (G3 — the R80 boundary really is
+unchanged: the ID stub re-linked against the wiretap locked DCP).
+The headline G2 number: **the historic CMAC violation CLOSED with
+the datapath live** — `txoutclk_out[0]` WNS **+0.045 ns** (vs
+−0.427 ns at SF7 drafting, −0.015 ns waivable tied-off at SF19).
+`pyro_rp`'s clock group closed at +1.918 ns.  What failed instead
+was self-inflicted: `axis_aclk_0` WNS −0.150 ns / TNS −14.4 over
+170 endpoints, worst paths (a) QDMA H2C slice FSM ->
+`pyro_rp` ingress FSM at 7 LUT levels and (b) the tready fan-back
+into the H2C slice CE nets — both the combinational arbiter
+stretching an SLR-crossing boundary path that used to be a direct
+register hop.  Verdict: the CMAC question is answered YES; the
+arbiter needed register isolation.
+
+**Fix.**  `pyro_axis_skid.sv` (2-deep, both directions register-
+sourced, full-throughput) instantiated on all three arbiter faces.
+G1 sim re-passes.  Build 2 pending.
