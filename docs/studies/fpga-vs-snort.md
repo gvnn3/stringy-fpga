@@ -135,6 +135,60 @@ Recorded up front so the numbers are read honestly:
 - Results: `docs/studies/fpga-vs-snort/` (run.json, CSVs, figures)
   and a results section appended to this document.
 
-## 6. Results
+## 6. Results (2026-08-04, on silicon)
 
-Pending.
+Run: 15 cells (5 groups x densities 0/0.01/0.10), 20,000 packets per
+cell (~7.2 MB payload each), Snort N=5 repeats per cell, FPGA 20,000
+scans per cell with zero lost requests and zero OVF.  Data:
+`summary.json` + figure CSVs in `docs/studies/fpga-vs-snort/`; raw
+per-scan records stay in `build/quantify/run.json` (38 MB,
+uncommitted; regenerate with `scripts/pyro_quantify.py`).
+
+**E4 Match parity — the headline correctness result.**  30/30 cells
+PASS.  Snort's alert set equals the oracle exactly in every cell
+(0 missing, 0 extra), including the accident-heavy groups (`any/0`
+21,211 accidental short-anchor hits at density 0; `literal/3`
+42,553).  The FPGA nomination set ALSO equals the oracle exactly in
+all 15 cells — it never needed the SR5 over-nomination allowance on
+this corpus.  Identical bytes in, identical verdicts out, 254,560
+oracle hits refereed.
+
+**E1 Throughput.**  The engine ran at its architectural floor for
+small-fanout tables: 5.11-5.13 cyc/B => 48.7-49.6 MB/s at 250 MHz
+(the 5 cyc/B FSM floor is 50 MB/s).  The two large tables pay real
+fetch stalls: `literal/3` (85 KB) 7.0 cyc/B => 35.5 MB/s, `any/0`
+(124 KB) 7.8 cyc/B => 31.9 MB/s.  End-to-end through the host-fed A5
+transport the FPGA path delivers only ~0.026 MB/s (13 ms RTT per
+<=1460 B scan, one frame in flight) — the engine is 1,000x faster
+than this bring-up transport feeds it, which is the measured argument
+for wire-rate ingest.  Snort processed the same payloads at 4.5-5.0
+MB/s raw (single process, pcap read-back, decode included).  The
+decode-subtracted "search-only" Snort rate is NOT resolvable at this
+corpus size: the empty-rules baseline runs within noise of the full
+runs (the net-of-baseline column swings 35-500 MB/s and goes negative
+in one cell), so we report it as unresolved rather than quote noise.
+
+**E2 Switch cost — the scheduling result.**  FPGA table swap:
+12.0 ms (1 KB SIP table) to 34.0 ms (124 KB `any/0`), consistent with
+the established 13.9 ms + 0.150 ms/KB fit (slope here ~0.18 ms/KB).
+Snort process restart with rules compile: 1.030-1.045 s, essentially
+FLAT in rule-set size — process init dominates AC construction at
+these set sizes (68-1,205 patterns).  The FPGA switches rule sets
+30-86x faster than the userspace process it fronts, and the epoch
+ledger stayed unbroken across all 15 loads (2797 -> 2812).
+
+**E3 Host CPU cost.**  Snort: 11.5 s/GB (quiet small groups) rising
+with alert volume to 33.8-35.6 s/GB (`any/0`) and 51.0-53.2 s/GB
+(`literal/3`); density 0 -> 0.10 adds ~1-2 s/GB within a group.  The
+FPGA driver's host CPU was not instrumented this run (the honest
+number would be transport-driver cost, which at 0.026 MB/s effective
+is not comparable anyway); left open until a wire-rate ingest exists.
+
+**Reading.**  On identical bytes with identical pattern sets, the
+one-engine overlay matches at 32-50 MB/s sustained with exact
+correctness and swaps rule sets in 12-34 ms, where the software Snort
+it fronts restarts in ~1 s.  The switch-cost gap (30-86x) is the
+quantity the OS-style scheduler trades on; the transport gap (engine
+1,000x faster than its feed) is the measured bottleneck and the case
+for putting the engine on the wire path rather than behind host-fed
+frames.
