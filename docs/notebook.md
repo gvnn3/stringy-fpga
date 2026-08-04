@@ -3186,3 +3186,90 @@ same claim through the full wire path. The card picked up at epoch
 2792 with literal/0's table resident (0xadfb7146, where the previous
 demo left it) and ended at 2795 — the epoch ledger unbroken across
 every commit since first bring-up.
+
+## 2026-08-04 (cont.) — Reference: FPGA overlays in general, and ours
+
+Written up at the owner's request; belongs in the record because it
+places the A5 engine in the literature and states plainly what is
+borrowed and what is new.
+
+### Overlays in general
+
+An overlay is a fixed circuit, configured once through the slow
+toolchain, that is itself **programmable by data**: you compile the
+problem to the overlay's instructions or tables, and "loading a
+program" becomes a memory write instead of a bitstream. The trade is
+area and clock rate (the interpretation tax) for **binding time** —
+µs–ms instead of the minutes-to-hours of synthesis or the seconds of
+partial reconfiguration [Vipin & Fahmy, ACM CSUR 2018; UG909].
+
+The spectrum, decreasing generality and overhead:
+
+1. **Virtual FPGAs** — ZUMA [Brant & Lemieux, FCCM 2012]; fully
+   general, ~two orders of magnitude area cost.
+2. **CGRA-style FU meshes** — Intermediate Fabrics [Coole & Stitt,
+   CODES+ISSS 2010]; DSP-block overlays [Jain, Maskell & Fahmy,
+   ~2015–16; chapter in *FPGAs for Software Programmers*, 2016].
+3. **Soft processors** — VIPERS [Yu & Lemieux, FPGA 2008], VENICE
+   [Severance & Lemieux, FPT 2012], GRVI Phalanx [Gray, FCCM 2016];
+   PipeRench [Goldstein et al., ISCA 1999] the ancestor.
+4. **Domain-specific table-programmable engines** — one fixed datapath
+   with loadable content: van Lunteren's B-FSM [MICRO 2012], Tan &
+   Sherwood's bit-split matchers with RAM tables [ISCA 2005]. Small
+   overhead; generality = "whatever fits a table."
+
+Pattern matching splits on exactly this axis: pattern-in-fabric
+(Sidhu & Prasanna FCCM 2001; Hutchings FCCM 2002; Cho &
+Mangione-Smith FCCM 2004) is fast but re-synthesizes per rule change;
+pattern-in-memory (Tan–Sherwood, van Lunteren, Becchi & Crowley 2007)
+swaps tables under a fixed engine. This project implements both sides
+and measured the boundary between them.
+
+### Ours, specifically
+
+The overlay here is not pursued for portability or tooling — it is
+**the scheduling mechanism**. The frontier study measured that
+scheduling pays only while switch/phase ≲ 0.3, and JTAG PR's measured
+13.6 s confines that to minute-scale phases; the ratio is what retired
+PR and mandated an overlay (switch-cost-frontier.md, A5 §0).
+
+The engine (hw/rtl/pyro_overlay_engine.v) is type 4: a
+table-programmable Aho–Corasick walker in the Tan–Sherwood /
+van Lunteren lineage — 2,364 LUTs, bitmap+popcount transitions,
+53–55 B/state, the uncapped 39,647-state corpus trie in 50 URAM +
+108 BRAM36, PR-linked at 253.49 MHz, on the card now. It presents the
+same ports as a compiled circuit (pyro_circuit_overlay_top.v), so the
+loader cannot tell a data-programmed process from a compiled one.
+
+What is genuinely non-standard is the **identity layer** (A5 §§2–5).
+With pattern-in-fabric the bitstream hash IS the ruleset; an overlay's
+bitstream says only "I am the engine." Two-level identity repairs
+this: CIRC_ID (engine, baked) + TABLE_ID (rules — CRC-32C computed
+on-device over bytes received, gated at commit against the CRC the
+host declared before transfer) + EPOCH (per commit, stamped into every
+match, so nominations in flight across a swap attribute to the table
+that produced them — SR14′). Commit is fail-closed, proven on silicon
+by corrupting a transfer in flight.
+
+Measured: switch 13.9 ms + 0.150 ms/KB (63 swaps); ~700–1,100× under
+PR; scan 5–10 cyc/B (floor 5); ~2,700-swap endurance with the epoch
+ledger unbroken; 0 hard misses (SR3), +6 nominations on one group.
+
+Honest costs, stated not buried: ~5–10 cyc/B vs 1–8 B/cyc compiled
+(the interpretation tax); anchor-only over-approximation (safe under
+nominate-don't-decide); one resident table; and the working-set
+study's verdict that capacity, not swap speed, protects coverage —
+the overlay's case is scheduling and build time, never coverage.
+
+External references (venues from memory — run a citation pass before
+any of these go in a paper): Aho & Corasick CACM 1975 · Tan & Sherwood
+ISCA 2005 · van Lunteren MICRO 2012 · Brant & Lemieux FCCM 2012 ·
+Coole & Stitt CODES+ISSS 2010 · Jain & Fahmy (Springer 2016) · Yu &
+Lemieux FPGA 2008 · Severance & Lemieux FPT 2012 · Gray FCCM 2016 ·
+Goldstein ISCA 1999 · Sidhu & Prasanna FCCM 2001 · Cho &
+Mangione-Smith FCCM 2004 · Becchi & Crowley 2007 · Vipin & Fahmy CSUR
+2018 · Xilinx UG909.
+
+Internal: spec-amendments-a5-overlay.md · studies/switch-cost-frontier
+· studies/a5-working-set · pyro_overlay_engine.v ·
+pyro/overlay/{table,model}.py · telemetry.md · system-walkthrough §10.
