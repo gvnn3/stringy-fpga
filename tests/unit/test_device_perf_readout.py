@@ -28,8 +28,12 @@ def _hx(s):
 
 
 # R78.10(g): PERF_REPLY, slot=1, seq echoed, cycles=6, bytes=6.
-def _perf_reply(seq, cycles=6, nbytes=6):
+# wire=(seen, scanned, drops, noms) appends the OQ-2 additive extension
+# (payload bytes 16..31), as a wire-scan-capable child answers.
+def _perf_reply(seq, cycles=6, nbytes=6, wire=None):
     payload = struct.pack(">QQ", cycles, nbytes)
+    if wire is not None:
+        payload += struct.pack(">IIII", *wire)
     return ETH + pdev.encode_frame(pdev.KIND_PERF_REPLY, 1, seq, payload)
 
 
@@ -63,7 +67,8 @@ class _FakeTransport:
         self.closes += 1
 
 
-def _read(responder, *, slot=1, attempts=3, timeout=0.02):
+def _read(responder, *, slot=1, attempts=3, timeout=0.02,
+          with_wire=False):
     box = {}
 
     def factory(cfg):
@@ -72,7 +77,7 @@ def _read(responder, *, slot=1, attempts=3, timeout=0.02):
 
     cfg = pdev.DeviceConfig(iface="fake0", probe_attempts=attempts,
                             probe_timeout_s=timeout, transport_factory=factory)
-    result = pdev.read_perf_counters(cfg, slot=slot)
+    result = pdev.read_perf_counters(cfg, slot=slot, with_wire=with_wire)
     return result, box["t"]
 
 
@@ -144,3 +149,28 @@ def test_wrong_slot_request_carries_slot():  # R78.11: slot selects the circuit
     dec = pdev.decode_frame(t.sends[0][14:])
     assert dec.slot == 2
     assert dec.kind == pdev.KIND_PERF_REQUEST
+
+
+# ---- OQ-2 additive wire counters (with_wire=True) -----------------------
+
+def test_with_wire_decodes_wire_counters():
+    result, _ = _read(lambda seq, i: _perf_reply(
+        seq, 100, 50, wire=(5, 3, 2, 11)) if i == 0 else None,
+        with_wire=True)
+    assert result == (100, 50, pdev.WireCounters(5, 3, 2, 11))
+
+
+def test_with_wire_pre_wire_child_yields_none_counters():
+    # A pre-wire child answers the original 16-byte payload: cycles and
+    # bytes are still good, the wire counters read None -- never a raise.
+    result, _ = _read(lambda seq, i: _perf_reply(
+        seq, 100, 50) if i == 0 else None, with_wire=True)
+    assert result == (100, 50, None)
+
+
+def test_without_wire_ignores_extended_payload():
+    # Back-compat: the default read against a wire-capable child stays a
+    # 2-tuple -- existing callers never see a surprise third element.
+    result, _ = _read(lambda seq, i: _perf_reply(
+        seq, 100, 50, wire=(5, 3, 2, 11)) if i == 0 else None)
+    assert result == (100, 50)

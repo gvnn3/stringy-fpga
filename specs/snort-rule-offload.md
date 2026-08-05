@@ -1,7 +1,7 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 1.0.3 (§3.1 as-built block diagram, 2026-08-04)
+- **Version:** 1.0.4 (§3.2 OQ-2 wire-scan spike outcome, 2026-08-05)
 - **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
   post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
   adoption. Phases S1–S3 are authorized; S4 requires the further owner
@@ -348,6 +348,31 @@ switch)          -> full software Snort re-verifies (R19)
 telemetry collector (pyro-telemetry/1): switch times, scans,
 nominations by sid, OVF, perf -> JSON / Prometheus -> dashboard
 ```
+
+### 3.2 OQ-2 wire-scan path (informative, spike scope, 2026-08-05)
+
+The §10 OQ-2 feasibility spike (design record:
+`docs/studies/wire-rate-spike.md`) answered its question YES on
+this shell: a wiretap static v2 (CMAC RX arbitrated into `pyro_rp`
+alongside QDMA H2C, inside the unchanged R80 boundary) closed
+timing at 250 MHz with the CMAC datapath LIVE (overall WNS
++0.020 ns; the SF7/SF19 `txoutclk` group at +0.104), and pr_verify
+confirms existing partials re-link rather than redesign.  The
+child-side wire-scan path is built and sim-verified; its interface
+is normative in **PYRO R78.13** (v2.8.0): raw frames tagged tuser
+src `0x0040` bypass the R78 codec, are scanned whole against the
+active A5 table, reply only on nomination (`MATCH_REPLY`, own
+slot, wire-reply `seq`, SR14' epoch, `status` bit2 `WIRE`), and
+are dropped-and-counted when no table is committed or a load is
+open; `PERF_REPLY` carries additive wire counters.
+
+Scope guard: per the recorded OQ-2 decision this remains a
+**spike**.  The production shell stays tied off (the path is inert
+there), flashing the wiretap shell is an explicit owner decision
+(G4 — invalidates all cached partials, R82b), and adopting wire
+ingest into SNORT-PF's deployment model is a MAJOR version event
+on both specs (§9).  The per-engine rate (32-50 MB/s vs line
+rate) is priced, not solved.
 
 ---
 
@@ -706,7 +731,10 @@ Emergency rules: instant CPU coverage, FPGA coverage one synthesis later.
 - **OQ-2 — FEASIBILITY SPIKE ONLY, after S3.** No line-rate commitment.
   SF19's −0.015 ns result makes the spike worthwhile; the host-tap
   deployment model with SF17's 2.3 GiB/s ceiling is the accepted shape
-  for S1–S4.
+  for S1–S4.  *Outcome (2026-08-05, informative): spike run and
+  answered YES — see §3.2 and `docs/studies/wire-rate-spike.md`;
+  child interface normative at PYRO R78.13.  G4 (flash) and any
+  adoption remain owner decisions; the decision above is unchanged.*
 - **OQ-3 — DECIDE AT AC-S2-2.** `GROUP_MAX` stays 256 until the first
   group's post-route utilization is measured, per SR8/R74.
 - **OQ-4 — NOMINATION-ONLY THROUGH S3.** The SR17 suppression pilot
@@ -763,6 +791,15 @@ from this file and the PYRO spec, not from each other. Additionally:
 
 ## 12. Changelog
 
+- **1.0.4** (2026-08-05) — *§3.2 OQ-2 wire-scan spike outcome (PATCH —
+  informative), claude, owner-directed.* Records the OQ-2 spike
+  verdict (timing closed with a live CMAC; R80 boundary survives;
+  wire-scan path built and sim-verified) and annotates the §10 OQ-2
+  decision with its outcome.  The child-side interface is normative
+  in PYRO R78.13 (v2.8.0), not here, per §11's no-PYRO-modification
+  rule.  Spike scope is unchanged: no phase obligation, no
+  deployment-model change; adoption of wire ingest stays a MAJOR
+  event on both specs.
 - **1.0.3** (2026-08-04) — *§3.1 as-built block diagram (PATCH —
   informative), claude.* Adds an informative diagram of the system as
   deployed: the A5 overlay-engine path (table swaps at 13.9 ms +

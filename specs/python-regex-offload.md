@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.7.1 (§4.1 as-built block diagram, 2026-08-04)
+- **Version:** 2.8.0 (R78.13 wire-origin scan path, 2026-08-05)
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted
   for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on
   `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame
@@ -2918,7 +2918,8 @@ bytes**.
   - Field: `status`
   - Endian: BE
   - Meaning: bit0 `OVF` (more matches pending — host resumes via `start_off`,
-    R41/R47), bit1 `ERR`
+    R41/R47), bit1 `ERR`, bit2 `WIRE` (wire-origin reply, R78.13 —
+    v2.8.0, additive; never set on a `MATCH_REQUEST` reply)
 - **4**
   - Size: 4
   - Field: `reserved`
@@ -3114,7 +3115,9 @@ bytes**.
     `harness_version` (R47b). Per R79 this is a **partial-bitstream-only**
     change:
     the static shell and the R80 boundary are untouched, and no reflash is
-    required.
+    required. **v2.8.0:** a wire-scan-capable child (R78.13) answers a
+    **32-byte** payload — the 16 bytes above plus the wire counters at
+    bytes 16..31; a 16-byte reply means the extension is absent.
 
   - **R78.12 (transport equivalence — normative, v2.7.0/B1).** Both §7 transport
     bindings carry the **identical byte stream**: 14-byte L2 header + R78 frame,
@@ -3130,6 +3133,48 @@ bytes**.
     wedged parser). Consequence: R79's partial-only protocol-evolution guarantee
     is transport-independent, and a protocol change never forces a transport
     change (or vice versa).
+
+  - **R78.13 (wire-origin scan path — additive, v2.8.0/OQ-2).** A
+    generated child MAY implement the wire-scan path (design record:
+    `docs/studies/wire-rate-spike.md`; spike-scope per SNORT-PF §10
+    OQ-2 — this requirement specifies the interface so the surface is
+    change-controlled, it does not commit any shell to wire ingest).
+    Semantics, all normative where implemented:
+    - **Classification.** A frame whose R80 `tuser` src field has
+      bit 6 set (`0x0040`, the 250 MHz adapter's CMAC-0 tag) is a
+      **raw wire frame**: it bypasses the R78 codec entirely (no
+      ethertype/`MAGIC` check) and its FULL frame bytes, L2 headers
+      included, are the scan subject (over-nomination is benign; the
+      host re-verifies per R19/R47a). QDMA H2C frames carry the PF
+      bitmask (`0x0001`), so the path is **inert on the tied-off
+      production shell**.
+    - **Gating.** A wire frame is scanned only when a committed table
+      exists (epoch > 0) and no table load is open; otherwise it is
+      **dropped and counted** (feeding the engine mid-load would
+      corrupt the shadow table, A5 §3).
+    - **Reply only on nomination.** A scanned wire frame with zero
+      matches produces **no reply**. A nominating scan produces one
+      `MATCH_REPLY` with: the child's **own** `slot`; `seq` from a
+      dedicated **wire-reply counter** (0-based, increments per wire
+      reply — gaps let the host detect lost replies); payload epoch =
+      the producing table's epoch (SR14' attribution); and payload
+      `status` **bit2 `WIRE`** set. Header `flags` MUST remain 0
+      (R78.3) and `status` bit1 (`ERR`) MUST NOT be used as a wire
+      marker — both were tried and both break a compliant host
+      decoder (rejected frame; false error).
+    - **Accounting.** `PERF_REPLY` (R78.11) grows an **additive**
+      16-byte extension: payload bytes 16..31 = `wire_seen`,
+      `wire_scanned`, `wire_drops`, `wire_noms` (u32 BE each;
+      `length == 32`). `seen == scanned + drops` holds exactly. A
+      child without the wire path answers the original 16-byte
+      payload; hosts read the extension via
+      `pyro.device.read_perf_counters(with_wire=True)`, which yields
+      `WireCounters | None` — `None` is "extension absent", never a
+      fault. Wire scans share the R45a per-scan counters (reset on
+      each scan's START, W4) with host scans.
+    - Per R79 this is **partial-bitstream-only**; the R80 boundary
+      and static shell are untouched. Verified end-to-end against
+      the host model by `tests/hw/overlay_table_diff.py` (xsim).
 
 - **R79 (frame parsing lives inside `pyro_rp`).** The PYRO control-frame
   parser and
@@ -4080,6 +4125,23 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **2.8.0** (2026-08-05) — *R78.13 wire-origin scan path (MINOR —
+  added requirement), claude, owner-directed.* Specifies the OQ-2
+  wire-scan interface so the surface is change-controlled: raw wire
+  frames (tuser src bit 6) bypass the R78 codec and are scanned whole
+  against the active A5 table when one is committed and no load is
+  open (else dropped and counted); replies only on nomination
+  (`MATCH_REPLY`, own slot, dedicated 0-based wire-reply `seq`,
+  SR14' epoch, `status` bit2 `WIRE`); `PERF_REPLY` gains an additive
+  16-byte wire-counter extension (bytes 16..31, `length` 32) read by
+  `read_perf_counters(with_wire=True)`. R78.7 `status` gains bit2.
+  Two rejected encodings recorded normatively (header `flags` bit0
+  violates R78.3; `status` bit1 collides with `ERR`). Partial-only
+  per R79; inert on the tied-off production shell (H2C src is
+  `0x0001`); spike-scope per SNORT-PF §10 OQ-2 — no shell is
+  committed to wire ingest by this amendment. Verified by the
+  extended xsim differential (`tests/hw/overlay_table_diff.py`:
+  drop/scan/silence/attribution cases green, counters exact).
 - **2.7.1** (2026-08-04) — *§4.1 as-built block diagram (PATCH —
   informative), claude.* Adds an informative diagram of the deployed
   system: host layer placement (L1-L4, R63 service), physical paths

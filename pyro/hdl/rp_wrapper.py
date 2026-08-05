@@ -194,12 +194,16 @@ def _widen_template(n: int) -> str:
         " (R48) --------\n"
         "        ST_FEED: begin\n"
         "          eng_in_valid <= 1'b1;\n"
-        "          // corpus base = frame offset 40; word select + 64:1"
-        " byte mux.\n"
+        "          // corpus base = frame offset 40 (R78), or 0 for a"
+        " raw wire\n"
+        "          // frame (OQ-2: the whole frame is the subject). "
+        " Word select\n"
+        "          // + 64:1 byte mux.\n"
         "          // feed_addr <= rx_len (W5 clamp), so this never reads"
         " a lane\n"
         "          // that was not on the wire.\n"
-        "          feed_addr    = 16'd40 + feed_idx;\n"
+        "          feed_addr    = (wire_frame ? 16'd0 : 16'd40)"
+        " + feed_idx;\n"
         "          eng_in_data  <=\n"
         "              rx_words[feed_addr[10:6]]"
         "[ {feed_addr[5:0], 3'b000} +: 8 ];\n"
@@ -212,13 +216,15 @@ def _widen_template(n: int) -> str:
         f" (P2b v3) ----\n"
         f"        ST_FEED: begin\n"
         f"          eng_in_valid <= 1'b1;\n"
-        f"          // corpus base = frame offset 40 ({n}-aligned);"
-        f" each {n}-byte group\n"
+        f"          // corpus base = frame offset 40, or 0 for a raw wire\n"
+        f"          // frame (OQ-2); both are {n}-aligned, and each"
+        f" {n}-byte group\n"
         f"          // lives inside one 512-bit word, so this is one"
         f" word read + a\n"
         f"          // {n*8}-bit aligned part select.  feed_addr <="
         f" rx_len (W5 clamp).\n"
-        f"          feed_addr    = 16'd40 + feed_idx;\n"
+        f"          feed_addr    = (wire_frame ? 16'd0 : 16'd40)"
+        f" + feed_idx;\n"
         f"          eng_in_data  <= rx_words[feed_addr[10:6]]"
         f"[ {{feed_addr[5:{lo}], {lo+3}'b0}} +: {8*n} ];\n"
         f"          if ((corpus_len - feed_idx) <= 16'd{n}) begin\n"
@@ -800,6 +806,17 @@ module pyro_rp #(
   reg [31:0] tbl_err;      // 0 = ok, else an error the wrapper itself raised
   reg [15:0] tx_beat;
 
+  // OQ-2 wire-scan (docs/studies/wire-rate-spike.md).  A frame whose
+  // tuser src has bit 6 set (0x0040 = CMAC-0 via the 250 MHz adapter)
+  // is raw wire traffic, not R78: scan its bytes against the active
+  // table and reply (MATCH_REPLY, payload status bit2 = wire) ONLY
+  // when it nominates.  Inert on the tied-off shell: QDMA H2C carries
+  // src 0x0001, so wire_frame never sets.
+  reg        wire_frame;   // current frame is wire-tagged (beat-0 latch)
+  reg        load_open_w;  // a table load is open; wire scans must drop
+  reg [31:0] wire_seq;     // seq stamped into wire MATCH_REPLYs
+  reg [31:0] wire_seen, wire_scanned, wire_drops, wire_noms;
+
   // R78.11 PERF_REPLY scratch: the four R45a counter halves, latched in
   // ST_PERF.
   reg [31:0] perf_cyc_lo, perf_cyc_hi, perf_byt_lo, perf_byt_hi;
@@ -919,6 +936,13 @@ module pyro_rp #(
       tbl_bytes     <= 32'd0;
       tbl_caps      <= 32'd0;
       tbl_err       <= 32'd0;
+      wire_frame    <= 1'b0;
+      load_open_w   <= 1'b0;
+      wire_seq      <= 32'd0;
+      wire_seen     <= 32'd0;
+      wire_scanned  <= 32'd0;
+      wire_drops    <= 32'd0;
+      wire_noms     <= 32'd0;
       eng_csr_write <= 1'b0;
       eng_csr_addr  <= CSR_STATUS;
       eng_csr_wdata <= 32'b0;
@@ -982,9 +1006,12 @@ module pyro_rp #(
             // only accepted (tkeep) bytes so the clamp stays sound.
             if (rx_beat < NWORDS[15:0])
               rx_words[rx_beat[4:0]] <= s_axis_tdata;
-            if (rx_beat == 16'd0)
+            if (rx_beat == 16'd0) begin
               // snapshot beat 0 for header reads
               hdr <= s_axis_tdata;
+              // OQ-2: wire-origin latch (tuser src bit 6, adapter RX)
+              wire_frame <= s_axis_tuser[22];
+            end
             rx_len  <= rx_beat*64 + {9'd0, keep_bytes(s_axis_tkeep)};
             rx_beat <= rx_beat + 16'd1;
             if (s_axis_tlast) state <= ST_CLASSIFY;
@@ -997,7 +1024,30 @@ module pyro_rp #(
           ovf         <= 1'b0;
           feed_idx    <= 16'd0;
           build_idx   <= 16'd0;
-          if (!is_pyro) begin
+          if (wire_frame) begin
+            // ---- OQ-2 wire-scan --------------------------------------
+            // Raw wire frame: scan ALL its bytes (L2 headers included --
+            // over-nomination is benign, SR5) against the active table.
+            // Drop, counted, when no committed table exists or a load
+            // is open (feeding the engine then would corrupt the
+            // shadow).  Reply only on nominations: at line rate the
+            // reply path carries signal, never per-frame chatter.
+            wire_seen <= wire_seen + 32'd1;
+            if (load_open_w || tbl_epoch == 32'd0
+                || rx_len == 16'd0) begin
+              wire_drops <= wire_drops + 32'd1;
+              state   <= ST_RX;
+              rx_beat <= 16'd0;
+            end else begin
+              wire_scanned <= wire_scanned + 32'd1;
+              reply_kind   <= 3'd2;          // MATCH_REPLY (wire-flagged)
+              cl_tmp = rx_len;
+              if (cl_tmp > MAX_FRAME) cl_tmp = MAX_FRAME;
+              corpus_len <= cl_tmp;
+              reply_cap  <= MAXENT[15:0];
+              state <= ST_RESET_ENG;
+            end
+          end else if (!is_pyro) begin
             state   <= ST_RX;                // not a PYRO frame -> drop (R78.1)
             rx_beat <= 16'd0;
           end else if (h_kind == KIND_ID_REQ) begin
@@ -1110,6 +1160,9 @@ module pyro_rp #(
               eng_csr_wdata <= (tbl_kind == KIND_TBL_BEGIN)  ? TBL_OPEN
                              : (tbl_kind == KIND_TBL_COMMIT) ? TBL_COMMIT
                                                              : TBL_ABORT;
+              // OQ-2: wire scans are refused while a load is open --
+              // ST_FEED bytes would land in the shadow table.
+              load_open_w <= (tbl_kind == KIND_TBL_BEGIN);
             end
             tbl_idx <= 4'd0;
             state <= ST_TBL_STAT;
@@ -1287,10 +1340,12 @@ module pyro_rp #(
         // ---- stream corpus one byte/cycle into the engine (R48) --------
         ST_FEED: begin
           eng_in_valid <= 1'b1;
-          // corpus base = frame offset 40; word select + 64:1 byte mux.
+          // corpus base = frame offset 40 (R78), or 0 for a raw wire
+          // frame (OQ-2: the whole frame is the subject).  Word select
+          // + 64:1 byte mux.
           // feed_addr <= rx_len (W5 clamp), so this never reads a lane
           // that was not on the wire.
-          feed_addr    = 16'd40 + feed_idx;
+          feed_addr    = (wire_frame ? 16'd0 : 16'd40) + feed_idx;
           eng_in_data  <=
               rx_words[feed_addr[10:6]][ {feed_addr[5:0], 3'b000} +: 8 ];
           eng_in_last  <= (feed_idx == (corpus_len - 16'd1));
@@ -1306,8 +1361,18 @@ module pyro_rp #(
         // DONE (bit1) is a level, not a pulse, so polling is safe (W4).
         ST_DRAIN: begin
           ovf <= ovf | eng_csr_rdata[3];      // latch engine OVF each cycle
-          if (eng_csr_rdata[1])                // engine DONE (R48 status bit1)
-            state <= ST_BHDR;
+          if (eng_csr_rdata[1]) begin          // engine DONE (R48 status bit1)
+            if (wire_frame && match_count == 16'd0) begin
+              // OQ-2: a clean wire frame produces NO reply -- only
+              // nominations travel to the host.
+              state   <= ST_RX;
+              rx_beat <= 16'd0;
+            end else begin
+              if (wire_frame)
+                wire_noms <= wire_noms + {16'd0, match_count};
+              state <= ST_BHDR;
+            end
+          end
         end
 
         // ---- build the reply header + payload framing ------------------
@@ -1338,13 +1403,27 @@ module pyro_rp #(
                             (reply_kind == 3'd3) ? KIND_PERF_REPLY :
                             (reply_kind == 3'd4) ? KIND_TBL_STAT_REP :
                                                    KIND_MATCH_REPLY;
+          // OQ-2: a wire-origin MATCH_REPLY cannot echo the raw
+          // frame's bytes -- slot is this child's own, seq is the
+          // wire-scan counter, and the payload status word bit2
+          // marks wire origin.  Header flags stay 0: R78.3 forbids
+          // nonzero flags in version 1 and the host decoder rejects
+          // them.
           wacc[8*17 +: 8] = 8'h00;                       // flags
-          wacc[8*18 +: 8] = hdr[8*18 +: 8];      // slot echo (BE)
-          wacc[8*19 +: 8] = hdr[8*19 +: 8];
-          wacc[8*20 +: 8] = hdr[8*20 +: 8];      // seq echo (BE)
-          wacc[8*21 +: 8] = hdr[8*21 +: 8];
-          wacc[8*22 +: 8] = hdr[8*22 +: 8];
-          wacc[8*23 +: 8] = hdr[8*23 +: 8];
+          wacc[8*18 +: 8] = wire_frame ? SLOT[15:8]      // slot (BE)
+                                       : hdr[8*18 +: 8];
+          wacc[8*19 +: 8] = wire_frame ? SLOT[7:0]
+                                       : hdr[8*19 +: 8];
+          wacc[8*20 +: 8] = wire_frame ? wire_seq[31:24] // seq (BE)
+                                       : hdr[8*20 +: 8];
+          wacc[8*21 +: 8] = wire_frame ? wire_seq[23:16]
+                                       : hdr[8*21 +: 8];
+          wacc[8*22 +: 8] = wire_frame ? wire_seq[15:8]
+                                       : hdr[8*22 +: 8];
+          wacc[8*23 +: 8] = wire_frame ? wire_seq[7:0]
+                                       : hdr[8*23 +: 8];
+          if (wire_frame)
+            wire_seq <= wire_seq + 32'd1;
           wacc[8*26 +: 8] = 8'h00;                       // reserved
           wacc[8*27 +: 8] = 8'h00;
           if (reply_kind == 3'd4) begin
@@ -1442,9 +1521,29 @@ module pyro_rp #(
               wacc[8*41 +: 8] = perf_byt_lo[23:16];
             wacc[8*42 +: 8] = perf_byt_lo[15:8];
               wacc[8*43 +: 8] = perf_byt_lo[7:0];
+            // OQ-2 additive extension (payload bytes 16-31): the wire
+            // counters seen/scanned/drops/noms, each u32 BE.  Length
+            // 16 -> 32; pre-wire hosts read the first 16 bytes only.
+            wacc[8*25 +: 8] = 8'h20;             // length = 32
+            wacc[8*44 +: 8] = wire_seen[31:24];
+              wacc[8*45 +: 8] = wire_seen[23:16];
+            wacc[8*46 +: 8] = wire_seen[15:8];
+              wacc[8*47 +: 8] = wire_seen[7:0];
+            wacc[8*48 +: 8] = wire_scanned[31:24];
+              wacc[8*49 +: 8] = wire_scanned[23:16];
+            wacc[8*50 +: 8] = wire_scanned[15:8];
+              wacc[8*51 +: 8] = wire_scanned[7:0];
+            wacc[8*52 +: 8] = wire_drops[31:24];
+              wacc[8*53 +: 8] = wire_drops[23:16];
+            wacc[8*54 +: 8] = wire_drops[15:8];
+              wacc[8*55 +: 8] = wire_drops[7:0];
+            wacc[8*56 +: 8] = wire_noms[31:24];
+              wacc[8*57 +: 8] = wire_noms[23:16];
+            wacc[8*58 +: 8] = wire_noms[15:8];
+              wacc[8*59 +: 8] = wire_noms[7:0];
             word_acc <= wacc;
             txw_en = 1'b1; txw_sel = 5'd0; txw_data = wacc;      // flush word 0
-            tx_len  <= 16'd44;
+            tx_len  <= 16'd60;
             tx_beat <= 16'd0;
             state   <= ST_TX;
           end else begin
@@ -1456,8 +1555,12 @@ module pyro_rp #(
             wacc[8*25 +: 8] = (16'd8 + (match_count * 16'd24)) & 16'hFF;
             wacc[8*28 +: 8] = match_count[15:8];
               wacc[8*29 +: 8] = match_count[7:0];
-            // status bit0 OVF
-            wacc[8*30 +: 8] = 8'h00;             wacc[8*31 +: 8] = {7'd0, ovf};
+            // status bit0 OVF, bit2 wire-origin (OQ-2, additive).
+            // NOT bit1: R78.7 defines bit1 as ERR, so a wire marker
+            // there would read as an errored reply to a compliant
+            // host (the same trap as the header-flags draft).
+            wacc[8*30 +: 8] = 8'h00;
+            wacc[8*31 +: 8] = {5'd0, wire_frame, 1'b0, ovf};
             // A5 §3: payload bytes 4-7 (frame 32-35) were reserved and now
             // carry the EPOCH of the table that produced these matches --
             // the SR14' attribution gate.  Additive: a pre-A5 device wrote

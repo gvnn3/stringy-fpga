@@ -20,6 +20,7 @@ module tb_pyro_rp_wd;
   reg  [511:0] td = 0;
   reg  [63:0]  tk = 0;
   reg          tl = 0;
+  reg  [47:0]  tu = 0;    // per-beat tuser (OQ-2: src 0x0040 = wire)
   wire         trdy;
   wire         mv;
   wire [511:0] md;
@@ -30,7 +31,7 @@ module tb_pyro_rp_wd;
   pyro_rp dut (
     .clk(clk), .rstn(rstn),
     .s_axis_tvalid(tv), .s_axis_tdata(td), .s_axis_tkeep(tk),
-    .s_axis_tlast(tl), .s_axis_tuser(48'd0), .s_axis_tready(trdy),
+    .s_axis_tlast(tl), .s_axis_tuser(tu), .s_axis_tready(trdy),
     .m_axis_tvalid(mv), .m_axis_tdata(md), .m_axis_tkeep(mk),
     .m_axis_tlast(ml), .m_axis_tuser(mu), .m_axis_tready(1'b1));
 
@@ -43,6 +44,7 @@ module tb_pyro_rp_wd;
   reg [511:0] beats_d [0:MAXB-1];
   reg [63:0]  beats_k [0:MAXB-1];
   reg         beats_l [0:MAXB-1];
+  reg [47:0]  beats_u [0:MAXB-1];
 
   integer i, c, w;
   initial begin
@@ -50,11 +52,13 @@ module tb_pyro_rp_wd;
     $readmemh("stim_d.memh", beats_d);
     $readmemh("stim_k.memh", beats_k);
     $readmemb("stim_l.memb", beats_l);
+    $readmemh("stim_u.memh", beats_u);
     repeat (5) @(negedge clk);
     rstn = 1;
     repeat (2) @(negedge clk);
     for (i = 0; i < NBEATS; i = i + 1) begin
       tv = 1; td = beats_d[i]; tk = beats_k[i]; tl = beats_l[i];
+      tu = beats_u[i];
       @(posedge clk);
       w = 0;
       while (!trdy) begin

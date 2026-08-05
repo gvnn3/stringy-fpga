@@ -650,13 +650,30 @@ def _parse_id_reply(frame: bytes, expect_seq: int) -> Optional[int]:
     return struct.unpack(">I", dec.payload[0:4])[0]  # static_shell_id (R78.5)
 
 
+class WireCounters(NamedTuple):
+    """OQ-2 wire-scan counters (PERF_REPLY additive extension).
+
+    Present only on a wire-scan-capable child (payload length 32);
+    a pre-wire child answers the original 16-byte payload and callers
+    see ``None`` instead.  ``seen == scanned + drops`` holds with no
+    slack: every wire frame is exactly one of scanned or dropped.
+    """
+    seen: int      # wire frames that reached the wrapper
+    scanned: int   # frames actually streamed through the engine
+    drops: int     # refused: no committed table / load open / empty
+    noms: int      # total nominations produced by wire scans
+
+
 def read_perf_counters(config: DeviceConfig,
-                       slot: int = 1) -> Optional[Tuple[int, int]]:
+                       slot: int = 1, *, with_wire: bool = False):
     """Read the resident circuit's R45a counters via ``PERF_REQUEST`` (R78.11).
 
     Sends ``PERF_REQUEST`` for ``slot`` (up to ``probe_attempts`` attempts,
     ``probe_timeout_s`` each — the R84 budget, same shape as the probe) and
-    returns ``(cycles, bytes)`` from the ``PERF_REPLY``.
+    returns ``(cycles, bytes)`` from the ``PERF_REPLY``.  With
+    ``with_wire=True`` returns ``(cycles, bytes, WireCounters | None)``
+    instead — ``None`` when the child predates the OQ-2 wire-scan
+    extension (16-byte payload).
 
     Returns ``None`` when no ``PERF_REPLY`` arrives — the R78.11 **"counters
     unavailable"** disposition, which is the *expected* outcome against a child
@@ -722,7 +739,16 @@ def read_perf_counters(config: DeviceConfig,
                         f"malformed PERF_REPLY: payload length {dec.length} "
                         f"< 16 (R78.11)")
                 cycles, nbytes = struct.unpack(">QQ", dec.payload[0:16])
-                return (cycles, nbytes)
+                if not with_wire:
+                    return (cycles, nbytes)
+                # OQ-2 additive extension: 4 x u32 BE wire counters at
+                # payload bytes 16..31 (length 32).  A pre-wire child
+                # answers length 16 -> wire counters unavailable (None).
+                wire = None
+                if dec.length >= 32:
+                    wire = WireCounters(
+                        *struct.unpack(">IIII", dec.payload[16:32]))
+                return (cycles, nbytes, wire)
         return None
     finally:
         transport.close()

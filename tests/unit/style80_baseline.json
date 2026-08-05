@@ -7,5 +7,8 @@
 "hw/pyro_plugin/box_250mhz/box_250mhz_address_map.v": 11,
 "hw/pyro_plugin/box_250mhz/box_250mhz_axi_crossbar.tcl": 6,
 "hw/pyro_plugin/box_250mhz/box_250mhz_axis_switch.tcl": 2,
+"hw/pyro_plugin_wiretap/box_250mhz/box_250mhz_address_map.v": 11,
+"hw/pyro_plugin_wiretap/box_250mhz/box_250mhz_axi_crossbar.tcl": 6,
+"hw/pyro_plugin_wiretap/box_250mhz/box_250mhz_axis_switch.tcl": 2,
 "specs/python-regex-offload.md": 9
 }

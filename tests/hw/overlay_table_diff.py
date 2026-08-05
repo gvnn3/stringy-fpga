@@ -22,6 +22,13 @@ Checks, in order of what would hurt most to get wrong:
   3. matches equal :mod:`pyro.overlay.model` on the same subject
   4. an out-of-order chunk is REFUSED (error 8) and leaves the active table
      untouched -- the fail-closed property, tested by trying to break it
+  5. the OQ-2 wire-scan path (docs/studies/wire-rate-spike.md): a raw
+     frame tagged tuser src 0x0040 is scanned against the active table
+     and answers ONLY when it nominates (MATCH_REPLY, payload status
+     bit2, header flags 0 per R78.3, slot = the child's own, seq = the
+     wire-reply counter, epoch = SR14' attribution); wire frames seen
+     before any commit or while a load is open are dropped and counted;
+     PERF_REPLY's additive wire counters account for every one of them
 
 Run:  .venv-pyro/bin/python3 tests/hw/overlay_table_diff.py
 Exits 2 if the pinned Vivado is absent (honest skip).
@@ -48,6 +55,21 @@ ENGINE_ID = 0x0A5E0001
 MAXFRAME = 9600
 MAXPAY = pdev.MAX_PAYLOAD_JUMBO
 ETH_REQ = bytes(6) + b"\x02\x00\x00\x00\x00\x01" + b"\x88\xb5"
+
+# tuser = {dst[15:0], src[15:0], size[15:0]} (R80).  The wrapper latches
+# src bit 6 (tuser[22]) at beat 0: 0x0040 is the adapter's CMAC-0 tag
+# (packet_adapter_rx.sv), 0x0001 the QDMA PF bitmask.
+SRC_HOST = 0x0001
+SRC_WIRE = 0x0040
+
+# Raw (non-R78) wire frames.  MAC/ethertype bytes are non-ASCII so no
+# anchor can hide in the L2 header; the model scans the FULL frame, so
+# any accidental hit would be caught, not masked.
+WIRE_ETH = (b"\x02\x00\x00\x00\x00\x63" + b"\x02\x00\x00\x00\x00\x64" +
+            b"\x08\x00")
+W_NOM = WIRE_ETH + b"telemetry: the attack dropped malware on the host"
+W_CLEAN = WIRE_ETH + b"the quick brown fox jumps over the lazy dog"
+W_NOM2 = WIRE_ETH + b"repacked malware rides a second attack wave"
 
 
 def frame_to_beats(frame: bytes):
@@ -109,18 +131,32 @@ def main(argv=None):
 
     # ---- compose the frame sequence -------------------------------------
     cap = MAXPAY - 12
-    frames, plan = [], []
+    frames, plan, wire_want = [], [], []
     seq = 0
 
     def add(kind, payload, tag):
         nonlocal seq
         seq += 1
-        frames.append(req(kind, seq, payload))
+        frames.append((req(kind, seq, payload), SRC_HOST))
         plan.append((seq, kind, tag))
 
+    def add_wire(frame, tag, nominate):
+        """Interleave a raw wire frame.  nominate=True records the
+        expected wire MATCH_REPLY (in arrival order); False asserts
+        silence -- a dropped or clean wire frame must answer nothing."""
+        frames.append((frame, SRC_WIRE))
+        if nominate:
+            wire_want.append((tag, frame))
+
+    # Before any table exists (epoch 0) a wire frame -- even one full of
+    # anchors -- must be dropped and counted, never scanned.
+    add_wire(W_NOM, "wire-preload", False)
     add(pdev.KIND_TABLE_BEGIN,
         struct.pack(">IIQIHH", otable.TABLE_FORMAT_VERSION, ENGINE_ID,
                     len(image), want_id, 0, 0), "begin")
+    # While the load is open, wire bytes would land in the shadow table:
+    # the wrapper must drop (and count) this one too.
+    add_wire(W_NOM, "wire-during-load", False)
     off = 0
     while off < len(image):
         n = min(cap, len(image) - off)
@@ -130,6 +166,10 @@ def main(argv=None):
         off += n
     add(pdev.KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0), "commit")
     add(pdev.KIND_TABLE_STATUS_REQUEST, b"", "status")
+    # Committed table live: a nominating wire frame answers with a wire
+    # MATCH_REPLY, a clean one answers with silence.
+    add_wire(W_NOM, "wire-nom", True)
+    add_wire(W_CLEAN, "wire-clean", False)
     add(pdev.KIND_MATCH_REQUEST, struct.pack(">IIHH", 0, 0, 61, 0) + subject,
         "match")
     # R45a counters for the scan just performed.  The wrapper resets them
@@ -164,8 +204,18 @@ def main(argv=None):
         off += n
     add(pdev.KIND_TABLE_COMMIT, struct.pack(">II", want_id, 0),
         "commit-corrupt")
+    # The refused commit must leave wire scanning on the SURVIVING table:
+    # this reply's epoch must still be the first commit's (a bumped epoch
+    # here would mean the corrupt image took after all -- SR14' would
+    # then attribute matches to a table that never validly existed).
+    add_wire(W_NOM2, "wire-after-refusal", True)
+    add(pdev.KIND_PERF_REQUEST, b"", "perf-final")
 
-    beats = [b for f in frames for b in frame_to_beats(f)]
+    beats = []
+    for fbytes, src in frames:
+        tu = (src << 16) | (len(fbytes) & 0xFFFF)
+        for data, keep, last in frame_to_beats(fbytes):
+            beats.append((data, keep, last, tu))
     print("driving %d frames / %d beats" % (len(frames), len(beats)))
 
     # ---- run it ---------------------------------------------------------
@@ -180,11 +230,13 @@ def main(argv=None):
             f.write(open(os.path.join(REPO, "hw", "rtl", name)).read())
     with open(os.path.join(work, "stim_d.memh"), "w") as fd, \
          open(os.path.join(work, "stim_k.memh"), "w") as fk, \
-         open(os.path.join(work, "stim_l.memb"), "w") as fl:
-        for data, keep, last in beats:
+         open(os.path.join(work, "stim_l.memb"), "w") as fl, \
+         open(os.path.join(work, "stim_u.memh"), "w") as fu:
+        for data, keep, last, tu in beats:
             fd.write("%s\n" % data[::-1].hex())
             fk.write("%016x\n" % keep)
             fl.write("%d\n" % (1 if last else 0))
+            fu.write("%012x\n" % tu)
 
     env = dict(os.environ,
                PATH=os.path.join(vivado, "bin") + ":" + os.environ["PATH"])
@@ -223,13 +275,25 @@ def main(argv=None):
     # ---- check ----------------------------------------------------------
     errors = []
     by_seq = {}
+    wire_replies = []
     for fr in replies:
         try:
+            # A wire MATCH_REPLY must decode with the SAME host decoder
+            # as everything else: R78.3 keeps header flags 0, so decode
+            # raising here on a wire reply is itself a failure.
             dec = pdev.decode_frame(fr[14:], max_payload=MAXPAY)
         except pdev.PyroFrameError as exc:
             errors.append("undecodable reply: %s" % exc)
             continue
-        by_seq[dec.seq] = dec
+        if (dec.kind == pdev.KIND_MATCH_REPLY and len(dec.payload) >= 4
+                and struct.unpack(">HH", dec.payload[0:4])[1] & 0x4):
+            wire_replies.append(dec)     # payload status bit2 = wire
+        else:
+            by_seq[dec.seq] = dec
+
+    # Model expectations for every wire frame that should nominate: the
+    # subject is the FULL raw frame (L2 headers included, SR5).
+    wire_exp = [(tag, wf, ref.scan(wf)[0]) for tag, wf in wire_want]
 
     def status_of(s):
         d = by_seq.get(s)
@@ -313,6 +377,22 @@ def main(argv=None):
         if nbytes and not (4.9 <= cycles / nbytes <= 20):
             errors.append("PERF cycles/byte %.2f outside [4.9, 20]"
                           % (cycles / nbytes))
+        # OQ-2 additive wire counters (payload bytes 16-31).  At this
+        # point: preload + during-load + nom + clean have been seen,
+        # nom + clean scanned, the two early ones dropped.  Slack-free:
+        # seen == scanned + drops or a frame went uncounted.
+        if len(dp.payload) < 32:
+            errors.append("PERF_REPLY payload %d B, want 32 -- wire "
+                          "counters missing" % len(dp.payload))
+        else:
+            ws, wsc, wd, wn = struct.unpack(">IIII", dp.payload[16:32])
+            print("PERF wire counters: seen=%d scanned=%d drops=%d "
+                  "noms=%d" % (ws, wsc, wd, wn))
+            n_nom = len(wire_exp[0][2])
+            if (ws, wsc, wd, wn) != (4, 2, 2, n_nom):
+                errors.append("wire counters (seen,scanned,drops,noms)="
+                              "(%d,%d,%d,%d) != (4,2,2,%d)"
+                              % (ws, wsc, wd, wn, n_nom))
 
     s_bad = [s for s, k, t in plan if t == "bad-offset"][0]
     stb = status_of(s_bad)
@@ -351,13 +431,82 @@ def main(argv=None):
               % (stcc.active_table_id, stcc.epoch,
                  bool(stcc.status_flags & 0x8)))
 
+    # ---- OQ-2 wire replies ----------------------------------------------
+    # Exactly one reply per nominating wire frame, in arrival order --
+    # the dropped and clean frames answered with silence or the count
+    # here would be off.  wire_seq counts wire REPLIES from 0.
+    if len(wire_replies) != len(wire_exp):
+        errors.append("%d wire MATCH_REPLYs, expected %d (%s)"
+                      % (len(wire_replies), len(wire_exp),
+                         [t for t, _, _ in wire_exp]))
+    for i, (dec, (tag, wf, wm)) in enumerate(zip(wire_replies, wire_exp)):
+        count, mstat = struct.unpack(">HH", dec.payload[0:4])
+        epoch = struct.unpack(">I", dec.payload[4:8])[0]
+        got = set()
+        for j in range(count):
+            base = 8 + j * 24
+            start, end, pid, flags = struct.unpack(
+                "<QQII", dec.payload[base:base + 24])
+            got.add((pid, end))
+        want = {(m.pattern_id, m.end) for m in wm}
+        print("wire MATCH_REPLY[%d] (%s): count=%d status=0x%x epoch=%d "
+              "slot=%d seq=%d" % (i, tag, count, mstat, epoch,
+                                  dec.slot, dec.seq))
+        if dec.flags != 0:
+            errors.append("%s: header flags 0x%x != 0 (R78.3)"
+                          % (tag, dec.flags))
+        if dec.slot != SLOT:
+            errors.append("%s: slot %d != child's own %d"
+                          % (tag, dec.slot, SLOT))
+        if dec.seq != i:
+            errors.append("%s: wire seq %d != reply index %d"
+                          % (tag, dec.seq, i))
+        if mstat & 0x1:
+            errors.append("%s: unexpected OVF on a wire scan" % tag)
+        if mstat & 0x2:
+            errors.append("%s: ERR bit set on a wire reply (R78.7 "
+                          "bit1 is ERR, not the wire marker)" % tag)
+        if epoch != ref_epoch:
+            errors.append("%s: epoch %d != %d -- SR14' attribution "
+                          "broken%s" % (tag, epoch, ref_epoch,
+                          " (refused commit bumped the epoch)"
+                          if tag == "wire-after-refusal" else ""))
+        if got != want:
+            errors.append("%s: matches differ:\n  device %s\n  model  %s"
+                          % (tag, sorted(got), sorted(want)))
+
+    # perf-final: the LAST scan was the wire-after-refusal frame, so the
+    # R45a counters must show ITS byte count -- wire scans go through
+    # the same W4 reset-before-scan path as host scans -- and the wire
+    # counters must account for all five wire frames.
+    s_pf = [s for s, k, t in plan if t == "perf-final"][0]
+    dpf = by_seq.get(s_pf)
+    if dpf is None or dpf.kind != pdev.KIND_PERF_REPLY:
+        errors.append("no final PERF_REPLY")
+    elif len(dpf.payload) < 32:
+        errors.append("final PERF_REPLY payload %d B, want 32"
+                      % len(dpf.payload))
+    else:
+        cycles, nbytes = struct.unpack(">QQ", dpf.payload[0:16])
+        ws, wsc, wd, wn = struct.unpack(">IIII", dpf.payload[16:32])
+        print("final PERF: cycles=%d bytes=%d wire seen=%d scanned=%d "
+              "drops=%d noms=%d" % (cycles, nbytes, ws, wsc, wd, wn))
+        if nbytes != len(W_NOM2):
+            errors.append("final PERF bytes %d != wire frame length %d "
+                          "-- wire scans skip the W4 counter reset"
+                          % (nbytes, len(W_NOM2)))
+        want_noms = sum(len(m) for _, _, m in wire_exp)
+        if (ws, wsc, wd, wn) != (5, 3, 2, want_noms):
+            errors.append("final wire counters (%d,%d,%d,%d) != "
+                          "(5,3,2,%d)" % (ws, wsc, wd, wn, want_noms))
+
     if errors:
         print("\nTBL_DIFF: FAIL")
         for e in errors:
             print("  - %s" % e)
         return 1
     print("\nTBL_DIFF: PASS — table loaded, committed, attributed, and matched "
-          "over the real wire protocol")
+          "over the real wire protocol; wire-scan path verified")
     return 0
 
 

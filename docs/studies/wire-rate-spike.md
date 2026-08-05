@@ -152,7 +152,38 @@ plumbing is proven in sim.  What was priced as possibly-unclosable
 SNORT-PF §9: flashing is an explicit owner decision (invalidates
 all cached partials, R82b; QSPI/live-PCIe hazard), and any adoption
 beyond a spike is a MAJOR version event on both specs.  Also still
-open before wire traffic means anything on silicon: the rp_wrapper
-wire-scan path (partial-only), CMAC near-end loopback bring-up, and
-the engine-rate gap (32-50 MB/s/engine vs line rate) that banking
-would have to close.
+open before wire traffic means anything on silicon: CMAC near-end
+loopback bring-up, and the engine-rate gap (32-50 MB/s/engine vs
+line rate) that banking would have to close.
+
+**Wire-scan path (2026-08-05, partial-only, R79).**  The §3
+deferred item is built and verified in sim.  In the generated
+`rp_wrapper`: a frame whose tuser src has bit 6 set (0x0040,
+adapter CMAC-0 tag) bypasses the R78 codec and streams its FULL
+raw bytes (L2 headers included -- over-nomination is benign, SR5)
+through the engine; it answers ONLY when it nominates, with a
+MATCH_REPLY carrying the child's own slot, a wire-reply sequence
+counter, the active epoch (SR14'), and payload status bit2 as the
+wire-origin marker.  Two earlier drafts put the marker on existing
+normative surface and both would have broken a compliant host: the
+header flags byte (R78.3 forbids nonzero flags in version 1 -- the
+host decoder rejects the frame outright) and status bit1 (R78.7
+defines it as ERR -- the reply would decode but read as errored).
+Bit2 is the first genuinely unclaimed bit, which is where an
+additive extension belongs.  Wire frames seen before any commit
+or while a load is open are dropped (feeding the engine mid-load
+would corrupt the
+shadow) and counted; PERF_REPLY grows an additive 16-byte
+extension (payload bytes 16-31: seen/scanned/drops/noms, u32 BE;
+pre-wire children still answer 16 bytes, which
+`pyro.device.read_perf_counters(with_wire=True)` reports as
+`WireCounters | None`).  The xsim differential
+(`tests/hw/overlay_table_diff.py`) now interleaves five raw wire
+frames with the table-load sequence and checks all of it against
+the host model: drop-before-commit, drop-during-load, nominate
+(5/5 matches exact), clean-frame silence, and -- two-sided --
+that a CRC-refused commit leaves wire scanning on the surviving
+table at the surviving epoch.  Counters reconcile with zero
+slack (seen 5 = scanned 3 + drops 2, noms 11).  On the tied-off
+production shell the path is inert: QDMA H2C frames carry src
+0x0001, so the wire branch never triggers.
