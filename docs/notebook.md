@@ -17,28 +17,30 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+1. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+   Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
+2. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-2. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+3. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-3. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+4. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-4. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-5. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-6. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-7. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-8. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-9. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-10. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-11. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-12. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-13. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-14. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-15. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-16. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-17. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-18. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-19. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+5. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+6. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+7. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+8. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+9. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+10. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+11. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+12. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+13. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+14. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+15. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+16. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+17. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+18. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+19. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+20. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -3646,3 +3648,122 @@ evidence that no frame takes an unaccounted path.
   to work).
 - Adopt-or-retire decision: OQ-2 evidence is complete; adoption is
   a MAJOR event on both specs (SNORT-PF §9).
+
+---
+
+# EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+Core, Wrapper, Host RTT :complete:
+
+## 1. Hypothesis
+
+How long does one 64-byte wire frame take to match, on silicon?
+Decompose the per-packet cost into the engine scan proper (R45a
+per-scan counters), the whole-wrapper arrival-to-reply latency, and
+the host MATCH_REQUEST round trip for contrast.
+
+## 2. How
+
+- **Equipment:** nf-server06, U250 at 0000:02:00.0, OQ-2 wiretap
+  static resident (build_timestamp 0x08042258), `overlay_wire.bit`
+  wire-scan child in `pyro_rp` at 250 MHz (4 ns/cycle); CMAC-0
+  near-end PMA loopback ON; in-fabric TX generator, one 64 B frame
+  per 1024 cycles (~245k frames/s).
+- **Software:** `scripts/pyro_wire_timing.py` — R45a per-scan
+  counters via `read_perf_counters(cfg, slot=1, with_wire=True)`,
+  wire MATCH_REPLY capture on `ens2`, `pyro.overlay.model` as the
+  match oracle; Vivado 2025.2 xsim via
+  `tests/hw/overlay_table_diff.py` driving the generated
+  `rp_wrapper` beat-exactly (4096-state engine build for sim
+  speed; same wrapper RTL as the flashed child).
+- **Benchmarks:** clean table (scan floor, 0 noms; anchor "never
+  on any wire 5f0e") vs matching table (3 nominations per
+  generator frame), 200 R45a samples each; 10 wire frames in the
+  xsim latency measurement; 50 captured wire MATCH_REPLYs
+  validated against the model; 50 host MATCH round trips.
+
+### Key commands
+
+```bash
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_wire_timing.py
+.venv-pyro/bin/python3 tests/hw/overlay_table_diff.py   # xsim side
+```
+
+## 3. Observations
+
+Silicon, R45a per-scan counters, 64 B wire frames, 200 samples per
+table, 0 discarded — median **1292 ns** clean / **1628 ns**
+matching:
+
+| Table    | cyc min | cyc med | cyc max | cyc/B med | ns med | ns max |
+|----------|---------|---------|---------|-----------|--------|--------|
+| clean    | 323     | 323     | 332     | 5.05      | 1292   | 1328   |
+| matching | 407     | 407     | 416     | 6.36      | 1628   | 1664   |
+
+Sim (xsim, generated `pyro_rp` wrapper, 10 wire frames):
+
+| Arrival to             | cyc min | cyc med | cyc max |
+|------------------------|---------|---------|---------|
+| first reply beat       | 493     | 493     | 522     |
+| last reply beat        | 494     | 494     | 523     |
+| s_axis_tready re-high  | 495     | 495     | 524     |
+
+At 4 ns/cycle (min/median/max): first beat 1972/1972/2088 ns, last
+beat 1976/1976/2092 ns, busy 1980/1980/**2096 ns** — under the
+1024-cycle (4096 ns) generator gap.
+
+- 50/50 captured wire MATCH_REPLYs validated exactly against the
+  host model: entries {(pid 0, end 14), (pid 1, end 6), (pid 2,
+  end 14)}, slot 1, epoch 5, header flags 0, payload status bit2
+  set.
+- Host MATCH round trip (raw socket, wall clock): 50/50 replies,
+  **min 19 us / median 19 us / max 38 us**.
+- Tables independently rebuilt bit-exact: matching id 0x4df93cae
+  (1,264 bytes, 23 states); clean id 0x5a023b04 (23 states).
+- End state: clean table resident at **epoch 6**; counter deltas
+  over 1 s: seen == scanned == 246,597 frames (consistent with the
+  244,140.6 frames/s generator over a ~1.01 s interval), drops
+  delta 0, noms delta 0; seen - scanned == cumulative drops
+  (753,675) in both reads.
+
+## 4. Data analysis
+
+The three numbers nest. The R45a counters measure the engine scan
+alone — reset at scan start, latched at scan end — and the clean
+table sits on the FSM floor: 323 cycles / 64 B = 5.05 cyc/B, the
+5-cycle root-miss path almost exactly. The matching table pays
++84 cycles (407) because nominating bytes take the match-heavy FSM
+states and three nominations per frame cost emission bookkeeping.
+The xsim 493-cycle arrival-to-first-beat on the same RTL wraps
+~170 cycles of pipeline around that core: arbiter-side ingress,
+codec bypass, engine feed, and MATCH_REPLY construction/emission.
+The host RTT (19 us median) adds raw socket, onic, and QDMA both
+ways — **~12x** the 1628 ns in-fabric matching scan, so transport
+still dominates any host-fed scan; matching is a rounding error in
+the round trip.
+
+Headroom: the wrapper is busy at most 524 cycles per 64 B frame,
+half the 1024-cycle generator gap, so the ~245k frames/s wire load
+is sustainable with zero drops — which is exactly what silicon
+shows (seen == scanned, drops delta 0 over 1 s). The bound implies
+one engine saturates near ~477k 64 B frames/s (~30.5 MB/s,
+consistent with the 32-50 MB/s engine band); 64 B line rate at
+100GbE is 14.88M frames/s, ~31x beyond one engine — the banking
+problem, priced in the spike, now with a measured per-engine
+denominator. Caveat: the wrapper latency is sim-measured (the
+silicon-validated RTL, but a 4096-state engine build); only the
+scan-core numbers are direct silicon measurements.
+
+## 5. Ideas for future experiments
+
+- ILA-based on-fabric timestamps (arrival beat -> first reply
+  beat) to validate the 493-cycle wrapper number on silicon.
+- GAP_CYCLES sweep down toward the 524-cycle busy bound: find
+  where the adapter RX FIFO drop counters first move — measured
+  headroom, not inferred.
+- Bank N engines behind a spreader; the ~31x factor to 64 B line
+  rate is now a measured target.
+- Larger generator frames (MTU/jumbo variant): does cyc/B hold the
+  5-cycle floor as per-frame wrapper overhead amortizes?
+- Pipelined host MATCH requests to close the 12x transport gap for
+  host-fed scans (the P2 study showed window 2 already saturates).

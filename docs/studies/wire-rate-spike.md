@@ -238,3 +238,30 @@ adapter -> arbiter -> `pyro_rp` wire-scan -> engine -> wire
 MATCH_REPLY -> C2H -> host — is closed on silicon.  64-byte
 frames at 245k/s is 15.7 MB/s, inside the 32-50 MB/s engine
 rate; line rate still requires banking (priced in §5, unchanged).
+
+**Per-packet match timing (2026-08-05).**  Three numbers decompose
+the per-frame cost, all on the 64 B generator frame at 250 MHz
+(4 ns/cycle; `scripts/pyro_wire_timing.py`, full run recorded in
+the notebook).  (a) **Engine scan, on silicon**, from the R45a
+per-scan counters (200 samples each, 0 discarded): the clean table
+scans at the floor — median 323 cycles = 5.05 cycles/byte =
+1292 ns (max 332 cycles = 1328 ns); the matching table
+(3 nominations/frame) runs median 407 cycles = 6.36 cycles/byte =
+1628 ns (max 416 cycles = 1664 ns).  (b) **Whole-wrapper
+arrival->reply latency**, from the beat-exact xsim measurement on
+the same RTL (10 wire frames): wire-frame arrival to first reply
+beat min/median 493 cycles (1972 ns), max 522 (2088 ns); to the
+last reply beat 494/494/523 cycles (1976/1976/2092 ns).  The
+wrapper is busy (arrival until `s_axis_tready` re-asserts) for
+495/495/524 cycles (1980/1980/2096 ns) — under the 1024-cycle
+generator gap with ~2x headroom, so 245k frames/s is sustainable
+with zero drops, as the silicon counters confirm (seen == scanned,
+drops delta 0).  (c) **Host MATCH_REQUEST RTT** for contrast (raw
+socket, wall clock): 50/50 replies, min/median 19 us, max 38 us —
+~12x the in-fabric scan latency.  What each number includes: (a)
+is the engine alone — the counters reset at scan start and latch
+at scan end, so no ingress or reply cost; (b) adds the full
+wrapper pipeline (ingress, codec bypass, engine feed, MATCH_REPLY
+emission) but is sim-measured on the silicon-validated RTL; (c)
+adds raw socket, driver, and QDMA both ways — transport, not
+matching, remains the dominant term for host-fed scans.
