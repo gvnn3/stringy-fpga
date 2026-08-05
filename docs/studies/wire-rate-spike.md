@@ -187,3 +187,26 @@ table at the surviving epoch.  Counters reconcile with zero
 slack (seen 5 = scanned 3 + drops 2, noms 11).  On the tied-off
 production shell the path is inert: QDMA H2C frames carry src
 0x0001, so the wire branch never triggers.
+
+**CMAC near-end loopback bring-up (2026-08-05, on silicon,
+production shell).**  The §2 "verified, not assumed" item is
+verified: `scripts/pyro_cmac_loopback.py` programs near-end PMA
+loopback over the CMAC-0 AXI-Lite window (BAR2 0x8000 + 0x090,
+`GT_LOOPBACK` bit0) and the PCS **ALIGNS against its own TX** —
+`STAT_RX_STATUS` 0xc0 (local faults, no link) -> **0x3**
+(status=1, aligned=1) with RS-FEC active — then restores the card
+to as-found.  This works on the PRODUCTION shell because the CMAC
+and its AXI window live in the static region; only the box-plugin
+datapath is tied off.  Three facts earned the hard way, recorded
+for the wiretap bring-up: (a) the CMAC-0 subsystem reset (BAR2
+0x00C bit4) clears the CMAC AXI register bank to defaults, so
+`GT_LOOPBACK` must be written AFTER the reset, not before — the
+first attempt wrote it first and the reset silently erased it;
+(b) the shell ties the `gt_loopback_in` port to zero but the IP
+ORs it with the AXI `ctl_gt_loopback` bit
+(`cmac_usplus_0_wrapper.v:2390`), so the AXI path works despite
+the tie-off; (c) register access must use whole 32-bit stores —
+mmap slice writes may issue byte strobes the CMAC AXI slave
+ignores.  Remaining for wire traffic end-to-end: flash the
+wiretap shell (G4, owner) and re-run this tool with `--keep`; the
+TX generator's frames then return via this loop into `pyro_rp`.
