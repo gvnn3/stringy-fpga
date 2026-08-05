@@ -131,4 +131,28 @@ arbiter needed register isolation.
 
 **Fix.**  `pyro_axis_skid.sv` (2-deep, both directions register-
 sourced, full-throughput) instantiated on all three arbiter faces.
-G1 sim re-passes.  Build 2 pending.
+G1 sim re-passes.
+
+**Build 2 (2026-08-05, register-isolated arbiter) — TIMING MET.**
+Overall static WNS **+0.020 ns**, zero failing endpoints:
+`axis_aclk_0` +0.020 (the round-1 failures gone), `txoutclk_out[0]`
+**+0.104** and `rxoutclk_out[0]` +0.831 with the CMAC datapath
+live, `pyro_rp` group clean.  pr_verify PASS again (G3).  Artifacts
+in `hw/dfx/build-wiretap/` (flash image, locked DCP, ID-stub
+partial), reproducible via
+`hw/dfx/dfx_build.sh --plugin hw/pyro_plugin_wiretap
+--out hw/dfx/build-wiretap`.
+
+**Spike verdict (G1-G3 complete).**  OQ-2's feasibility question is
+answered YES on this shell: a wire-fed `pyro_rp` closes timing at
+250 MHz with a live CMAC datapath, the R80 boundary survives
+unchanged (existing partials re-link, not redesign), and the tap
+plumbing is proven in sim.  What was priced as possibly-unclosable
+(SF7) is measured closed with margin.  Remaining, per §4 G4 and
+SNORT-PF §9: flashing is an explicit owner decision (invalidates
+all cached partials, R82b; QSPI/live-PCIe hazard), and any adoption
+beyond a spike is a MAJOR version event on both specs.  Also still
+open before wire traffic means anything on silicon: the rp_wrapper
+wire-scan path (partial-only), CMAC near-end loopback bring-up, and
+the engine-rate gap (32-50 MB/s/engine vs line rate) that banking
+would have to close.

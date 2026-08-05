@@ -3388,3 +3388,44 @@ MB/s and goes negative once).
 - Table-size throughput curve (5.1 → 7.8 cyc/B): sweep intermediate
   table sizes to locate the fetch-stall knee.
 
+
+## 2026-08-05 — OQ-2 wire-rate spike: the CMAC closes, live, with margin
+
+The SNORT-PF §3 end-state work opened as the owner-authorized OQ-2
+feasibility spike (docs/studies/wire-rate-spike.md), motivated by
+the quantify experiment's 1,000x feed gap.  Design: all changes in
+the box_250mhz plugin — a `WIRE_TAP` parameter on `pyro_250mhz`
+(default 0 = tie-off byte-identical), a 2:1 packet-atomic arbiter
+merging CMAC RX with QDMA H2C into the RP's single AXIS ingress
+(wire frames distinguishable INSIDE the frozen R80 boundary by
+tuser src 0x0040 vs 0x0001), and a self-paced TX frame generator —
+deliberately not an H2C mirror, which could deadlock host control
+if the CMAC stopped draining (R85a lesson).  Spike builds are
+isolated (`hw/pyro_plugin_wiretap/`, `dfx_build.sh --plugin/--out`)
+so the production locked DCP is untouchable.
+
+Two builds to the verdict.  Build 1 (combinational arbiter):
+**the SF7 violation — priced at drafting as possibly unclosable,
+the reason line-rate was out of scope — CLOSED with the datapath
+live**: `txoutclk_out[0]` WNS +0.045 ns (vs −0.427 recorded at
+SF7, −0.015 waivable tied-off at SF19).  pr_verify passed, so the
+R80 boundary genuinely survives a wire-fed static.  What failed
+was self-inflicted: the combinational arbiter stretched the
+QDMA-slice → RP SLR crossing to 7 LUT levels (axis_aclk_0 −0.150,
+170 endpoints, including the tready fan-back into H2C slice CEs).
+Fix: `pyro_axis_skid` (2-deep register slice, both directions
+register-sourced) on all three arbiter faces.  Build 2:
+**BUILD_STATIC_TIMING_MET, overall WNS +0.020 ns, zero failing
+endpoints** — axis_aclk_0 +0.020, txoutclk +0.104, rxoutclk
++0.831, pyro_rp clean, pr_verify PASS again.
+
+G1-G3 are done; the OQ-2 answer on this shell is YES.  What
+remains is not feasibility: G4 (flashing the wiretap shell) is an
+explicit owner decision — it invalidates every cached partial
+(R82b) — and adoption beyond a spike is a MAJOR version event on
+both specs.  Functionally still open: the rp_wrapper wire-scan
+path (partial-only change), CMAC near-end loopback bring-up for
+cable-free wire tests, and the per-engine rate (32-50 MB/s vs
+line rate) that banking would have to close.  The lesson worth
+keeping: both "impossible" numbers this week — the 13.6 s context
+switch and the unclosable CMAC — fell to direct measurement.
