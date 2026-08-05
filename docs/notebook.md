@@ -17,26 +17,28 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+1. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+   Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
+2. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-2. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+3. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-3. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-4. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-5. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-6. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-7. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-8. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-9. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-10. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-11. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-12. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-13. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-14. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-15. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-16. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-17. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-18. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+4. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+5. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+6. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+7. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+8. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+9. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+10. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+11. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+12. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+13. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+14. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+15. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+16. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+17. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+18. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+19. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -3551,3 +3553,96 @@ partial-only (R79): existing statics re-link, nothing rebuilds.
   an end-to-end wire alert demo.
 - The engine-rate gap stands: 32-50 MB/s per engine vs line rate;
   banking/replication is the next hardware question.
+
+
+---
+
+# EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4 Flash,
+Loopback, 8.9M Frames :complete:
+
+## 1. Hypothesis
+
+With the wiretap shell flashed (G4, owner-authorized) and CMAC
+near-end loopback enabled, does live wire traffic flow through the
+complete OQ-2 path — TX generator -> loopback -> adapter -> arbiter
+-> `pyro_rp` wire-scan -> overlay engine -> wire MATCH_REPLY -> C2H
+-> host — with the R78.13 drop/scan/nominate semantics and SR14'
+epoch attribution intact at rate?
+
+## 2. How
+
+- **Equipment:** nf-server06, U250 at 0000:02:00.0, QSPI-flashed
+  with the OQ-2 wiretap static (build_timestamp 0x08042258); no
+  transceiver — CMAC-0 near-end PMA loopback.
+- **Software:** `overlay_wire.bit` (wire-scan wrapper + 40,960-state
+  overlay engine, linked vs the wiretap static at WNS +0.020,
+  pr_verify OK); onic netdev; `pyro.device` R78 host stack.
+- **Benchmarks:** `scripts/pyro_wire_e2e.py` three-phase experiment;
+  TX generator emits one 64 B frame / 1024 cycles (~245k frames/s).
+
+### Key commands
+
+```bash
+sudo rmmod onic                       # driver off a soon-dead card
+PYRO_FLASH_ALLOW_LIVE_PCIE=1 scripts/flash_u250.sh flash \
+    hw/dfx/build-wiretap/dcp/open_nic_shell.bit       # 16m24s
+hw/dfx/build_overlay_rm.sh \
+    --static hw/dfx/build-wiretap/dcp/static_routed_locked.dcp \
+    --out hw/dfx/build-wiretap --tag overlay_wire
+# cold power cycle, then:
+sudo scripts/pyro_wedge_recover.sh
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py \
+    load hw/dfx/build-wiretap/partials/overlay_wire.bit
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_wire_e2e.py
+```
+
+## 3. Observations
+
+Flash erase/program/verify clean; host uptime unbroken (onic was
+unloaded first — the 14 Jul live flash was benign only because the
+card sat on golden).  Cold boot: `10ee:903f`, wiretap
+build_timestamp, loopback aligned (`RX_STATUS` 0xc0 -> 0x3).
+
+| Phase (3 s window)   | seen    | scanned | drops   | noms    |
+|----------------------|---------|---------|---------|---------|
+| A: no table          | 734,648 | 0       | 734,648 | 0       |
+| B: clean table       | 734,409 | 734,409 | 0       | 0       |
+| C: matching table    | 733,918 | 733,918 | 0       | 733,918 |
+
+- B captured **0** wire MATCH_REPLYs; C captured 50/50 valid:
+  slot=1, **epoch=2**, pid=0, end=14, header flags=0.
+- Cumulative after the run: **seen 8,857,765 = scanned 8,104,168 +
+  drops 753,597** — zero slack over 8.9M frames.
+- A table swap (epoch 2 -> 3) succeeded WHILE wire frames arrived
+  at full rate.
+
+## 4. Data analysis
+
+Every R78.13 property verified in xsim this morning holds on
+silicon at ~245k frames/s: fail-closed counted drops without a
+table, reply-only-on-nomination (silence is accounted for, not
+assumed), and per-reply epoch attribution on live wire traffic.
+The 64 B x 245k/s load is 15.7 MB/s — comfortably inside the
+32-50 MB/s single-engine rate, which is why scanned == seen with
+zero drops in phases B/C; line rate remains a banking problem, as
+priced in the spike design.  The concurrent table swap shows the
+packet-atomic arbiter doing its one job: host control frames
+interleave with wire traffic, neither starving.  The wire counters'
+exact reconciliation over 8.9M frames is the strongest available
+evidence that no frame takes an unaccounted path.
+
+## 5. Ideas for future experiments
+
+- Sweep GAP_CYCLES down (denser wire load) to find where the
+  adapter RX FIFO's honest drop counters first move — the measured
+  headroom curve for a single engine.
+- Bank N engines behind a spreader to close the 15.7 MB/s ->
+  12.5 GB/s gap; the wire path is now measurable per-engine.
+- Snort-rule table (S2 group emitter) + crafted loopback corpus:
+  end-to-end sid attribution from wire traffic to daemon.
+- Real traffic ingest: QSFP DAC to a peer NIC instead of loopback
+  (needs a cable and a link partner; everything else is now known
+  to work).
+- Adopt-or-retire decision: OQ-2 evidence is complete; adoption is
+  a MAJOR event on both specs (SNORT-PF §9).

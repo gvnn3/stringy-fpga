@@ -210,3 +210,31 @@ mmap slice writes may issue byte strobes the CMAC AXI slave
 ignores.  Remaining for wire traffic end-to-end: flash the
 wiretap shell (G4, owner) and re-run this tool with `--keep`; the
 TX generator's frames then return via this loop into `pyro_rp`.
+
+**G4 EXECUTED + wire path end-to-end on silicon (2026-08-05,
+owner-authorized).**  QSPI flashed with the wiretap image (erase/
+program/verify clean, 16m24s, onic unloaded first, host uptime
+unbroken), `overlay_wire.bit` linked against the wiretap static
+(WNS +0.020, pr_verify OK, `hw/dfx/build_overlay_rm.sh`), cold
+power cycle, `10ee:903f` + build_timestamp 0x08042258 on boot.
+`scripts/pyro_wire_e2e.py` then ran the three-phase experiment at
+the TX generator's ~245k frames/s under near-end loopback:
+
+- **A (no table):** 734,648 seen = 734,648 drops in 3 s; nothing
+  scanned.  Fail-closed, fully counted.
+- **B (clean table):** 734,409 seen = 734,409 scanned, 0 noms,
+  0 replies captured.  Reply-only-on-nomination holds on silicon.
+- **C (matching table, anchor = the generator's constant 14-byte
+  prefix):** 733,918 scanned, 733,918 noms; 50/50 captured wire
+  MATCH_REPLYs valid — slot 1, epoch 2 (SR14' attribution on live
+  wire traffic), pid 0, end 14, header flags 0.
+
+Cumulative counters after the run reconcile with ZERO slack over
+8.9M frames: seen 8,857,765 = scanned 8,104,168 + drops 753,597.
+A table swap (epoch 2 -> 3) succeeded while wire frames arrived
+at full rate — host control and wire traffic coexist through the
+arbiter.  The complete OQ-2 path — TX gen -> CMAC loopback ->
+adapter -> arbiter -> `pyro_rp` wire-scan -> engine -> wire
+MATCH_REPLY -> C2H -> host — is closed on silicon.  64-byte
+frames at 245k/s is 15.7 MB/s, inside the 32-50 MB/s engine
+rate; line rate still requires banking (priced in §5, unchanged).
