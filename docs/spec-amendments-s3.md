@@ -1,9 +1,12 @@
 # Spec amendments for owner review — Phase S3 slate
 
-- **Target spec:** `specs/snort-rule-offload.md` (currently **v1.0.2**)
-- **Status:** PROPOSED — drafted during the S3 build-out (2026-07-28);
-  the code conservatively implements the proposed semantics where they are
-  strictly narrowing (never a silent widening of a spec claim).
+- **Target spec:** `specs/snort-rule-offload.md` (v1.0.2 at drafting;
+  **adopted against v2.0.0 -> v2.1.0**, not the v1.1.0 projected below)
+- **Status:** **ADOPTED — all four approved by the owner 2026-08-05**
+  (recorded in the spec's §12 v2.1.0 changelog); drafted during the S3
+  build-out (2026-07-28); the code conservatively implemented the
+  proposed semantics from AC-S3-2 on (never a silent widening of a
+  spec claim), so adoption changed the spec, not the code.
 - **Author:** coder, on evidence from the `phase2-snort` working tree
   (AC-S3-2 implementation + the AC-S2-3/AC-S3-2 differential runs)
 
@@ -65,7 +68,7 @@ unchanged at 64.
 size (re-scan overhead → 100%). Bounded by A2's span cap: tail < 384
 against 1,474-byte chunks (≤ 26% overhead), enforced at lowering time.
 
-☐ APPROVE A1 ☐ REJECT A1
+☑ **APPROVED A1** (owner, 2026-08-05) ☐ REJECT A1
 
 ## Amendment A2 — SR3 admission conditions (the sid-509 lesson)
 
@@ -99,7 +102,7 @@ Corpus effect: 245 chain rules, 91 `\A` rules, 36 fusions → 181 lowered
 slots; every other rule keeps the S1/S2-proven anchor-only circuit
 byte-for-byte.
 
-☐ APPROVE A2 ☐ REJECT A2
+☑ **APPROVED A2** (owner, 2026-08-05) ☐ REJECT A2
 
 ## Amendment A3 — SR6's group count, corrected informatively
 
@@ -109,7 +112,7 @@ over 8 port classes** under the implemented literal-class coalescing
 tokens would give 180 classes / 190 groups, almost all tiny. No normative
 change — GROUP_MAX and the packing rules stand — just the count.
 
-☐ APPROVE A3 ☐ REJECT A3
+☑ **APPROVED A3** (owner, 2026-08-05) ☐ REJECT A3
 
 ## Amendment A4 — the `\A`-slot overflow obligation (SR11)
 
@@ -123,7 +126,7 @@ SR19 as `ovf.anchored_floods`). Groups currently hold up to 59 `\A`
 slots (`literal/3`) against `out_cap = 61`; the flood rule makes the
 bound irrelevant to completeness.
 
-☐ APPROVE A4 ☐ REJECT A4
+☑ **APPROVED A4** (owner, 2026-08-05) ☐ REJECT A4
 
 ---
 

@@ -1,7 +1,7 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 2.0.0 (wire ingest ADOPTED — OQ-2 resolved, 2026-08-05)
+- **Version:** 2.1.0 (A1-A4 S3 amendment slate adopted, 2026-08-05)
 - **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
   post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
   adoption. Phases S1–S3 are authorized; S4 requires the further owner
@@ -304,7 +304,8 @@ residency manager (PYRO R64, single-tenant) → JTAG load_partial
 (R85/R86) → slot 1 (R87)                                              [SR10]
         ▼
 host filter daemon: header classify (var table, host-side) → chunk flows
-into MATCH_REQUESTs (≤1474 B, 213 B overlap tail) → map MATCH_REPLY
+into MATCH_REQUESTs (≤1474 B, per-group overlap tail, SR12/A1)
+-> map MATCH_REPLY
 pattern_id → gid:sid → nominate to Snort (R19 re-verify)         [SR11-SR15]
 ```
 
@@ -449,6 +450,31 @@ Requirements are numbered `SR1…` in this spec's own namespace.
   on any input its rule's compiled conjuncts would fire on — is mandatory and
   absolute.** Bounded repeats beyond `MAX_REPEAT = 255` (SF13: 63 patterns)
   degrade the rule to its anchor-only circuit — still sound.
+  **Admission conditions (amended A2, v2.1.0 — normative; the code
+  implemented these conservatively since AC-S3-2, and the sid-509
+  differential miss of 2026-07-28 demonstrated why):**
+  1. **Raw buffers only** for chains, positional prefixes, and pcre
+     fusion.  Positional windows count bytes in the buffer Snort
+     matches in; inspector normalization (%-decode, dechunk, gunzip)
+     changes offsets in sticky buffers, so a window lowered against
+     raw bytes can MISS.  Normalized-buffer rules keep anchor-only
+     circuits; their positional conjuncts stay dropped
+     (`anchor_strip`).
+  2. **`\A` offset/depth prefixes only for PDU-aligned rules**
+     (`udp`/`icmp`/`ip` with no `service` option).  Evidence: sid
+     509 (`depth 36`, service:http) — a raw-cursor depth binds to
+     the current PDU section of an inspected flow, not stream
+     offset 0; Snort 3 alerts on the anchor deep in a POST body.
+     TCP offset/depth therefore stays a dropped conjunct, pinned by
+     test (the AC-S2-3 differential caught the miss).
+  3. **Bounds.** Gap windows are `[max(0, distance),
+     distance + within]` — a superset of either reading of `within`
+     — and are REJECTED (never narrowed) above
+     `MAX_LOWER_GAP = 255` (SF6's MAX_REPEAT); floating spans are
+     capped at `SPAN_CAP = 384` (trim conjuncts to fit — the SR12
+     tail bound); pcre fuses only clean (SF13), `R`-flagged,
+     cursor-anchored (`^`/`\A`), bounded-span bodies in raw
+     buffers.
 - **SR4 (manifest declares over-approximation classes — PYRO R19c).** Each
   group manifest SHALL declare its over-approximation classes:
   `dropped_conjuncts`, `anchor_strip`, `case_fold`, `chunk_overlap`, plus
@@ -466,8 +492,12 @@ Requirements are numbered `SR1…` in this spec's own namespace.
 - **SR6 (stable grouping).** Rules SHALL be packed into groups keyed by
   destination-port class first (SF8: `$HTTP_PORTS`, `$ORACLE_PORTS`,
   literal-port families, `any`), then stable sid-order packing to
-  `GROUP_MAX = 256` rules/group (SF6 `MAX_PATTERNS`) → **~16 groups** for the
-  current corpus. Deleted sids leave **tombstones** rather than triggering
+  `GROUP_MAX = 256` rules/group (SF6 `MAX_PATTERNS`) → **21 groups over
+  8 port classes** for the current corpus (measured, amended A3
+  v2.1.0; literal-class coalescing — every non-variable port token
+  is one `literal` class; keying on raw port tokens would give 190
+  groups, almost all tiny). Deleted sids leave **tombstones** rather
+  than triggering
   repack, so a ruleset diff dirties the minimum number of groups (SR9).
   `GROUP_MAX` MAY be raised (512–1024) only on the basis of measured
   post-route utilization (SR8, PYRO R74 discipline), by spec amendment.
@@ -516,11 +546,31 @@ Requirements are numbered `SR1…` in this spec's own namespace.
   payloads into `MATCH_REQUEST`s (corpus ≤ 1,474 B, `start_off` continuation,
   `OVF` resume per R41/R78.7), and consume `MATCH_REPLY` 24-byte LE
   `pyro_match` entries. No new frame kinds are defined by this spec.
-- **SR12 (overlap tail).** For `flow:established` rules (SF12) the daemon
-  SHALL prepend a per-flow overlap tail of **213 bytes** (max anchor − 1,
-  SF10) to each chunk so anchors split across chunk/segment boundaries are
-  never missed. The tail length is derived from the loaded ruleset's max
-  anchor and recorded in the group manifest.
+  **`\A`-slot overflow obligation (amended A4, v2.1.0):** R78.7's
+  resume is host-side — the host re-sends a TRIMMED corpus, and
+  trimming re-anchors `\A`, so a `\A` slot's window in the truncated
+  remainder of an overflowed ring is unrecoverable by resume.  When
+  a buffer-aligned request (`tail_len == 0`) returns `OVF`, the
+  daemon SHALL nominate every `\A` slot's rules for that flow (a
+  sound over-approximation), counted in SR19 as
+  `ovf.anchored_floods`.  Groups currently hold up to 59 `\A` slots
+  against `out_cap = 61`; the flood rule makes that bound
+  irrelevant to completeness.
+- **SR12 (overlap tail — amended A1, v2.1.0).** For `flow:established`
+  rules (SF12) the daemon SHALL prepend a per-flow overlap tail of
+  **`max floating lowered span − 1` bytes, per group**, to each chunk
+  so matches split across chunk/segment boundaries are never missed.
+  A chain match spans anchor + gaps + trailing fragments (up to 309
+  bytes on the current corpus), so a tail derived from the max
+  *anchor* alone (the pre-A1 213-byte rule, SF10) under-covers every
+  chain whose span exceeds it — a silent SR3 completeness hole.
+  `\A`-anchored slots contribute **zero** to the tail (they match
+  only at buffer start, wholly inside the buffer-aligned request per
+  SR3's A2 admission conditions).  The per-group value SHALL be
+  recorded in the group manifest (`max_tail_span` / `overlap_tail`);
+  measured per-group tails on the current corpus range 5-308 bytes.
+  The tail is bounded by `SPAN_CAP = 384` (SR3), so re-scan overhead
+  against 1,474-byte chunks stays <= 26%.
 - **SR13 (deployment variables stay host-side, as data).** The daemon SHALL
   evaluate header predicates (SF8) against a host-side variable table
   (~13 entries: port lists + CIDR sets, SF16) and offer payloads only to the
@@ -650,7 +700,8 @@ existing `scripts/pyro_hw.py` transport.
 
 ### Phase S3 — Full build, residency, incremental updates
 
-- **AC-S3-1.** All ~16 groups build; the SR10 residency manager hot-swaps by
+- **AC-S3-1.** All groups build (21 measured, A3); the SR10 residency
+  manager hot-swaps by
   observed port mix; SR14 identity checks gate every attribution; SR19 stats
   export is live.
 - **AC-S3-2.** Content-chain lowering (`offset/depth/distance/within`) and
@@ -779,6 +830,15 @@ Emergency rules: instant CPU coverage, FPGA coverage one synthesis later.
   second capture NIC if measurement shows the blind window matters —
   decided at S3 design time).
 
+- **Provisional A6 (wire-OVF flood — noted at A1-A4 adoption,
+  2026-08-05).** A4's principle has a wire-side analog since v2.0.0:
+  a wire MATCH_REPLY (PYRO R78.13) can set OVF when one frame
+  produces > 61 nominations, and there is NO resume for wire frames
+  (no `start_off`; the frame is gone).  If Snort tables ever ride
+  the wire path, an A4-style obligation (on wire OVF, flood the
+  affected slots' rules) needs its own amendment.  Recorded, not
+  proposed — today's wire tables are diagnostic.
+
 The original questions are retained below for their analysis:
 
 - **OQ-1 (A5 boundary).** Does the owner want a future amendment slot opened
@@ -824,6 +884,25 @@ from this file and the PYRO spec, not from each other. Additionally:
 
 ## 12. Changelog
 
+- **2.1.0** (2026-08-05) — *A1-A4 S3 amendment slate ADOPTED (MINOR —
+  added admission conditions and a daemon obligation; owner approval
+  of all four, recorded in docs/spec-amendments-s3.md), claude,
+  owner-directed.* A1: SR12's overlap tail derives from the max
+  floating LOWERED SPAN per group (was max anchor − 1 = 213),
+  recorded in the manifest; the anchor-derived tail under-covered
+  every chain span beyond it.  A2: SR3 gains normative admission
+  conditions — raw buffers only; `\A` prefixes only for PDU-aligned
+  rules (the sid-509 differential miss, pinned by test); gap/span
+  bounds (MAX_LOWER_GAP 255, SPAN_CAP 384) with reject-never-narrow.
+  A3: SR6/AC-S3-1 group count corrected informatively to the
+  measured 21 groups over 8 classes.  A4: SR11 gains the `\A`-slot
+  overflow obligation — buffer-aligned OVF floods every `\A` slot's
+  rules (counted as `ovf.anchored_floods`, SR19), since host-side
+  resume trimming re-anchors `\A` and cannot recover those windows.
+  The code implemented A1/A2/A4 conservatively since AC-S3-2; this
+  slate makes the spec claim what the code enforces.  §10 gains a
+  provisional A6 note (wire-OVF analog of A4).  The slate targeted
+  v1.0.2->v1.1.0 when drafted; it lands on 2.0.0 as 2.1.0.
 - **2.0.0** (2026-08-05) — ***Wire ingest ADOPTED* (MAJOR — the
   version event OQ-2 priced; owner decision, recorded per §11),
   claude, owner-directed.* The wire-ingest static (PYRO v3.0.0 R90)
