@@ -1,17 +1,20 @@
 # Specification: Snort Community-Rule Offload to the PYRO PR Shell (SNORT-PF)
 
 - **Spec ID:** `snort-rule-offload`
-- **Version:** 1.0.4 (§3.2 OQ-2 wire-scan spike outcome, 2026-08-05)
+- **Version:** 2.0.0 (wire ingest ADOPTED — OQ-2 resolved, 2026-08-05)
 - **Status:** **ADOPTED** by the owner 2026-07-27 (see §12), with the
   post-draft facts SF17–SF20 (§1.3) and the §10 OQ decisions recorded at
   adoption. Phases S1–S3 are authorized; S4 requires the further owner
-  reviews noted in §6/§10.
+  reviews noted in §6/§10.  **Wire ingest adopted 2026-08-05** (the
+  OQ-2 MAJOR event, §12 v2.0.0): the wire-ingest static (PYRO R90) is
+  a supported deployment mode at the measured per-engine rate.
 - **Owner:** George Neville-Neil (adopted); drafted by Spec Writer 2026-07-15
 - **Date:** 2026-07-27
-- **Depends on:** `specs/python-regex-offload.md` (PYRO) **v2.7.0** — this spec
+- **Depends on:** `specs/python-regex-offload.md` (PYRO) **v3.0.0** — this spec
   reuses PYRO's shell, transport, synthesis, cache, residency, and honesty
   machinery by requirement-ID reference and adds no obligations to PYRO itself.
-  (Drafted against v2.5.0; the v2.7.0 deltas are captured as SF17/SF18.)
+  (Drafted against v2.5.0; v2.7.0 deltas are SF17/SF18; the v3.0.0
+  wire-ingest surface is R78.13 + R90, adopted here at v2.0.0.)
 
 ---
 
@@ -163,6 +166,24 @@ clause of SF4–SF7 where they conflict. None changes an SR obligation.
   from N=32→253). The 256-bit pend priority encoder cleared timing with
   0.44 MHz margin at N=253 — dpb=1 confirmed as the group width; dpb=8
   groups remain uncalibrated (SF18 caveat stands).
+- **SF22 (wire-ingest static closes timing LIVE — SF7/SF19 superseded,
+  2026-08-05).** The OQ-2 wiretap static (CMAC-0 RX arbitrated into
+  `pyro_rp`, PYRO R90) meets timing with the CMAC datapath live:
+  overall WNS +0.020 ns, `txoutclk_out[0]` +0.104 ns (vs −0.427 at
+  SF7 drafting, −0.015 waivable tied-off at SF19), pr_verify PASS —
+  the R80 boundary survives, partials re-link.  The "closure of SF7"
+  precondition this spec priced for any inline phase is MET.
+- **SF23 (wire path end-to-end + per-packet timing on silicon,
+  2026-08-05).** With the wiretap static flashed and CMAC near-end
+  loopback: R78.13 semantics verified at ~245k frames/s over 8.9M
+  frames with zero-slack counters (seen == scanned + drops exactly);
+  50/50 captured wire MATCH_REPLYs model-exact with live epoch
+  attribution.  Per-packet: engine scan floor 5.05 cyc/B (1.29 us
+  per 64-B frame), 6.36 cyc/B with 3 nominations (1.63 us); whole
+  wrapper arrival→reply 493 cycles (1.97 us, sim on the validated
+  RTL); host MATCH RTT 19 us median.  Per-engine bound ~477k 64-B
+  frames/s (~30.5 MB/s): 64-B line rate is ~31x beyond one engine —
+  banking, not feasibility, is the remaining gap.
 
 ### 1.2 Corpus facts (`snort3-community.rules`, 4,017 alert rules, full parse)
 
@@ -349,7 +370,7 @@ telemetry collector (pyro-telemetry/1): switch times, scans,
 nominations by sid, OVF, perf -> JSON / Prometheus -> dashboard
 ```
 
-### 3.2 OQ-2 wire-scan path (informative, spike scope, 2026-08-05)
+### 3.2 OQ-2 wire-scan path (ADOPTED 2026-08-05; see §12 v2.0.0)
 
 The §10 OQ-2 feasibility spike (design record:
 `docs/studies/wire-rate-spike.md`) answered its question YES on
@@ -366,13 +387,17 @@ slot, wire-reply `seq`, SR14' epoch, `status` bit2 `WIRE`), and
 are dropped-and-counted when no table is committed or a load is
 open; `PERF_REPLY` carries additive wire counters.
 
-Scope guard: per the recorded OQ-2 decision this remains a
-**spike**.  The production shell stays tied off (the path is inert
-there), flashing the wiretap shell is an explicit owner decision
-(G4 — invalidates all cached partials, R82b), and adopting wire
-ingest into SNORT-PF's deployment model is a MAJOR version event
-on both specs (§9).  The per-engine rate (32-50 MB/s vs line
-rate) is priced, not solved.
+Scope, as adopted (v2.0.0, owner decision 2026-08-05): wire ingest
+is a **supported deployment mode** — the wire-ingest static (PYRO
+R90) alongside the host-fed static, each with its own locked DCP
+and partial-compatibility domain (R82b; partials are valid only
+against the static they were linked to).  G4 was executed, the
+path verified end-to-end on silicon (SF22/SF23).  The adoption
+claim ceiling is the MEASURED per-engine rate (~30.5 MB/s, ~477k
+64-B frames/s bound; ~245k f/s demonstrated); **line-rate inline
+filtering remains out of scope** (§9) pending engine banking,
+which carries its own version event.  The host-tap deployment
+model (SF17) remains fully supported.
 
 ---
 
@@ -703,10 +728,14 @@ Emergency rules: instant CPU coverage, FPGA coverage one synthesis later.
   explicit owner amendment (provisional **A5**, OQ-1) through §11 — it is not
   proposed here. The Phase-S4 trie is ROM-baked at synthesis precisely to
   stay on the compiled-circuit side of that line.
-- **Line-rate inline filtering / CMAC tap / bump-in-the-wire.** Requires an
-  R80 boundary break, a static-shell rebuild (out of PYRO §12 scope), closure
-  of SF7's timing violation, and a MAJOR version event across both specs
-  (OQ-2).
+- **Line-rate inline filtering / bump-in-the-wire.** The CMAC tap
+  itself was adopted at v2.0.0 (PYRO R90, SF22/SF23) — it needed NO
+  R80 boundary break, and SF7's violation closed live.  What stays
+  out of scope is the LINE-RATE claim: one engine measures ~30.5
+  MB/s (~477k 64-B frames/s) vs 14.88M frames/s at 100GbE — the
+  ~31x gap is engine banking, a future MAJOR event of its own.
+  Wire ingest today is nomination at the per-engine rate with
+  honest, counted drops (adapter RX FIFO) beyond it.
 - **In-fabric TCP reassembly, HTTP normalization, decompression** (gzip,
   chunked, %-decode). SF11's normalized-buffer rules keep Snort as verifier
   forever; the overlap tail (SR12) is the only stream accommodation.
@@ -731,10 +760,14 @@ Emergency rules: instant CPU coverage, FPGA coverage one synthesis later.
 - **OQ-2 — FEASIBILITY SPIKE ONLY, after S3.** No line-rate commitment.
   SF19's −0.015 ns result makes the spike worthwhile; the host-tap
   deployment model with SF17's 2.3 GiB/s ceiling is the accepted shape
-  for S1–S4.  *Outcome (2026-08-05, informative): spike run and
-  answered YES — see §3.2 and `docs/studies/wire-rate-spike.md`;
-  child interface normative at PYRO R78.13.  G4 (flash) and any
-  adoption remain owner decisions; the decision above is unchanged.*
+  for S1–S4.  *Outcome (2026-08-05): spike run and answered YES —
+  see §3.2 and `docs/studies/wire-rate-spike.md`; child interface
+  normative at PYRO R78.13.  G4 executed same day (owner), wire
+  path verified end-to-end on silicon (SF23).*  **RESOLVED —
+  ADOPTED (owner decision 2026-08-05, the MAJOR event this OQ
+  priced): wire ingest is a supported deployment mode at the
+  measured per-engine rate (PYRO R90, §3.2, §12 v2.0.0); line rate
+  remains out of scope (§9) pending banking.**
 - **OQ-3 — DECIDE AT AC-S2-2.** `GROUP_MAX` stays 256 until the first
   group's post-route utilization is measured, per SR8/R74.
 - **OQ-4 — NOMINATION-ONLY THROUGH S3.** The SR17 suppression pilot
@@ -791,6 +824,21 @@ from this file and the PYRO spec, not from each other. Additionally:
 
 ## 12. Changelog
 
+- **2.0.0** (2026-08-05) — ***Wire ingest ADOPTED* (MAJOR — the
+  version event OQ-2 priced; owner decision, recorded per §11),
+  claude, owner-directed.* The wire-ingest static (PYRO v3.0.0 R90)
+  becomes a supported deployment mode alongside the host-fed shell.
+  Adds SF22 (live-CMAC timing close — SF7/SF19 superseded; the
+  "closure of SF7" precondition MET) and SF23 (end-to-end silicon
+  verification + per-packet timing: 5.05 cyc/B scan floor, 1.63 us
+  matched 64-B frame, ~477k frames/s per-engine bound).  §3.2
+  rescoped from spike to adopted; §9's inline bullet narrowed —
+  the CMAC tap is in scope, the LINE-RATE claim is not (the ~31x
+  banking gap keeps its own future MAJOR event); §10 OQ-2 marked
+  RESOLVED-ADOPTED.  Depends-on raised to PYRO v3.0.0.  No phase
+  obligations added: S1-S4 and the host-tap model are unchanged;
+  wire ingest is an additional deployment surface with honest,
+  counted drops beyond the per-engine rate.
 - **1.0.4** (2026-08-05) — *§3.2 OQ-2 wire-scan spike outcome (PATCH —
   informative), claude, owner-directed.* Records the OQ-2 spike
   verdict (timing closed with a live CMAC; R80 boundary survives;

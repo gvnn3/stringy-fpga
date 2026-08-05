@@ -1,7 +1,7 @@
 # Specification: Transparent Python Regex Offload to OpenNIC FPGA
 
 - **Spec ID:** `python-regex-offload`
-- **Version:** 2.8.0 (R78.13 wire-origin scan path, 2026-08-05)
+- **Version:** 3.0.0 (R90 wire-ingest static v2 ADOPTED, 2026-08-05)
 - **Status:** Draft (Phase 0 delivered on `phase0-pyro`; architecture inverted
   for Phase 1+; Phase 1 green; Phase 2 real-Vivado flow in progress on
   `phase1-pyro`; Phase 2b on-hardware bring-up enabled — control-frame
@@ -3136,9 +3136,9 @@ bytes**.
 
   - **R78.13 (wire-origin scan path — additive, v2.8.0/OQ-2).** A
     generated child MAY implement the wire-scan path (design record:
-    `docs/studies/wire-rate-spike.md`; spike-scope per SNORT-PF §10
-    OQ-2 — this requirement specifies the interface so the surface is
-    change-controlled, it does not commit any shell to wire ingest).
+    `docs/studies/wire-rate-spike.md`; interface change-controlled
+    here since v2.8.0, and ADOPTED as a supported deployment mode by
+    R90 in v3.0.0 — wire-ingest shell semantics live there).
     Semantics, all normative where implemented:
     - **Classification.** A frame whose R80 `tuser` src field has
       bit 6 set (`0x0040`, the 250 MHz adapter's CMAC-0 tag) is a
@@ -3965,6 +3965,45 @@ verified working as this user (FT4232H bridge; `hw_server` enumerates
   change
   `SHELL_VERSION` now (frozen-invariant respected).
 
+- **R90 (wire-ingest static v2 — ADOPTED, v3.0.0, owner decision
+  2026-08-05).** The wire-ingest shell (the OQ-2 "wiretap" static,
+  design record `docs/studies/wire-rate-spike.md`) is an **adopted,
+  supported deployment mode** alongside the host-fed shell — no
+  longer spike-scope.  Normative content:
+  - **Architecture.** `WIRE_TAP=1` on `pyro_250mhz`: CMAC-0 RX is
+    merged with QDMA H2C into the RP's single AXIS ingress by a 2:1
+    packet-atomic round-robin arbiter, register-isolated by 2-deep
+    skid slices on all three faces (`pyro_axis_wire_arb.sv`,
+    `pyro_axis_skid.sv`).  Backpressure propagates to both ports; a
+    stalled RP backs up into the adapter RX FIFO, whose drop
+    counters are the honest, counted loss point.  The **R80
+    boundary is unchanged** — wire frames are distinguished inside
+    it by tuser src (0x0040 vs 0x0001) — so partials are re-links
+    (R82b), never redesigns.  A self-paced TX frame generator
+    (64 B / 1024 cycles, `pyro_wire_tx_gen.sv`) is retained as
+    diagnostic stimulus for loopback testing; it is deliberately
+    decoupled from H2C so the wire side can never stall host
+    control (the R85a lesson, designed in).
+  - **Child behavior** is R78.13, unchanged; on the host-fed shell
+    the path stays inert (`WIRE_TAP=0` is byte-identical tie-off).
+  - **SF7 superseded.**  The historic `cmac_usplus` waiver
+    rationale ("the datapath is dead") no longer applies: with the
+    datapath LIVE the static closes at overall WNS +0.020 ns,
+    `txoutclk_out[0]` +0.104 ns, pr_verify PASS.
+  - **Rate honesty (normative claim ceiling).**  Adopted at the
+    MEASURED per-engine rate: scan floor 5.05 cycles/byte on
+    silicon; wrapper busy <= 524 cycles per 64-B frame (~477k
+    frames/s ~= 30.5 MB/s per engine); demonstrated sustained at
+    ~245k frames/s with zero drops over 8.9M frames.  **Line rate
+    is NOT claimed or implied** — closing the ~31x gap at 64 B is
+    engine banking, future work with its own version event.
+  - **Operational rule.**  The wire-ingest and host-fed statics are
+    distinct flashed images with distinct locked DCPs
+    (`hw/dfx/build-wiretap/` vs `hw/dfx/build/`); per R82b a
+    partial is valid only against the static it was linked to, and
+    the loader does not check — operators MUST load only partials
+    from the flashed static's own build tree.
+
 ---
 
 ## 11. Prerequisites, risks, and open items
@@ -4125,6 +4164,21 @@ defect and returns here.
 All amendments are recorded here per §13. Versioning is SemVer: MAJOR for
 interface/AC breaks, MINOR for added requirements, PATCH for clarifications.
 
+- **3.0.0** (2026-08-05) — *R90: wire-ingest static v2 ADOPTED
+  (MAJOR — deployment-model addition; owner decision), claude,
+  owner-directed.* The OQ-2 wiretap shell graduates from spike to a
+  supported deployment mode: CMAC-0 RX arbitrated into `pyro_rp`
+  inside the unchanged R80 boundary, R78.13 as the child contract,
+  SF7's dead-datapath waiver rationale superseded by a live-datapath
+  timing close (+0.020 ns overall, pr_verify PASS).  Adopted at the
+  measured per-engine rate (5.05 cyc/B scan floor, <=524-cycle
+  wrapper busy, ~245k frames/s demonstrated over 8.9M frames with
+  zero drops and 50/50 model-exact wire MATCH_REPLYs) — line rate
+  explicitly NOT claimed; banking is future work.  MAJOR because
+  the shell's deployment surface changes (two supported statics
+  with distinct partial-compatibility domains — the R90 operational
+  rule) even though every wire surface is additive.  Evidence:
+  docs/studies/wire-rate-spike.md §6; notebook entries 2026-08-05.
 - **2.8.0** (2026-08-05) — *R78.13 wire-origin scan path (MINOR —
   added requirement), claude, owner-directed.* Specifies the OQ-2
   wire-scan interface so the surface is change-controlled: raw wire

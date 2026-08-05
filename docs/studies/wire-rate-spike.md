@@ -1,6 +1,9 @@
 # OQ-2 wire-rate ingest feasibility spike (SNORT-PF §3 end-state)
 
-Branch: `phase2-snort`.  Status: in progress, opened 2026-08-04.
+Branch: `phase2-snort`.  Status: **COMPLETE — ADOPTED**, opened
+2026-08-04, all gates G1-G4 executed and the wire path verified
+end-to-end on silicon 2026-08-05; wire ingest adopted the same day
+(owner decision) as PYRO v3.0.0 R90 / SNORT-PF v2.0.0.
 Authorization: SNORT-PF §10, **OQ-2 — "FEASIBILITY SPIKE ONLY, after
 S3"** (owner decision at adoption, 2026-07-27).  S3 is complete; the
 fpga-vs-snort experiment (docs/studies/fpga-vs-snort.md §6) measured
