@@ -17,33 +17,36 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+1. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+   Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
+   :complete:
+2. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-2. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+3. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-3. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+4. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-4. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+5. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-5. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+6. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-6. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-7. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-8. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-9. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-10. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-11. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-12. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-13. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-14. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-15. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-16. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-17. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-18. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-19. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-20. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-21. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+7. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+8. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+9. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+10. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+11. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+12. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+13. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+14. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+15. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+16. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+17. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+18. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+19. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+20. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+21. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+22. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -3910,3 +3913,91 @@ nomination, where SR5's re-verification absorbs it by design.
 - A delta-update story: SF15's weekly diff re-synthesizes the whole
   child (~50 min); worth measuring whether an incremental memh swap
   + relink beats it before anyone asks.
+
+---
+
+# EXPERIMENT 6 Aug 2026 02:53:33 SR16 Oracle Over the Shared Trie:
+Zero Raw-Anchor Misses in 3,925 Cases :complete:
+
+## 1. Hypothesis
+
+The S4 shared trie's nomination semantics survive the full SR16
+differential: (a) `SharedTrie.scan` equals a closed-form per-slot
+`bytes.find` oracle exactly — set equality, both directions, the
+match-everything lesson of S1 applied; (b) the daemon-shaped chunk
+path (1,474 B requests, 15 B tail) equals the whole-stream scan
+including boundary straddles at every offset; (c) against real
+Snort 3, every raw-anchor alert is nominated — absolutely, zero
+exceptions — with normalized-buffer misses exactly the deliberate
+SF11 percent-encoding blinding and nothing else.  This is SR17
+condition (b) evidence ONLY; suppression (AC-S4-2) stays gated on
+the separate owner approval and nothing here enables it.
+
+## 2. How
+
+`tests/acceptance/test_acs4_sr16_oracle.py`, two gates in the
+AC-S2-3 structure re-based onto the trie's global pattern-id space.
+
+Gate 1 (device-free): a closed-form oracle — one overlapping
+`bytes.find` per slot over the ASCII-folded subject — held to set
+equality against `scan` over seeded adversarial corpora (patterns
+back-to-back, case-permuted runs, prefix restarts, byte floods,
+splices).  Falsifiability both ways: a nominate-everything fake
+passes containment and fails equality (demonstrated, not assumed),
+and an index-aligned pattern deletion is caught as a lost
+nomination.  Chunk arithmetic: a 16-byte pattern straddling the
+1,474 B boundary at all 15 cuts, plus chunked == whole-stream over
+randomly segmented corpora.
+
+Gate 2 (Snort 3 arbiter, R83a skip-honest): one TCP session per
+tcp/ip raw-anchor rule carrying its real anchor at offset 0 —
+1,519 of 1,759 (197 udp, 41 icmp, 2 ssl counted as unreachable
+over a TCP pcap, pinned) — plus an SR12 random-segmentation
+variant and an R15 case-permutation variant where applicable, plus
+the designed AC-S2-3 corpus; 3,925 cases, one pcap, one Snort run
+over all 3,896 anchor-compilable rules.  Completeness checked per
+case against the trie's chunked nominations; rejects classified
+into SR4 classes extended with `anchor_cap`.  The SR13 table grew
+the port variables the raw tier references (`$ORACLE_PORTS` et
+al., mirroring snort_defaults.lua) and the corpus' two literal net
+tokens are enumerated and proven to exclude the pcap flows.
+
+## 3. Observations
+
+- Gate 1: equality exact on every corpus subject (3,742 hits,
+  pinned); both sabotages caught; all 15 straddle cuts nominate.
+- Gate 2: **zero raw-anchor completeness misses.**  Snort confirmed
+  350 distinct raw-anchor rules (360 total), 914 true-positive
+  (case, rule) pairs across 875 alerting cases.
+- Normalized-buffer misses: exactly the two percent-encoded URIs
+  (1:835, 1:824) — the SF11 blinding the corpus carries on
+  purpose.  Pinned zero-slack.
+- FP distribution (counted, never gated; pinned): header_predicate
+  34,505; anchor_cap 38,205; anchor_strip 5,381; case_fold 2,455;
+  dropped_conjuncts 1,292; unclassified 0.
+- Whole suite 12/12 in ~3.5 s; no interference with AC-S2-3 or the
+  AC-S4-1 suites (56 green together).
+
+## 4. Data analysis
+
+The FP shape is the story the cap tells: `anchor_cap` is the
+single largest class because 16-byte prefixes collapse rule
+FAMILIES — long anchors sharing a prefix cross-nominate whenever
+any family member's payload appears.  That is the SR5-absorbed
+price of one automaton for 3,896 rules, and it is now a measured
+number rather than a design guess.  Snort's 350-of-1,519 alert
+yield on single-anchor payloads is expected, not weak: multi-
+conjunct raw rules (second contents, byte_tests, positional
+modifiers) refuse by design, and those rules still contribute to
+the FP-classification power of the run.  The only completeness
+exceptions possible remain the ones SF11 predicts by construction.
+
+## 5. Ideas for future experiments
+
+- Precision delta: replay the same corpus against the A5 lowered
+  chains to price `anchor_cap` over-nomination head-to-head.
+- Extend the arbiter corpus with UDP pcap construction to reach
+  the 197 udp raw-anchor rules the TCP path cannot.
+- If SR17's owner approves AC-S4-2, the suppression pilot can cite
+  this run for condition (b); conditions (a)/(c)/(d) still need
+  their own evidence.

@@ -176,11 +176,17 @@ the wrapper needed a boot CSR sweep or a ROM child drops all wire
 frames until the host polls. The silicon replay passed first run
 (notebook: identity/refusal/match-set/wire window all exact; wire
 scanning is scan-bound at ~11.2k fps on all-nominating traffic).
+The **SR16 oracle over the shared trie ran 2026-08-06** (notebook
+entry 02:53:33; `test_acs4_sr16_oracle.py`): closed-form set equality
+exact, both sabotages bite, chunk arithmetic proven at every straddle
+cut, and the Snort 3 differential over 3,925 cases shows **zero
+raw-anchor completeness misses** (350 distinct raw rules confirmed;
+the only normalized-buffer misses are the two pinned SF11
+percent-encoding cases). That is SR17 condition (b) evidence only.
 Still open under S4: the production-static re-link (R82b) and
 **AC-S4-2** — the
 suppression pilot stays SR17-quadruple-gated on a separate owner
-approval; the SR16 adversarial-oracle run over the shared trie is the
-next device-free step.
+approval, which conditions (a)/(c)/(d) still lack.
 
 ## 5. Risks — outcomes
 
