@@ -183,6 +183,11 @@ cut, and the Snort 3 differential over 3,925 cases shows **zero
 raw-anchor completeness misses** (350 distinct raw rules confirmed;
 the only normalized-buffer misses are the two pinned SF11
 percent-encoding cases). That is SR17 condition (b) evidence only.
+The **precision delta at cap 16 is measured** (notebook 12:33:54):
+vs the lowered chains the trie over-nominates 3.68x, and the 16-byte
+prefix cap alone is 50.2% of all trie nominations (fold-all 11.3%,
+anchor-only-vs-chains 11.3%) — so a precision push at the
+suppression tier should revisit the cap before adding chains.
 Still open under S4: the production-static re-link (R82b) and
 **AC-S4-2** — the
 suppression pilot stays SR17-quadruple-gated on a separate owner

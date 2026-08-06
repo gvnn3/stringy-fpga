@@ -485,6 +485,64 @@ def test_anti_vacuity_pinned_minimums(sr16):
     assert sr16["foreign"] == [], sr16["foreign"][:5]
 
 
+def test_precision_delta_tiers_separate_strictly(trie, triaged):
+    """Falsifiability for the precision harness: every tier boundary
+    is demonstrated with a subject built to sit exactly on it, so a
+    harness that collapsed two tiers could not pass."""
+    prep = ST.precision_prepare(trie, triaged)
+    # cap: the 16-byte folded PREFIX of a >16-byte anchor, alone —
+    # the trie nominates, the uncapped tier must not.
+    long_r = next(r for r in prep["recs"]
+                  if len(r[1]) > ST.CAP_BYTES)
+    d = ST.precision_delta_shared(trie, prep,
+                                  long_r[1][:ST.CAP_BYTES])
+    assert d.sound and d.extra_cap >= 1, d
+    # fold: a case-sensitive anchor presented folded — uncapped
+    # nominates, the A5 anchor tier (fold iff nocase) must not.
+    cs = next(r for r in prep["recs"]
+              if not r[3] and r[2] != r[1]
+              and len(r[1]) <= ST.CAP_BYTES)
+    d = ST.precision_delta_shared(trie, prep, cs[1])
+    assert d.sound and d.extra_fold >= 1, d
+    # chain: an anchor whose lowered chain needs more than the anchor
+    # — the anchor tier nominates, the lowered tier must not.
+    ch = next(r for r in prep["recs"]
+              if r[4] is not None and not r[4].search(r[2]))
+    d = ST.precision_delta_shared(trie, prep, ch[2])
+    assert d.sound and d.extra_chain >= 1, d
+
+
+def test_precision_delta_at_cap16_is_pinned(trie, triaged):
+    """The S4 trie's over-nomination vs the AC-S3-2 lowered chains,
+    measured over the SR16 corpus' unique streams (sweep plain + R15
+    permuted + designed; the _seg variants are byte-identical streams
+    and are excluded) and pinned at the 2026-08-06 run.
+
+    The decomposition is the number the cap-16 decision owes SF14:
+    of 52,249 trie nomination events, the 16-byte prefix cap alone
+    contributes 26,245 (50.2%) — capped prefixes collapse rule
+    families — fold-all contributes 5,896 (11.3%), anchor-only vs
+    chains 5,921 (11.3%; the price A5 already paid), and 14,187
+    (27.2%) survive the lowered chains.  All over-nomination, never
+    missed detections: soundness holds on every stream."""
+    prep = ST.precision_prepare(trie, triaged)
+    sweep, _exc = build_sweep_cases(triaged)
+    streams = ([c.stream for c in sweep
+                if not c.name.endswith("_seg")]
+               + [c.stream for c in S.build_cases()])
+    assert len(streams) == 2436, len(streams)
+    tot = dict.fromkeys(("trie", "uncapped", "anchor", "lowered",
+                         "extra_cap", "extra_fold", "extra_chain"), 0)
+    for s in streams:
+        d = ST.precision_delta_shared(trie, prep, s)
+        assert d.sound, "soundness chain broken on %r..." % s[:40]
+        for f in tot:
+            tot[f] += getattr(d, f)
+    assert tot == {"trie": 52249, "uncapped": 26004, "anchor": 20108,
+                   "lowered": 14187, "extra_cap": 26245,
+                   "extra_fold": 5896, "extra_chain": 5921}, tot
+
+
 def test_literal_net_tokens_are_the_known_two(triaged):
     """``classify_s4``'s KeyError branch (literal net token ⇒
     header_predicate) is sound only while every literal token in the

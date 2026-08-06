@@ -166,6 +166,90 @@ def build_shared(triaged, cap: Optional[int] = CAP_BYTES) -> SharedTrie:
     return SharedTrie(slots, ac, cap, len(entries))
 
 
+class PrecisionDelta(NamedTuple):
+    """One subject's nomination counts, tier by tier (gid:sid space).
+
+    ``trie ⊇ uncapped ⊇ anchor ⊇ lowered`` is the soundness chain —
+    checked by :func:`precision_delta_shared`, never assumed.  The
+    three ``extra_*`` fields decompose the S4 trie's over-nomination:
+    ``extra_cap`` is what the 16-byte prefix cap adds over full folded
+    anchors, ``extra_fold`` what fold-all adds over the A5 case
+    discipline (folded iff nocase), ``extra_chain`` what anchor-only
+    matching adds over the AC-S3-2 lowered chains (the price A5
+    already paid; not S4-specific).  All of it is host re-verification
+    work, never missed detections (SR3/SR5).
+    """
+
+    trie: int
+    uncapped: int
+    anchor: int
+    lowered: int
+    extra_cap: int
+    extra_fold: int
+    extra_chain: int
+    sound: bool
+
+
+def precision_prepare(trie: SharedTrie, triaged) -> dict:
+    """Precompute what the tier sweep needs once per corpus: the
+    sidecar and, per rule, the folded full anchor, the dedup anchor,
+    and a compiled matcher for the 306 chain-bearing lowerings (the
+    3,590 anchor-escape entries reuse the anchor occurrence test)."""
+    import re as _re
+
+    entries = _groups.groupable_entries(triaged)
+    recs = []
+    for e in entries:
+        pat = e.pattern if e.pattern else _re.escape(e.anchor)
+        fl = e.flags if e.flags >= 0 else (
+            _re.IGNORECASE if e.nocase else 0)
+        chain = (pat != _re.escape(e.anchor)
+                 or fl != (_re.IGNORECASE if e.nocase else 0))
+        recs.append((e.ref.key, _otable.ascii_fold(e.anchor),
+                     e.anchor, e.nocase,
+                     _re.compile(pat, fl) if chain else None))
+    return {"side": trie.sidecar(), "recs": recs}
+
+
+def precision_tiers(trie: SharedTrie, prep: dict, subject: bytes
+                    ) -> Tuple[set, set, set, set]:
+    """The four nomination sets for ``subject``: S4 trie, uncapped
+    folded anchors, A5 anchor tier (fold iff nocase), lowered chains.
+    ``bytes.lower`` is exactly the R15 2-byte fold (ASCII-only), the
+    same set :func:`pyro.overlay.table.ascii_fold` implements."""
+    fs = subject.lower()
+    t: set = set()
+    for pid, _end in trie.scan(subject):
+        t.update(prep["side"][pid])
+    unc: set = set()
+    anc: set = set()
+    low: set = set()
+    for key, ffull, anchor, nocase, rx in prep["recs"]:
+        if ffull in fs:
+            unc.add(key)
+            if (anchor in fs) if nocase else (anchor in subject):
+                anc.add(key)
+                if rx is None:
+                    low.add(key)
+        if rx is not None and rx.search(subject):
+            low.add(key)
+    return t, unc, anc, low
+
+
+def precision_delta_shared(trie: SharedTrie, prep: dict,
+                           subject: bytes) -> PrecisionDelta:
+    """SF14's cap and the S4 fold, priced on ``subject`` — the
+    per-group :func:`pyro.overlay.table.precision_delta` generalized
+    to the shared trie's gid:sid space."""
+    t, unc, anc, low = precision_tiers(trie, prep, subject)
+    return PrecisionDelta(
+        trie=len(t), uncapped=len(unc), anchor=len(anc),
+        lowered=len(low),
+        extra_cap=len(t - unc), extra_fold=len(unc - anc),
+        extra_chain=len(anc - low),
+        sound=(low <= anc and anc <= unc and unc <= t))
+
+
 def cap_sweep(triaged,
               caps: Tuple[Optional[int], ...] = (8, 16, None)) -> dict:
     """SF14, reproduced from code rather than recited from the spec:
