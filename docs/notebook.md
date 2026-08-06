@@ -4132,6 +4132,11 @@ Design contract (specs/wire-mac-offload.md, in flight):
 # verification harness (workflow in flight at write-up time)
 xvlog hw/rtl/pyro_siphash.v tests/hw/tb_pyro_siphash.v  # + xelab/xsim
 .venv-pyro/bin/python3 -m pytest tests/ -k "mac or siphash"
+
+# AC-M2: link the multi-program child vs the locked wiretap static
+hw/dfx/build_overlay_rm.sh \
+    --static hw/dfx/build-wiretap/dcp/static_routed_locked.dcp \
+    --out hw/dfx/build-wiretap --tag multi_mac_wire --mac
 ```
 
 ## 3. Observations
@@ -4147,8 +4152,37 @@ xvlog hw/rtl/pyro_siphash.v tests/hw/tb_pyro_siphash.v  # + xelab/xsim
   silent loss); MAC_REPORT adds no queue.
 - No per-packet digest, hash, or flow ID exists anywhere in the
   system today; flow identity is the plain 5-tuple in nominations.
-- The implementation workflow was still running at write-up; sim
-  results land in a follow-up entry.
+- Implement pass (11 agents: scout, 5 implementers, integration,
+  3 verify lenses, one serialized fixer): SipHash core passes all
+  **64/64** official paper vectors in xsim; engine TB passes 11
+  digest scenarios with zero-slack counters exact (SEEN 13 =
+  DIGESTED 11 + NONIP 1 + NOKEY 1); RTL-vs-Python differential
+  over **235** corner-biased frames (runts, length-claim lies,
+  stacked VLANs, bogus IHL, empty L3): **0 mismatches** on
+  kind/digest/len/flags; 1060/1061 unit tests pass (sole fail:
+  pre-existing docs/prompts.md 80-col ratchet).  **AC-M1 met.**
+- Adversarial verify: 14 findings, all resolved — 1 blocker
+  (MAC_KEY_ACK carried the PREVIOUS key's keycheck on every
+  rekey; the wrapper polled MACSTAT bit0 only and now also waits
+  out bit1, commit-in-progress) and a latent wedge (key_set
+  mid-frame aborted the SipHash FSM and starved the engine
+  forever; keys now latch without touching in-flight state).
+  Rekey and mid-frame-key regressions are pinned in the TBs.
+- OOC synth of the multi-program child: **21,034 LUT / 11,422 FF
+  / 111.5 BRAM36 / 50 URAM / 2 DSP** vs the classic overlay
+  child's 13,072 / 4,551 / 111.5 / 50 / 0 — the second program
+  costs soft logic only (+8.0k LUT, +6.9k FF, zero extra
+  BRAM/URAM), ~10% of the 80k-LUT budget.  Stub guard passed
+  (50 URAM >= 40).
+- Committed as d60a7c8 (17 files, +5,332).
+- **AC-M2 met**: in-context link vs the locked wiretap static
+  closed at **WNS +0.020 ns** — the identical margin the classic
+  overlay child linked at, so the +8.0k-LUT MAC program cost zero
+  timing headroom.  R82c pr_verify passed all four configs
+  (id_stub, overlay_wire, rom_trie, multi_mac_wire — one
+  compatibility domain, so the existing partials stay valid
+  alongside the new one).  partials/multi_mac_wire.bit (5.6 MB)
+  is ready for the AC-M3 silicon run.
 
 ## 4. Data analysis
 
@@ -4163,18 +4197,20 @@ program and the 128-bit key IS the MAC program — both loaded
 in-band in milliseconds — so exec (Tier-1 PR) is needed only to
 change the program SET.  Diversity then costs area, not time: the
 one-ABI socket makes a third program a dispatcher slot, not a new
-mechanism.  Caveats recorded in the spec: digests break across NAT
+mechanism.  The area price is now measured: +8.0k LUT and zero
+BRAM/URAM for the second program — the memory-bound resources
+that actually constrain this partition are untouched, so
+co-residency scales in the cheapest dimension.  The two rekey
+bugs the adversarial pass caught (stale keycheck ACK, mid-frame
+key_set wedge) are exactly the class sim-green implementations
+hide: both sat behind a passing TB until a lens went looking.
+Caveats recorded in the spec: digests break across NAT
 (addresses/ports covered by design) and across in-transit
 fragmentation (Total Length and frag fields covered/zeroed per the
 AH precedent).
 
 ## 5. Ideas for future experiments
 
-- AC-M1: RTL digest == Python golden model on all six scenario
-  classes (TTL/DSCP/checksum invariance, payload sensitivity, VLAN
-  invariance, ARP skip, no-key fail-closed, truncated frames).
-- AC-M2: link the multi-program child against the wiretap static;
-  WNS >= 0 inside the RP budget.
 - AC-M3 on silicon: key load + RR mode 2 with zero-slack stats
   exact (seen == digested + skip_nonip + skip_nokey) while SNORT
   nominations still flow.
