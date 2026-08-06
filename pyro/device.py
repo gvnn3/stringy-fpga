@@ -86,6 +86,14 @@ __all__ = [
     "KIND_TABLE_STATUS_REQUEST",
     "KIND_TABLE_STATUS_REPLY",
     "KIND_TABLE_ABORT",
+    # multi-program MAC amendment (payload codecs in pyro.macwire)
+    "KIND_MAC_REPORT",
+    "KIND_MAC_KEY_LOAD",
+    "KIND_MAC_KEY_ACK",
+    "KIND_SCHED_SET",
+    "KIND_SCHED_ACK",
+    "KIND_MAC_STAT_REQUEST",
+    "KIND_MAC_STAT_REPLY",
 ]
 
 # ---------------------------------------------------------------------------
@@ -128,6 +136,19 @@ KIND_TABLE_COMMIT = 0x0A
 KIND_TABLE_STATUS_REQUEST = 0x0B
 KIND_TABLE_STATUS_REPLY = 0x0C
 KIND_TABLE_ABORT = 0x0D
+# Multi-program MAC amendment: the P1 SipHash-2-4 per-packet digest
+# program and the run-time P0/P1 scheduler.  Additive, same rationale
+# as the table kinds: a child built before the amendment drops these as
+# unknown kinds (R78.4) and never replies, which the host reads as "no
+# MAC program here" rather than as a fault.  Payload codecs live in
+# :mod:`pyro.macwire`.
+KIND_MAC_REPORT = 0x0E            # device->host, UNSOLICITED
+KIND_MAC_KEY_LOAD = 0x0F          # host->device
+KIND_MAC_KEY_ACK = 0x10           # device->host, echoes seq
+KIND_SCHED_SET = 0x11             # host->device
+KIND_SCHED_ACK = 0x12             # device->host, echoes seq
+KIND_MAC_STAT_REQUEST = 0x13      # host->device
+KIND_MAC_STAT_REPLY = 0x14        # device->host, echoes seq
 
 #: Sendable/receivable message kinds (R78.4); ``0x00`` reserved is not a kind.
 VALID_KINDS = frozenset({
@@ -135,6 +156,9 @@ VALID_KINDS = frozenset({
     KIND_MATCH_REPLY, KIND_STATUS, KIND_PERF_REQUEST, KIND_PERF_REPLY,
     KIND_TABLE_BEGIN, KIND_TABLE_DATA, KIND_TABLE_COMMIT,
     KIND_TABLE_STATUS_REQUEST, KIND_TABLE_STATUS_REPLY, KIND_TABLE_ABORT,
+    KIND_MAC_REPORT, KIND_MAC_KEY_LOAD, KIND_MAC_KEY_ACK,
+    KIND_SCHED_SET, KIND_SCHED_ACK, KIND_MAC_STAT_REQUEST,
+    KIND_MAC_STAT_REPLY,
 })
 
 #: Expected shell SPEC16 the host runtime is compiled with (R81): spec 2.2.

@@ -4,7 +4,14 @@
 #
 # Usage:
 #   hw/dfx/build_overlay_rm.sh [--static <locked.dcp>] [--out <dir>]
-#                              [--tag <tag>]
+#                              [--tag <tag>] [--mac]
+#
+# --mac (PYRO MAC contract): build the MULTI-PROGRAM child — P0 = the
+# overlay engine exactly as without the flag, P1 = the SipHash-2-4 MAC
+# digest program (pyro_mac_engine_top + pyro_mac_engine + pyro_siphash
+# from hw/rtl, concatenated into mac.v and read alongside).  Use a
+# distinct --tag so the partial can never be mistaken for the classic
+# overlay child.
 #
 # Defaults target the PRODUCTION build tree; the OQ-2 wiretap link is
 #   hw/dfx/build_overlay_rm.sh \
@@ -32,12 +39,14 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 STATIC="${REPO}/hw/dfx/build/dcp/static_routed_locked.dcp"
 OUT="${REPO}/hw/dfx/build"
 TAG="overlay_engine"
+MAC=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --static) STATIC="$2"; shift 2 ;;
     --out)    OUT="$2";    shift 2 ;;
     --tag)    TAG="$2";    shift 2 ;;
+    --mac)    MAC=1;       shift   ;;
     *) echo "ERROR: unknown arg '$1'" >&2; exit 1 ;;
   esac
 done
@@ -55,26 +64,40 @@ WORK="${OUT}/_overlay_rm"
 mkdir -p "$WORK"
 
 echo "=== 1. generate the overlay child RTL (wire-scan wrapper) ==="
-"${REPO}/.venv-pyro/bin/python3" - "$WORK" <<'PY'
+"${REPO}/.venv-pyro/bin/python3" - "$WORK" "$MAC" <<'PY'
 import sys
 sys.path.insert(0, "/home/gnn/Repos/Yale/stringy-fpga")
 import pyro.hdl.rp_wrapper as w
 work = sys.argv[1]
+mac = sys.argv[2] == "1"
 rtl = w.generate_rp_child("0a5e000100000000000000000000a5e1",
                           max_frame_bytes=9600,
-                          engine_backpressure=True)
+                          engine_backpressure=True,
+                          mac_program=mac)
 open(work + "/rp.v", "w").write(rtl)
 eng = ""
 for name in ("pyro_overlay_engine.v", "pyro_circuit_overlay_top.v"):
     eng += open("/home/gnn/Repos/Yale/stringy-fpga/hw/rtl/" + name).read()
 open(work + "/eng.v", "w").write(eng)
+if mac:
+    # PYRO MAC: the P1 engine sources ride alongside (fail loud when
+    # a file is missing -- the engine is a separate deliverable).
+    src = ""
+    for p in w.mac_engine_sources():
+        src += open(p).read() + "\n"
+    open(work + "/mac.v", "w").write(src)
+    print("mac.v %d chars (%s)" % (len(src),
+                                   ", ".join(w.MAC_ENGINE_FILES)))
 print("rp.v %d chars (wire_frame x%d), eng.v %d chars"
       % (len(rtl), rtl.count("wire_frame"), len(eng)))
 PY
 
 echo "=== 2. OOC synth of pyro_rp (engine + wrapper) ==="
+MACREAD=""
+[ "$MAC" = "1" ] && MACREAD="read_verilog $WORK/mac.v"
 cat > "$WORK/_ooc.tcl" <<TCL
 read_verilog $WORK/eng.v
+${MACREAD}
 read_verilog $WORK/rp.v
 synth_design -top pyro_rp -part xcu250-figd2104-2L-e \
     -mode out_of_context

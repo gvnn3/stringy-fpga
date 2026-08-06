@@ -17,39 +17,42 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+1. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+   SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
+   :in_progress:
+2. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-2. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+3. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-3. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+4. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-4. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+5. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-5. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+6. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-6. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+7. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-7. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+8. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-8. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-9. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-10. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-11. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-12. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-13. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-14. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-15. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-16. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-17. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-18. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-19. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-20. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-21. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-22. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-23. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+9. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+10. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+11. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+12. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+13. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+14. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+15. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+16. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+17. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+18. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+19. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+20. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+21. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+22. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+23. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+24. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -4079,3 +4082,106 @@ true on every stream, so nothing here touches completeness.
 - Family analysis: which shared 16-byte prefixes contribute most
   of extra_cap — a handful of CGI-path families likely dominate,
   and per-family split slots would be cheap.
+
+---
+
+# EXPERIMENT 6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+SNORT + MAC Programs, RR-Switched in Silicon :in_progress:
+
+## 1. Hypothesis
+
+Can the FPGA serve diverse programs at run time?  Two programs — the
+SNORT A5 overlay engine and a new SipHash-2-4 per-packet MAC digest
+engine — co-resident inside the single `pyro_rp` child, scheduled by
+an in-silicon round-robin dispatcher at packet granularity, with JTAG
+PR banned as a scheduling mechanism (it remains exec only).
+
+## 2. How
+
+- **Equipment:** target is the U250 wiretap static on nf-server06;
+  this entry covers design + implementation (sim only, no silicon
+  yet).  R80 boundary untouched — the change is partial-only.
+- **Software:** two ultracode workflows.  Understand: 3 parallel
+  readers (datapath, host path, specs).  Implement: 11 agents —
+  scout; 5 implementers on disjoint files (SipHash core, MAC
+  engine parser/masker, rp_wrapper.py multi-program mode, host
+  codec/listener/daemon, spec); integration; 3 adversarial verify
+  lenses; one serialized fixer (single-writer rule).
+- **Benchmarks:** self-checking TBs (official SipHash-2-4 vectors;
+  six masking scenarios) + pytest golden-model agreement.
+
+Design contract (specs/wire-mac-offload.md, in flight):
+
+- P1 digests transit-invariant bytes only (RFC 4302 mutable-field
+  model): L2/VLANs excluded; IPv4 DSCP/ECN, flags+frag, TTL, header
+  checksum, and options zeroed; IPv6 TC/flow label and hop limit
+  zeroed; L4 checksums zeroed; everything else, including the full
+  payload, covered.  SipHash-2-4, 128-bit key, 64-bit tag;
+  fail-closed in-band keying with a keycheck echo.
+- New additive R78 kinds 0x0E-0x14: MAC_REPORT (unsolicited,
+  batched, <=64 x 16 B records), MAC_KEY_LOAD/ACK, SCHED_SET/ACK
+  (mode/quantum), MAC_STAT_REQUEST/REPLY.
+- One-ABI rule: pyro_mac_engine_top wears the pyro_circuit port
+  contract, so wrapper and loader cannot tell program families
+  apart.  RR dispatches wire frames (tuser src 0x0040) only; host
+  control frames always reach the codec.
+
+### Key commands
+
+```bash
+# verification harness (workflow in flight at write-up time)
+xvlog hw/rtl/pyro_siphash.v tests/hw/tb_pyro_siphash.v  # + xelab/xsim
+.venv-pyro/bin/python3 -m pytest tests/ -k "mac or siphash"
+```
+
+## 3. Observations
+
+- Understand pass (3 readers over hw/, pyro/, specs/): RP budget
+  80k LUT / 160 BRAM36 / 64 URAM; the resident overlay child
+  measures 13,072 LUT / 111 BRAM36 / 50 URAM — ample headroom for
+  an ARX-only SipHash engine (~3k LUT, 0 DSP) beside it.
+- Switch-cost ladder, from prior entries: JTAG PR exec
+  **13.6-16.2 s**; A5 table write **13.9 ms + 0.150 ms/KB**;
+  co-resident dispatcher mux **~0** (one packet boundary).
+- Queue budget stands at 1 H2C + C2H queue 0 (EQDMA multi-queue
+  silent loss); MAC_REPORT adds no queue.
+- No per-packet digest, hash, or flow ID exists anywhere in the
+  system today; flow identity is the plain 5-tuple in nominations.
+- The implementation workflow was still running at write-up; sim
+  results land in a follow-up entry.
+
+## 4. Data analysis
+
+The frontier law (s/P ~ 0.3) makes JTAG round-robin a non-starter:
+at 14-16 s per swap the quantum must exceed ~1 min to keep the
+blind window tolerable, and every swap loses warm state (table,
+key).  Co-residency moves scheduling to a tier where the switch is
+free, so the quantum becomes a free experimental parameter and both
+programs keep their program data across switches.  Program identity
+detaches from circuitry twice over: the A5 table IS the SNORT
+program and the 128-bit key IS the MAC program — both loaded
+in-band in milliseconds — so exec (Tier-1 PR) is needed only to
+change the program SET.  Diversity then costs area, not time: the
+one-ABI socket makes a third program a dispatcher slot, not a new
+mechanism.  Caveats recorded in the spec: digests break across NAT
+(addresses/ports covered by design) and across in-transit
+fragmentation (Total Length and frag fields covered/zeroed per the
+AH precedent).
+
+## 5. Ideas for future experiments
+
+- AC-M1: RTL digest == Python golden model on all six scenario
+  classes (TTL/DSCP/checksum invariance, payload sensitivity, VLAN
+  invariance, ARP skip, no-key fail-closed, truncated frames).
+- AC-M2: link the multi-program child against the wiretap static;
+  WNS >= 0 inside the RP budget.
+- AC-M3 on silicon: key load + RR mode 2 with zero-slack stats
+  exact (seen == digested + skip_nonip + skip_nokey) while SNORT
+  nominations still flow.
+- Measure RR fairness and records_lost under a 64 B frame storm at
+  quantum 1 vs 64.
+- Two-observation-point digest correlation (the actual use case):
+  same packet, same MAC across taps.
+- IPv6 extension-header walk; optional 128-bit tag; key rotation
+  cadence vs keycheck round-trip cost.
+- Third program slot, to confirm diversity is area-only.

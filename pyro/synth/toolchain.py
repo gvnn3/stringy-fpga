@@ -222,6 +222,11 @@ class ToolchainConfig:
     # top with N unmodified cores (aggregate B/cyc scales by core count —
     # the recurrence caps a single engine's width).
     rp_cores: int = 1
+    # PYRO MAC contract: emit the multi-program child (P0 = the job's
+    # engine behind the proven core, P1 = the SipHash-2-4 MAC digest
+    # program) and read the three hw/rtl MAC engine sources alongside.
+    # Default off: the emission and the PR filelist stay byte-identical.
+    rp_mac_program: bool = False
     # R68/R83a (v2.2.5) evidence-manifest path: consulted ONLY by the R83a
     # pr_flow_present availability predicate, never by a synthesis job; absence
     # keeps the report false rather than failing anything.
@@ -875,12 +880,34 @@ class VivadoToolchain:
                 f.write(job.rtl)
             # RP-child wrapper (R80); width must match the engine (P2b),
             # frame buffer must match the substrate shell (R78.9a/P2c).
+            mac_prog = bool(getattr(cfg, "rp_mac_program", False))
             wrapper = generate_rp_child(
                 job.pattern_hash,
                 datapath_bytes=getattr(job, "datapath_bytes", 1),
                 max_frame_bytes=int(cfg.rp_max_frame_bytes),
                 cores=int(getattr(cfg, "rp_cores", 1)),
-                engine_backpressure=derived_bp)
+                engine_backpressure=derived_bp,
+                mac_program=mac_prog)
+            if mac_prog:
+                # PYRO MAC: the P1 program's engine rides alongside the
+                # generated P0 engine — the wrapper only instantiates
+                # pyro_mac_engine_top; the sources are static repo files.
+                # A missing file is a CONFIGURATION error (the engine is
+                # a separate deliverable), never a cached R65 negative.
+                from ..hdl.rp_wrapper import mac_engine_sources
+                mac_srcs = mac_engine_sources()
+                missing = [p for p in mac_srcs
+                           if not os.path.isfile(p)]
+                if missing:
+                    raise ConfigurationError(
+                        "rp_mac_program: MAC engine RTL not found: %s"
+                        % ", ".join(missing))
+                with open(os.path.join(workdir, "mac_prog.v"),
+                          "w") as f:
+                    for p in mac_srcs:
+                        with open(p) as g:
+                            f.write(g.read())
+                        f.write("\n")
             # SNORT-PF SR7: an unconnected .in_ready and an under-driven
             # in_keep are both legal Verilog and both drop bytes silently.
             # Both texts exist only here, so this is the only place the pairing
@@ -910,6 +937,13 @@ class VivadoToolchain:
                              if cfg.pr_route_directive else "")
                     .replace("@POST_PLACE_PHYS_OPT@", phys_opt)
                     .replace("@POST_ROUTE_PHYS_OPT@", phys_opt))
+            if mac_prog:
+                # additive filelist line; the non-MAC flow text is
+                # byte-identical
+                flow = flow.replace(
+                    "read_verilog -sv design.v\n",
+                    "read_verilog -sv design.v\n"
+                    "read_verilog -sv mac_prog.v\n")
             with open(os.path.join(workdir, "flow.tcl"), "w") as f:
                 f.write(flow)
 
