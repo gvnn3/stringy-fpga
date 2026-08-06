@@ -53,6 +53,8 @@ from . import automaton as _auto
 PR_LUTS = 80_000
 PR_FFS = 160_000
 PR_BRAM_KB = 720
+PR_BRAM36 = 160
+PR_URAM = 64
 PR_DSPS = 400
 PR_PARTITIONS = 1  # single-tenant region (R64)
 
@@ -323,4 +325,46 @@ def estimate_group(automata, datapath_bytes: int = 1) -> dict:
         "pend_bits": harness["npend"],
         "group_harness_luts": harness["luts"],
         "group_harness_ffs": harness["ffs"],
+    }
+
+
+def _uram_count(width: int, depth: int) -> int:
+    """URAM288 primitives for a ``width x depth`` array: the device
+    tiles 72-bit x 4096 blocks, so cost is columns x banks."""
+    return ((width + 71) // 72) * ((depth + 4095) // 4096)
+
+
+def _bram36_count(width: int, depth: int) -> int:
+    """BRAM36 tiles by raw capacity (36 Kib each) — the model the
+    full-corpus placement test pinned and OOC synthesis confirmed
+    within 3 tiles (111.5 real vs 114 modelled at 39,647 states)."""
+    return ((width * depth) + (36 * 1024) - 1) // (36 * 1024)
+
+
+def estimate_table(n_states: int, n_transitions: int,
+                   n_outputs: int) -> dict:
+    """Memory placement of an AC table engine (A5 layout, S4 ROM child).
+
+    Models the six arrays of ``hw/rtl/pyro_overlay_engine.v`` with the
+    measured placement split — bitmap (256 b) and out-index (64 b) in
+    URAM, the four 32-bit arrays in BRAM — against SF2's real envelope
+    (``PR_URAM``/``PR_BRAM36``).  This is the arithmetic SF14 recited
+    and ``tests/unit/test_overlay_table.py`` pinned inline; having it
+    here makes the sizing reproducible from code (SR8 discipline) and
+    gives the S4 build a fit gate to close against.
+
+    Same contract as :func:`estimate_group`: numbers, not a verdict —
+    except for the two booleans, which just compare against the budget.
+    """
+    uram = (_uram_count(256, n_states) + _uram_count(64, n_states))
+    bram36 = (_bram36_count(32, n_states) * 2          # base + fail
+              + _bram36_count(32, n_transitions)       # dense
+              + _bram36_count(32, n_outputs))          # oflat
+    return {
+        "uram": uram,
+        "bram36": bram36,
+        "uram_budget": PR_URAM,
+        "bram36_budget": PR_BRAM36,
+        "fits_uram": uram <= PR_URAM,
+        "fits_bram": bram36 <= PR_BRAM36,
     }
