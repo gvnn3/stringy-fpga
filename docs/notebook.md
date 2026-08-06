@@ -3861,6 +3861,26 @@ questions were (a) whether the toolchain will bake URAM content and
   manifest alongside.  `test_acs4_1_rom_trie.py` gate C now runs
   live: manifest byte-exact vs a fresh corpus build, TIMING_MET,
   PR_VERIFY_OK — 3/3 PASS.
+- **Silicon replay: PASS first run** (`scripts/pyro_rom_silicon.py`,
+  01:29).  Loopback OFF first — the model showed generator frames
+  nominate 217–237 anchors each against the corpus trie (ff/zero
+  runs hit real binary and single-byte anchors), so loading with
+  loopback on floods ens2.  Then: JTAG load 14.7 s; baked identity
+  live with NO priming frame (active=0xf68fd631, epoch 1, caps
+  21,332, active_valid — the boot sweep's and the ~0.8 ms bitmap
+  expansion's silicon proof); a full TABLE_BEGIN/COMMIT refused with
+  `commit_err` and the table untouched; the mixed-case host subject
+  returned **exactly the model's 21 (pattern_id, end) entries** at
+  epoch 1 (14.81 cyc/B — fail-chain walking on a corpus-size trie,
+  inside the [4.9, 20] band); and a 1.0 s loopback window scanned
+  **11,197 wire frames with noms = 683,017 = 61 x 11,197 exactly**
+  (every frame overflows the 61-entry cap — provisional A6's
+  wire-OVF shape, live), counters slack-free, 200 captured replies
+  all structurally exact (bit2, OVF, ERR clear, epoch 1, monotone
+  0-based seq).  Wire scanning is scan-bound at ~11.2k fps on this
+  pathological all-nominating traffic (~89 us/frame); the CMAC FIFO
+  absorbed the generator's surplus upstream of the wrapper, so
+  seen == scanned with zero wrapper drops.  Loopback left OFF.
 
 ## 4. Data analysis
 
@@ -3881,9 +3901,6 @@ nomination, where SR5's re-verification absorbs it by design.
 
 - Link the same child against the PRODUCTION static once the card
   returns to it (R82b: partials are per-static).
-- Silicon: load the partial on the wiretap shell, replay the
-  differential's frames over ens2, and time the boot expansion
-  window (TABLE_STATUS active_valid flip) from the host.
 - Precision delta at cap 16 vs the lowered chains (the
   `precision_delta` harness generalized to the shared trie): put a
   measured number on `case_fold` + `anchor_cap` over-nomination.
