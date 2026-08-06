@@ -814,6 +814,7 @@ module pyro_rp #(
   // src 0x0001, so wire_frame never sets.
   reg        wire_frame;   // current frame is wire-tagged (beat-0 latch)
   reg        load_open_w;  // a table load is open; wire scans must drop
+  reg        boot_stat;    // one silent ST_TBL_STAT sweep out of reset
   reg [31:0] wire_seq;     // seq stamped into wire MATCH_REPLYs
   reg [31:0] wire_seen, wire_scanned, wire_drops, wire_noms;
 
@@ -903,7 +904,17 @@ module pyro_rp #(
 
   always @(posedge clk) begin
     if (!rstn) begin
-      state         <= ST_RX;
+      // Boot with one SILENT table-CSR sweep (ST_TBL_STAT with boot_stat
+      // set) before accepting frames.  For a loadable engine every CSR
+      // reads 0 out of reset, so this changes nothing.  For a ROM child
+      // (S4) the table identity is BAKED and valid from configuration —
+      // without this sweep the wrapper's tbl_epoch stays at its reset 0
+      // until some host sends a TABLE_* frame, and until then the wire
+      // gate below drops every frame and MATCH_REPLY attributes epoch 0.
+      // Found by inspection while integrating pyro_ac_rom_engine, before
+      // it could be found on silicon.
+      state         <= ST_TBL_STAT;
+      boot_stat     <= 1'b1;
       hdr           <= 512'b0;
       rx_len        <= 16'd0;
       rx_beat       <= 16'd0;
@@ -1254,7 +1265,12 @@ module pyro_rp #(
             4'd10: begin tbl_bytes  <= eng_csr_rdata;
               eng_csr_addr <= CSR_TBL_CAPS;
               end
-            4'd12: begin tbl_caps   <= eng_csr_rdata; state <= ST_BHDR; end
+            4'd12: begin tbl_caps   <= eng_csr_rdata;
+              // Boot sweep ends silently; a frame-triggered sweep
+              // builds the TABLE_STATUS_REPLY as before.
+              state     <= boot_stat ? ST_RX : ST_BHDR;
+              boot_stat <= 1'b0;
+              end
             default: ;   // spacer: let the registered read land
           endcase
           tbl_idx <= tbl_idx + 4'd1;
