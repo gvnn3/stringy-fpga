@@ -19,7 +19,7 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 1. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
-   :in_progress:
+   :complete:
 2. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
@@ -4086,7 +4086,7 @@ true on every stream, so nothing here touches completeness.
 ---
 
 # EXPERIMENT 6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
-SNORT + MAC Programs, RR-Switched in Silicon :in_progress:
+SNORT + MAC Programs, RR-Switched in Silicon :complete:
 
 ## 1. Hypothesis
 
@@ -4137,6 +4137,11 @@ xvlog hw/rtl/pyro_siphash.v tests/hw/tb_pyro_siphash.v  # + xelab/xsim
 hw/dfx/build_overlay_rm.sh \
     --static hw/dfx/build-wiretap/dcp/static_routed_locked.dcp \
     --out hw/dfx/build-wiretap --tag multi_mac_wire --mac
+
+# AC-M3: the silicon run (loopback OFF -> JTAG load -> keying ->
+# table -> 1 s wire window; leaves loopback OFF)
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_mac_silicon.py --window 1.0
 ```
 
 ## 3. Observations
@@ -4183,6 +4188,19 @@ hw/dfx/build_overlay_rm.sh \
   compatibility domain, so the existing partials stay valid
   alongside the new one).  partials/multi_mac_wire.bit (5.6 MB)
   is ready for the AC-M3 silicon run.
+- **AC-M3 PASSES on silicon** (scripts/pyro_mac_silicon.py, all 9
+  steps): child loaded in 15.1 s, rp_child_id 0x01005e0a; SCHED
+  rr/1 acked, bad mode refused with settings unchanged; silicon
+  rekey A->B->A returned all three exact keychecks (the fixed
+  blocker, live); minimal table committed at epoch 1 and host
+  nominations flowed before AND mid-window; 1.0 s loopback window
+  = **269,500 wire frames** RR-dispatched at a **perfect 0.500 /
+  0.500 split** (quantum 1, packet-atomic), both zero-slack
+  invariants EXACT (P1 seen 134,750 = nonip 134,750 + 0 + 0; P0
+  wire seen 134,750 = scanned + 0 drops), digested 0 as expected
+  — tx_gen emits only non-IP 0x88B5 frames, so MAC_REPORT content
+  remains proven by the xsim differential, not this run.  Loopback
+  left OFF.
 
 ## 4. Data analysis
 
@@ -4200,7 +4218,12 @@ one-ABI socket makes a third program a dispatcher slot, not a new
 mechanism.  The area price is now measured: +8.0k LUT and zero
 BRAM/URAM for the second program — the memory-bound resources
 that actually constrain this partition are untouched, so
-co-residency scales in the cheapest dimension.  The two rekey
+co-residency scales in the cheapest dimension.  Silicon answers
+the experiment's question: yes — two diverse programs shared the
+wire at an exact 50/50 packet-granular split with zero-slack
+accounting on both sides, and every scheduling and keying action
+(mode, quantum, rekey) was an in-band millisecond operation on a
+child loaded exactly once.  The two rekey
 bugs the adversarial pass caught (stale keycheck ACK, mid-frame
 key_set wedge) are exactly the class sim-green implementations
 hide: both sat behind a passing TB until a lens went looking.
@@ -4211,11 +4234,11 @@ AH precedent).
 
 ## 5. Ideas for future experiments
 
-- AC-M3 on silicon: key load + RR mode 2 with zero-slack stats
-  exact (seen == digested + skip_nonip + skip_nokey) while SNORT
-  nominations still flow.
+- On-wire IP traffic (external source or a tx_gen IP mode) to see
+  real digests and MAC_REPORT records on silicon — the one clause
+  loopback cannot exercise.
 - Measure RR fairness and records_lost under a 64 B frame storm at
-  quantum 1 vs 64.
+  quantum 64 (quantum 1 measured: exact 50/50 at ~270k fps).
 - Two-observation-point digest correlation (the actual use case):
   same packet, same MAC across taps.
 - IPv6 extension-header walk; optional 128-bit tag; key rotation
