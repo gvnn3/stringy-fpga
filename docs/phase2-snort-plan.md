@@ -163,10 +163,21 @@ Also delivered in S3, beyond the plan:
 10. **The working-set study** (`docs/studies/a5-working-set.md`) and the
     value-aware scheduler rewrite it prompted.
 
-### S4 — ROM-baked shared trie + suppression pilot ⏸ owner-gated
-All 3,896 anchors resident at once (kills the instantaneous-coverage cap),
-and the suppression question. Both explicitly re-gated on the owner; the
-study makes the capacity case for the trie sharper (§6.3).
+### S4 — ROM-baked shared trie + suppression pilot ◐ AC-S4-1 met
+Authorized by the owner 2026-08-05; AC-S4-1 **met 2026-08-06** (notebook
+entry 00:23:08). The 16-byte-capped fold-all trie — 21,332 states,
+2,845 patterns, all 3,896 rules — links against the wiretap static at
+**WNS +0.020 ns / 250 MHz** in the SLR2 pblock at 24 URAM + 82.5 BRAM
+tiles of the 64/160 budget; pr_verify OK; `test_acs4_1_rom_trie.py`
+gates the artifacts. Two findings worth their ink: UltraScale+ URAM
+cannot be initialized from the bitstream (Synth 8-10226, measured), so
+the bitmap is boot-expanded at reset from a tbyte ROM (~0.3 ms); and
+the wrapper needed a boot CSR sweep or a ROM child drops all wire
+frames until the host polls. Still open under S4: the silicon load +
+replay, the production-static re-link (R82b), and **AC-S4-2** — the
+suppression pilot stays SR17-quadruple-gated on a separate owner
+approval; the SR16 adversarial-oracle run over the shared trie is the
+next device-free step.
 
 ## 5. Risks — outcomes
 

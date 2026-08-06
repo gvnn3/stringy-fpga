@@ -17,30 +17,33 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+1. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+   Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
+   :complete:
+2. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-2. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+3. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-3. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+4. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-4. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+5. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-5. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-6. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-7. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-8. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-9. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-10. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-11. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-12. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-13. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-14. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-15. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-16. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-17. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-18. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-19. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-20. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+6. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+7. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+8. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+9. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+10. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+11. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+12. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+13. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+14. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+15. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+16. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+17. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+18. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+19. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+20. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+21. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -3767,3 +3770,126 @@ scan-core numbers are direct silicon measurements.
   5-cycle floor as per-frame wrapper overhead amortizes?
 - Pipelined host MATCH requests to close the 12x transport gap for
   host-fed scans (the P2 study showed window 2 already saturates).
+
+---
+
+# EXPERIMENT 6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No Init,
+Boot Expansion, 21,332 States Baked :complete:
+
+## 1. Hypothesis
+
+Phase S4 (AC-S4-1, authorized by the owner 2026-08-05): a single
+child holding the 16-byte-capped shared-prefix anchor trie — every
+one of the 3,896 anchor-compilable rules resident at once — can be
+ROM-initialized at synthesis (no runtime table writes, respecting
+PYRO's v2.0.0 no-loadable-data ruling), meet timing at 250 MHz on
+SLR2, and fit SF2's budget.  SF14 priced the trie at 21,841 states
+~1.33 MB; the A5 engine already closes timing in this pblock with a
+larger memory footprint (50 URAM / 111.5 BRAM tiles), so the open
+questions were (a) whether the toolchain will bake URAM content and
+(b) what case-correctness costs a single engine.
+
+## 2. How
+
+- `pyro/snort/shared_trie.py`: the S4 lowering.  One AC automaton
+  over ALL anchors, ASCII-folded — including the case-sensitive ones
+  — and capped to 16-byte prefixes.  Folding everything is the sound
+  single-engine answer to case: the A5 `CaseSplitTable` needs two
+  automata for exactness; fold-all only ever enlarges the language
+  (SR3), SR4 already names the class (`case_fold`), and SR16's
+  case-permutation clause passes by construction.  Truncation is
+  likewise a pure over-approximation (`anchor_cap`).
+- `estimate_table()` added to `pyro/hdl/estimator.py` — the SR8 fit
+  gate, finally making SF14 reproducible from code (`cap_sweep()`).
+- `hw/rtl/pyro_ac_rom_engine.v`: the A5 scanner with the load path
+  REMOVED (not disabled — v2.0.0 respect means the write port does
+  not exist), identity baked as parameters (TABLE_ID = the host
+  CRC-32C, epoch constant 1), the case fold in fabric (one compare
+  before the skid), and stray A5 load sequences consumed + refused
+  with `commit_err` (A5 §5 fail-closed by construction).
+- `rp_wrapper` gains a boot CSR sweep: one silent ST_TBL_STAT pass
+  out of reset.  Found by inspection: the wrapper latches
+  `tbl_epoch` only when a TABLE_* frame arrives, so a fresh ROM
+  child would have dropped every wire frame (epoch-0 gate) and
+  attributed epoch 0 until the host happened to poll.  Loadable
+  children read all-zero CSRs at boot — behavior unchanged (A5
+  differential re-run: PASS).
+- `tests/hw/rom_child_diff.py`: xsim differential.  The FIRST frame
+  the child ever sees is a nominating wire frame; subjects are
+  mixed-case; a complete well-formed A5 BEGIN/DATA/COMMIT must be
+  refused with the baked table untouched.
+- `hw/dfx/build_rom_rm.sh`: table build + SR8 gate + memh emission,
+  OOC synth with a URAM floor AND a dropped-initialization guard,
+  then the standard build_rm.tcl link + pr_verify.
+
+## 3. Observations
+
+- **Corpus sizing (measured, `cap_sweep`)**: cap 8 → 10,713 states;
+  cap 16 → **21,332 states, 2,845 patterns, 1.15 MB, 53.9 B/state**;
+  uncapped → 37,905.  Each lands slightly UNDER SF14's fold-iff-
+  nocase numbers (11,078 / 21,841 / 38,700) because fold-all merges
+  case-sensitive twins into their nocase slots.  All 3,896 rules
+  covered; 830 slots are capped prefixes.
+- **URAM cannot be initialized on this device — measured.**  First
+  OOC synth: `[Synth 8-10226] The URAM primitives on this device do
+  not support initializations to any non 0 values`, both ultra
+  arrays re-inferred as BRAM, URAM count 0, and the trim guard
+  refused the link (its first catch).  URAM init is Versal-only.
+- **Redesign: boot expansion.**  oidx becomes a BRAM ROM (init
+  honored); the bitmap — the one array that must stay URAM — is
+  expanded at reset by a one-shot FSM from `base_mem` runs plus a
+  new 8-bit `tbyte` ROM of transition byte values (~3 cyc per
+  transition, ~0.3 ms per configuration).  Placement moves from
+  30 URAM + 66 BRAM36 to **24 URAM + 109 BRAM36** of 64/160.
+- **The differential caught the expansion's first bug**: write
+  strobe and state increment raised in the same cycle put every
+  bitmap at s+1 — device matched NOTHING while identity, refusal,
+  and counters all looked perfect.  Fixed with a latched write
+  address; ROM_DIFF: PASS (boot-first wire reply, case fold exact,
+  refused load, counters slack-free, 9.56 cyc/B with matches).
+- **In-context link vs the wiretap static: TIMING MET.**  Design-
+  wide **WNS = +0.020 ns** (0 of 434,244 endpoints failing, WHS
+  +0.009); the `clk` domain alone closes at **+0.041 ns** over
+  48,543 endpoints.  Same +0.020 headline as the 40,960-state
+  overlay child — the route converged through the same
+  −0.148-post-place, −0.287-mid-route arc before landing positive.
+  OOC utilization: **12,276 LUT / 3,914 FF / 24 URAM / 82.5 BRAM
+  tiles** (the 109-tile model over-estimates by 26 — Vivado packs
+  the ROMs tighter; `real <= est`, R74's direction).  pr_verify OK
+  for `rom_trie` and re-verified `id_stub` + `overlay_wire`.
+  Partial: `hw/dfx/build-wiretap/partials/rom_trie.bit` (5.06 MB),
+  manifest alongside.  `test_acs4_1_rom_trie.py` gate C now runs
+  live: manifest byte-exact vs a fresh corpus build, TIMING_MET,
+  PR_VERIFY_OK — 3/3 PASS.
+
+## 4. Data analysis
+
+The two dead-end encodings are worth their ink: (a) baking URAM via
+$readmemh synthesizes cleanly on Versal documentation and dies on
+UltraScale+ with a warning that quietly re-infers 276 BRAM36 worth
+of bitmap — only a resource guard turns that into a refusal instead
+of a budget explosion at link time; (b) the boot expander's
+one-cycle write skew produced a child that was PERFECT on every
+identity surface and empty on every scan — the exact
+looks-correct-matches-nothing failure the A5 engine's history keeps
+warning about, and the reason the differential checks matches, not
+just status words.  Case handling cost nothing in fabric (one
+compare) because the price was paid at build time in over-
+nomination, where SR5's re-verification absorbs it by design.
+
+## 5. Ideas for future experiments
+
+- Link the same child against the PRODUCTION static once the card
+  returns to it (R82b: partials are per-static).
+- Silicon: load the partial on the wiretap shell, replay the
+  differential's frames over ens2, and time the boot expansion
+  window (TABLE_STATUS active_valid flip) from the host.
+- Precision delta at cap 16 vs the lowered chains (the
+  `precision_delta` harness generalized to the shared trie): put a
+  measured number on `case_fold` + `anchor_cap` over-nomination.
+- AC-S4-2 (suppression pilot) stays SR17-quadruple-gated; the SR16
+  adversarial-oracle run over the shared trie is the next
+  device-free step and needs no owner decision to BUILD.
+- A delta-update story: SF15's weekly diff re-synthesizes the whole
+  child (~50 min); worth measuring whether an incremental memh swap
+  + relink beats it before anyone asks.
