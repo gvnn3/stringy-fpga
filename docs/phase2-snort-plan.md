@@ -173,8 +173,11 @@ gates the artifacts. Two findings worth their ink: UltraScale+ URAM
 cannot be initialized from the bitstream (Synth 8-10226, measured), so
 the bitmap is boot-expanded at reset from a tbyte ROM (~0.3 ms); and
 the wrapper needed a boot CSR sweep or a ROM child drops all wire
-frames until the host polls. Still open under S4: the silicon load +
-replay, the production-static re-link (R82b), and **AC-S4-2** — the
+frames until the host polls. The silicon replay passed first run
+(notebook: identity/refusal/match-set/wire window all exact; wire
+scanning is scan-bound at ~11.2k fps on all-nominating traffic).
+Still open under S4: the production-static re-link (R82b) and
+**AC-S4-2** — the
 suppression pilot stays SR17-quadruple-gated on a separate owner
 approval; the SR16 adversarial-oracle run over the shared trie is the
 next device-free step.
