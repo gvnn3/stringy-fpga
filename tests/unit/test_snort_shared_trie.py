@@ -61,15 +61,21 @@ def test_cap16_covers_every_anchor_compilable_rule(trie16):
 
 
 def test_cap16_fits_the_rp_budget(trie16):
-    """The SF2 fit, via the estimator's new table model (SR8)."""
+    """The SF2 fit, via the estimator's table model (SR8).  The ROM
+    placement pays 43 extra BRAM36 over the loadable one (oidx + the
+    tbyte expansion ROM) because UltraScale+ URAM cannot be
+    initialized — the boot-expansion design this pins is the measured
+    Synth 8-10226 workaround, not a preference."""
     tr = sum(len(g) for g in trie16.ac.goto)
     outs = sum(len(o) for o in trie16.ac.out)
     est = E.estimate_table(trie16.n_states, tr, outs)
     assert est == {
-        "uram": 30, "bram36": 66,
+        "uram": 24, "bram36": 109,
         "uram_budget": 64, "bram36_budget": 160,
         "fits_uram": True, "fits_bram": True,
     }
+    ld = E.estimate_table(trie16.n_states, tr, outs, rom=False)
+    assert (ld["uram"], ld["bram36"]) == (30, 66)
 
 
 def test_build_is_deterministic(triaged):
@@ -119,13 +125,30 @@ def _read_memh(path):
         return [int(line, 16) for line in f if line.strip()]
 
 
-def _memh_scan(d, data):
+def _expand_bitmaps(base, tbyte, n_dense):
+    """The engine's boot expansion, re-implemented independently:
+    bitmap[s] = OR(1 << tbyte[j]) over s's dense run.  Verifying the
+    tbyte ROM this way is the point — the fabric never sees a bitmap
+    file (URAM has no init; Synth 8-10226)."""
+    n = len(base)
+    bm = []
+    for s in range(n):
+        end = base[s + 1] if s + 1 < n else n_dense
+        bits = 0
+        for j in range(base[s], end):
+            bits |= 1 << tbyte[j]
+        bm.append(bits)
+    return bm
+
+
+def _memh_scan(d, n_dense, data):
     """Walk the memh arrays exactly the way the RTL does — an
     independent third implementation (model.py reads the image; this
     reads the FILES the fabric will bake)."""
-    bm, base = d["bitmap"], d["base"]
+    base, tbyte = d["base"], d["tbyte"]
     dense, fail = d["dense"], d["fail"]
     oidx, oflat = d["oidx"], d["oflat"]
+    bm = _expand_bitmaps(base, tbyte, n_dense)
     hits, state = [], 0
     for i, b in enumerate(T.ascii_fold(data)):
         while True:
@@ -153,11 +176,12 @@ def test_memh_roundtrip_and_scan(tmp_path):
     d = {name.split("_")[1].split(".")[0]:
          _read_memh(os.path.join(str(tmp_path), name))
          for name in RC.MEMH_FILES}
-    assert len(d["bitmap"]) == ac.n_states
+    assert len(d["base"]) == ac.n_states
     assert len(d["oidx"]) == ac.n_states
+    assert len(d["tbyte"]) == geom["n_dense"]
 
     subject = b"say NEEDLE then deep-needle-x and other stuff"
-    got = sorted(_memh_scan(d, subject))
+    got = sorted(_memh_scan(d, geom["n_dense"], subject))
     # Reference: the trie's own scan semantics over folded input.
     exp = []
     st = 0

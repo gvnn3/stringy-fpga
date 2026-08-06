@@ -30,9 +30,12 @@ from ..overlay import table as _otable
 
 #: File names the ROM engine's $readmemh defaults expect (relative to
 #: the tool CWD — the build script and the xsim runner both copy them
-#: into the working directory).
-MEMH_FILES = ("s4_bitmap.memh", "s4_base.memh", "s4_dense.memh",
-              "s4_fail.memh", "s4_oidx.memh", "s4_oflat.memh")
+#: into the working directory).  There is deliberately NO bitmap file:
+#: UltraScale+ URAM cannot be initialized from the bitstream (measured,
+#: Synth 8-10226), so the engine boot-expands the bitmaps from base +
+#: tbyte at reset; tbyte is the per-dense-entry transition byte value.
+MEMH_FILES = ("s4_base.memh", "s4_dense.memh", "s4_fail.memh",
+              "s4_oidx.memh", "s4_oflat.memh", "s4_tbyte.memh")
 
 
 def _words(section: bytes, nbytes: int, digits: int) -> list:
@@ -56,8 +59,24 @@ def emit_memh(image: bytes, outdir: str) -> Dict[str, int]:
             version != _otable.TABLE_FORMAT_VERSION:
         raise ValueError("not a serialized PYRO table image")
 
+    # tbyte: the boot-expansion source.  For each state, in dense
+    # (byte-sorted) order, the byte value of every set bit in its
+    # bitmap — the exact inverse of the expansion the engine performs,
+    # derived from the image so the serializer stays the layout truth.
+    tbytes = bytearray()
+    bm = image[o_bm:o_base]
+    for s in range(n_states):
+        bits = int.from_bytes(bm[s * 32:(s + 1) * 32], "little")
+        b = bits
+        while b:
+            low = b & -b
+            tbytes.append(low.bit_length() - 1)
+            b ^= low
+    if len(tbytes) != n_dense:
+        raise ValueError("bitmap popcount %d != n_dense %d — image "
+                         "inconsistent" % (len(tbytes), n_dense))
+
     sections = {
-        "s4_bitmap.memh": (image[o_bm:o_base], 32, 64),
         "s4_base.memh": (image[o_base:o_dense], 4, 8),
         "s4_dense.memh": (image[o_dense:o_fail], 4, 8),
         "s4_fail.memh": (image[o_fail:o_oidx], 4, 8),
@@ -67,6 +86,7 @@ def emit_memh(image: bytes, outdir: str) -> Dict[str, int]:
         # but n_oflat can legitimately be small; only truly-empty is
         # padded with one dead word (MAX_OUT is sized >= 1 to match).
         "s4_oflat.memh": (image[o_oflat:] or b"\0\0\0\0", 4, 8),
+        "s4_tbyte.memh": (bytes(tbytes) or b"\0", 1, 2),
     }
     for name, (sec, nbytes, digits) in sections.items():
         with open(os.path.join(outdir, name), "w") as f:

@@ -20,10 +20,12 @@
 #   * the engine is pyro_ac_rom_engine + a GENERATED pyro_circuit alias
 #     (geometry and TABLE_ID are functions of the table build).
 #   * the OOC step runs with CWD=$WORK so $readmemh resolves; the URAM
-#     guard is retuned to the ROM sizing (~30 at cap 16), and a new
-#     guard REFUSES the build if synthesis warns that the URAM initial
-#     contents were dropped — an uninitialized ROM would match nothing
-#     while meeting timing beautifully, the exact false-pass shape
+#     guard is retuned to the ROM sizing (24 at cap 16: bitmap only —
+#     oidx is a BRAM ROM because UltraScale+ URAM cannot be
+#     initialized, Synth 8-10226), and a second guard REFUSES the
+#     build if synthesis warns that memory initial contents were
+#     dropped — an uninitialized ROM would match nothing while meeting
+#     timing beautifully, the exact false-pass shape
 #     scripts/overlay_ooc_timing.tcl documents.
 set -euo pipefail
 
@@ -44,6 +46,15 @@ while [ $# -gt 0 ]; do
 done
 
 [ -f "$STATIC" ] || { echo "ERROR: no locked static: $STATIC"; exit 1; }
+
+# Absolute paths, unconditionally: the OOC step runs Vivado with
+# CWD=$WORK (so $readmemh resolves), which silently breaks every
+# relative --static/--out the moment the cd happens.  Measured on the
+# first run: Vivado started, found neither its tcl nor its log dir,
+# and the wrapper pipeline reported success because tee ate the exit.
+STATIC="$(readlink -f "$STATIC")"
+mkdir -p "$OUT"
+OUT="$(readlink -f "$OUT")"
 
 : "${PYRO_VIVADO_DIR:=/usr/local/cad/2025.2/Vivado}"
 [ -f "$PYRO_VIVADO_DIR/settings64.sh" ] || {
@@ -103,13 +114,13 @@ print("S4_EXPECT_URAM=%d" % est["uram"])
 PY
 
 # The URAM floor derives from the emitted files, not from stdout
-# parsing: recompute the model's number and allow a 3/4 margin.
+# parsing: only the bitmap lives in URAM (boot-expanded — UltraScale+
+# URAM has no init, Synth 8-10226 measured here on the first run), so
+# the model is uram(256, n_states) with a 3/4 margin.
 EXPECT_URAM=$("${REPO}/.venv-pyro/bin/python3" - "$WORK" <<'PY'
 import sys
-n = sum(1 for _ in open(sys.argv[1] + "/s4_bitmap.memh"))
-uram = ((256 + 71) // 72) * ((n + 4095) // 4096) \
-     + ((64 + 71) // 72) * ((n + 4095) // 4096)
-print(uram)
+n = sum(1 for _ in open(sys.argv[1] + "/s4_base.memh"))
+print(((256 + 71) // 72) * ((n + 4095) // 4096))
 PY
 )
 URAM_FLOOR=$(( EXPECT_URAM * 3 / 4 ))
@@ -143,14 +154,19 @@ TCL
 grep -q ROM_RM_OOC_DONE "$WORK/_ooc.out" || {
   echo "OOC synth failed"; exit 1; }
 
-# The false pass this file must not allow: timing met, URAMs present,
-# CONTENT silently zeroed.  Vivado warns when initial values on a
-# memory cannot be honored; any such warning about these arrays is
-# fatal here, not cosmetic.
-if grep -iE "initial (value|content).*(ignor|not support|discard)" \
-    "$WORK/_ooc.log" | grep -qiE "uram|ultra|bitmap_mem|oidx_mem"; then
-  echo "ROM_RM_UNINITIALIZED: synthesis dropped URAM initial contents;"
-  echo "an empty ROM meets timing and matches nothing — refusing."
+# The false pass this file must not allow: timing met, memories
+# present, CONTENT silently zeroed.  Synth 8-10226 is the exact
+# message the first run of this script produced (ram_style=ultra on
+# an initialized ROM: "URAM primitives on this device do not support
+# initializations") — the design now keeps every initialized array in
+# BRAM, so ANY such warning means an init was silently dropped and
+# the ROM would match nothing.  Fatal, not cosmetic.
+if grep -qE "Synth 8-10226" "$WORK/_ooc.log" || \
+   grep -iE "initial (value|content)s?.*(ignor|not support|discard)" \
+       "$WORK/_ooc.log" | grep -qiE "_mem"; then
+  echo "ROM_RM_UNINITIALIZED: synthesis dropped memory initial"
+  echo "contents; an empty ROM meets timing and matches nothing —"
+  echo "refusing."
   exit 1
 fi
 

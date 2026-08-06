@@ -342,24 +342,33 @@ def _bram36_count(width: int, depth: int) -> int:
 
 
 def estimate_table(n_states: int, n_transitions: int,
-                   n_outputs: int) -> dict:
-    """Memory placement of an AC table engine (A5 layout, S4 ROM child).
+                   n_outputs: int, rom: bool = True) -> dict:
+    """Memory placement of an AC table engine against SF2's envelope
+    (``PR_URAM``/``PR_BRAM36``) — the arithmetic SF14 recited and
+    ``tests/unit/test_overlay_table.py`` pinned inline, now reusable
+    (SR8 discipline) so the S4 build has a fit gate to close against.
 
-    Models the six arrays of ``hw/rtl/pyro_overlay_engine.v`` with the
-    measured placement split — bitmap (256 b) and out-index (64 b) in
-    URAM, the four 32-bit arrays in BRAM — against SF2's real envelope
-    (``PR_URAM``/``PR_BRAM36``).  This is the arithmetic SF14 recited
-    and ``tests/unit/test_overlay_table.py`` pinned inline; having it
-    here makes the sizing reproducible from code (SR8 discipline) and
-    gives the S4 build a fit gate to close against.
+    Two placements exist because UltraScale+ URAM cannot be
+    initialized from the bitstream (measured, Synth 8-10226):
+
+    * ``rom=True`` — the S4 ROM child (``pyro_ac_rom_engine.v``):
+      only the bitmap in URAM (boot-expanded); oidx joins the BRAM
+      ROMs, plus the tbyte expansion-source ROM (8 b/transition).
+    * ``rom=False`` — the A5 loadable engine: bitmap AND oidx in
+      URAM (a write port needs no init), four BRAM arrays.
 
     Same contract as :func:`estimate_group`: numbers, not a verdict —
     except for the two booleans, which just compare against the budget.
     """
-    uram = (_uram_count(256, n_states) + _uram_count(64, n_states))
     bram36 = (_bram36_count(32, n_states) * 2          # base + fail
               + _bram36_count(32, n_transitions)       # dense
               + _bram36_count(32, n_outputs))          # oflat
+    if rom:
+        uram = _uram_count(256, n_states)
+        bram36 += (_bram36_count(64, n_states)         # oidx (ROM)
+                   + _bram36_count(8, n_transitions))  # tbyte
+    else:
+        uram = (_uram_count(256, n_states) + _uram_count(64, n_states))
     return {
         "uram": uram,
         "bram36": bram36,

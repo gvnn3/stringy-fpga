@@ -34,13 +34,40 @@
 // re-verified by Snort (SR5).  One 6-input compare on a path with a
 // 5-cycle-per-byte budget; it registers into the skid immediately.
 //
-// URAM INITIALIZATION is the one assumption this file adds: bitmap/oidx
-// keep ram_style="ultra", and baked content requires the toolchain to
-// honor initial values on UltraRAM (supported in Vivado since 2019.2;
-// no precedent in this repo).  The S4 OOC spike gates on both the URAM
-// count AND the absence of dropped-initialization warnings before any
-// link is attempted; if the fabric cannot initialize URAM, this design
-// is wrong, not slow.
+// URAM CANNOT BE INITIALIZED ON THIS DEVICE — measured, not assumed.
+// The first OOC synth of this engine (2026-08-06) warned:
+//   [Synth 8-10226] ram_style = ultra ... can not be honored for this
+//   device.  The URAM primitives on this device do not support
+//   initializations to any non 0 values.  This ROM will be
+//   implemented using BRAMs
+// and re-inferred BRAM for both big arrays (URAM count 0; the build
+// guard refused the link).  URAM init is a Versal feature; on
+// UltraScale+ the primitives configure to all-ZEROS and that is all.
+//
+// So the table is baked in two forms:
+//   * base/fail/dense/oflat/oidx — BRAM ROMs ($readmemh; BRAM init IS
+//     honored).  oidx moves from URAM to BRAM for this reason (38
+//     BRAM36 at cap-16 sizing; it fits).
+//   * bitmap_mem — the only array that must stay URAM (256 b wide; in
+//     BRAM it alone would blow the budget).  Its content is fully
+//     DERIVABLE from data already resident: base_mem bounds each
+//     state's transition run in dense order, and a small tbyte ROM
+//     (8 b per dense entry) holds each transition's byte value.  A
+//     one-shot BOOT FSM walks the states out of reset and expands
+//     bitmap_mem[s] = OR(1 << tbyte[j]) over the state's run —
+//     roughly 3 cycles per transition plus 6 per state, ~0.3 ms at
+//     250 MHz, once per configuration.  Every state is written,
+//     including the transitionless ones (zeros): hardware URAM powers
+//     up zeroed but xsim reads X, and the differential must see the
+//     same table silicon will.
+//
+// The engine holds in_ready low until boot_done, so a frame arriving
+// during expansion stalls in the wrapper's credit handshake and is
+// scanned correctly ~0.3 ms later; nothing is dropped, nothing scans
+// against a half-built bitmap.  This is still "ROM-initialized at
+// synthesis — no runtime table writes" in AC-S4-1's sense: content is
+// fixed when the bitstream is written and no host-reachable write
+// path exists.
 
 `timescale 1ns/1ps
 `default_nettype none
@@ -53,12 +80,12 @@ module pyro_ac_rom_engine #(
     parameter [31:0]  ENGINE_ID   = 32'h53340001,  // "S4"
     parameter [31:0]  TABLE_ID    = 32'h00000000,  // host CRC-32C, baked
     parameter [31:0]  TABLE_EPOCH = 32'h00000001,  // nonzero, constant
-    parameter BITMAP_MEMH = "s4_bitmap.memh",
     parameter BASE_MEMH   = "s4_base.memh",
     parameter DENSE_MEMH  = "s4_dense.memh",
     parameter FAIL_MEMH   = "s4_fail.memh",
     parameter OIDX_MEMH   = "s4_oidx.memh",
-    parameter OFLAT_MEMH  = "s4_oflat.memh"
+    parameter OFLAT_MEMH  = "s4_oflat.memh",
+    parameter TBYTE_MEMH  = "s4_tbyte.memh"
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -111,27 +138,121 @@ module pyro_ac_rom_engine #(
     reg [63:0] perf_cycles, perf_bytes;
     wire       load_mode = tbl_ctrl[B_LOAD];
 
-    // ---------------- table memories (ROM: init, no write port) ---------
-    // Placement split and cascade_height as measured on the A5 engine
-    // (pyro_overlay_engine.v): bitmap + oidx to URAM, the 32-bit arrays
-    // to BRAM.  At the S4 cap-16 sizing (21,332 states) the model says
-    // 30 URAM + 66 BRAM36 against SF2's 64/160.
+    // ---------------- table memories -------------------------------------
+    // bitmap: URAM, boot-expanded (see header — URAM has no init on
+    // this device).  Everything else: BRAM ROMs, $readmemh honored.
+    // Cap-16 sizing: 24 URAM + ~109 BRAM36 against SF2's 64/160.
     (* ram_style = "ultra", cascade_height = 2 *)
     reg [255:0] bitmap_mem [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  base_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  fail_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  dense_mem  [0:MAX_DENSE-1];
-    (* ram_style = "ultra", cascade_height = 2 *)
-    reg [63:0]  oidx_mem   [0:MAX_STATES-1];
+    (* ram_style = "block" *) reg [63:0]  oidx_mem   [0:MAX_STATES-1];
     (* ram_style = "block" *) reg [31:0]  oflat_mem  [0:MAX_OUT-1];
+    (* ram_style = "block" *) reg [7:0]   tbyte_mem  [0:MAX_DENSE-1];
 
     initial begin
-        $readmemh(BITMAP_MEMH, bitmap_mem);
-        $readmemh(BASE_MEMH,   base_mem);
-        $readmemh(DENSE_MEMH,  dense_mem);
-        $readmemh(FAIL_MEMH,   fail_mem);
-        $readmemh(OIDX_MEMH,   oidx_mem);
-        $readmemh(OFLAT_MEMH,  oflat_mem);
+        $readmemh(BASE_MEMH,  base_mem);
+        $readmemh(DENSE_MEMH, dense_mem);
+        $readmemh(FAIL_MEMH,  fail_mem);
+        $readmemh(OIDX_MEMH,  oidx_mem);
+        $readmemh(OFLAT_MEMH, oflat_mem);
+        $readmemh(TBYTE_MEMH, tbyte_mem);
+    end
+
+    // ---------------- boot expansion: base + tbyte -> bitmap -------------
+    // Non-pipelined on purpose: boot runs once per configuration and
+    // 0.3 ms is invisible next to configuration itself, so every read
+    // gets the same addr -> wait -> latch discipline the scan FSM uses
+    // (registered BRAM reads are valid at N+2, and guessing one cycle
+    // is the off-by-one that produced zero matches in the A5 bring-up).
+    localparam [2:0] BS_BASE0 = 3'd0,  // issue base[s]
+                     BS_BASE1 = 3'd1,  // issue base[s+1]
+                     BS_BASE2 = 3'd2,  // latch run start
+                     BS_BASE3 = 3'd3,  // latch run end
+                     BS_TB0   = 3'd4,  // issue tbyte[j] / done -> write
+                     BS_TB1   = 3'd5,  // wait
+                     BS_TB2   = 3'd6,  // latch: acc |= 1 << tbyte
+                     BS_DONE  = 3'd7;
+    reg [2:0]   bst;
+    reg [31:0]  b_s, b_j, b_end;
+    (* max_fanout = 16 *) reg [255:0] b_acc;
+    reg         b_wr;
+    // The write executes one cycle after b_wr is raised, by which time
+    // b_s has already advanced to the next state — writing bitmap_mem
+    // [b_s] here put every state's bitmap at s+1 (caught by the xsim
+    // differential the cycle it was written).  b_ws latches the OLD
+    // b_s in the same nonblocking assignment group, so the write lands
+    // where the accumulation happened.
+    reg [31:0]  b_ws;
+    reg         boot_done;
+    reg [31:0]  a_bbase, a_tb;
+    reg [31:0]  d_bbase;
+    reg [7:0]   d_tb;
+
+    always @(posedge clk) begin
+        d_bbase <= base_mem[a_bbase];
+        d_tb    <= tbyte_mem[a_tb];
+        if (b_wr) bitmap_mem[b_ws] <= b_acc;
+    end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            bst <= BS_BASE0; b_s <= 32'd0; b_j <= 32'd0; b_end <= 32'd0;
+            b_acc <= 256'd0; b_wr <= 1'b0; b_ws <= 32'd0;
+            boot_done <= 1'b0;
+            a_bbase <= 32'd0; a_tb <= 32'd0;
+        end else begin
+            b_wr <= 1'b0;
+            b_ws <= b_s;
+            case (bst)
+                BS_BASE0: if (!boot_done) begin
+                    a_bbase <= b_s;
+                    bst     <= BS_BASE1;
+                end
+                BS_BASE1: begin
+                    // Clamp the s+1 read at the top state; its run
+                    // ends at MAX_DENSE, not at a base entry.
+                    a_bbase <= (b_s + 32'd1 < MAX_STATES)
+                             ? (b_s + 32'd1) : 32'd0;
+                    bst <= BS_BASE2;
+                end
+                BS_BASE2: begin
+                    b_j <= d_bbase;
+                    bst <= BS_BASE3;
+                end
+                BS_BASE3: begin
+                    b_end <= (b_s + 32'd1 < MAX_STATES)
+                           ? d_bbase : MAX_DENSE;
+                    b_acc <= 256'd0;
+                    bst   <= BS_TB0;
+                end
+                BS_TB0: if (b_j == b_end) begin
+                    // Run complete (possibly empty): write the bitmap
+                    // — EVERY state gets one, zeros included, so xsim
+                    // and silicon hold the same table.
+                    b_wr <= 1'b1;
+                    if (b_s + 32'd1 == MAX_STATES) begin
+                        boot_done <= 1'b1;
+                        bst       <= BS_DONE;
+                    end else begin
+                        b_s <= b_s + 32'd1;
+                        bst <= BS_BASE0;
+                    end
+                end else begin
+                    a_tb <= b_j;
+                    bst  <= BS_TB1;
+                end
+                BS_TB1: bst <= BS_TB2;
+                BS_TB2: begin
+                    b_acc <= b_acc | (256'd1 << d_tb);
+                    b_j   <= b_j + 32'd1;
+                    bst   <= BS_TB0;
+                end
+                BS_DONE: ;   // parked; only reset restarts the walk
+                default: bst <= BS_DONE;
+            endcase
+        end
     end
 
     // ---------------- scan pipeline (verbatim from the A5 engine) -------
@@ -231,17 +352,19 @@ module pyro_ac_rom_engine #(
     wire [7:0] fold_b = (in_data >= 8'h41 && in_data <= 8'h5A)
                       ? (in_data | 8'h20) : in_data;
 
-    wire push = in_valid && !load_mode && (sk_n < 2'd2);
+    wire push = in_valid && !load_mode && boot_done && (sk_n < 2'd2);
     wire pop  = (st == S_IDLE) && (sk_n != 2'd0);
     wire       have_byte = (sk_n != 2'd0);
     wire [7:0] byte_in   = sk0_d;
     wire       byte_last = sk0_l;
 
-    // Always ready at the root: the ROM table is valid from configuration
-    // (no active_valid gate — there is no reset-holding-stale-content
-    // hazard when content cannot change).  Load-mode bytes are absorbed
-    // and dropped so a stray A5 transfer terminates cleanly.
-    assign in_ready = load_mode ? 1'b1 : (sk_n == 2'd0);
+    // Ready once the boot expansion has written every bitmap (there is
+    // no stale-content hazard — content cannot change — but scanning
+    // against a HALF-EXPANDED bitmap would be silently wrong, so
+    // in_ready holds the wrapper's credit handshake until boot_done).
+    // Load-mode bytes are absorbed and dropped so a stray A5 transfer
+    // terminates cleanly.
+    assign in_ready = load_mode ? 1'b1 : (boot_done && sk_n == 2'd0);
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -314,7 +437,9 @@ module pyro_ac_rom_engine #(
                 A_TBL_ACTIVE: csr_rdata <= TABLE_ID;
                 A_TBL_SHADOW: csr_rdata <= 32'd0;   // nothing in flight
                 A_TBL_EPOCH:  csr_rdata <= TABLE_EPOCH;
-                A_TBL_STATUS: csr_rdata <= {28'd0, commit_err, 1'b1,
+                // active_valid = boot_done: the identity is baked but
+                // the table is not scannable until expansion finishes.
+                A_TBL_STATUS: csr_rdata <= {28'd0, commit_err, boot_done,
                                             load_mode, 1'b0};
                 A_TBL_BYTES:  csr_rdata <= IMAGE_BYTES[31:0];
                 A_TBL_CAPS:   csr_rdata <= MAX_STATES[31:0];
