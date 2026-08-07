@@ -146,9 +146,27 @@ def test_sched_roundtrip_and_local_rejects():
     ack = mw.decode_sched_ack(frame)
     assert ack == mw.SchedAck(mode=mw.SCHED_RR, quantum=4, status=0)
     with pytest.raises(pdev.PyroFrameError):
-        mw.encode_sched_set(3, 1)          # bad mode
+        mw.encode_sched_set(4, 1)          # bad mode (3 is broadcast)
     with pytest.raises(pdev.PyroFrameError):
         mw.encode_sched_set(mw.SCHED_RR, 0)  # quantum >= 1
+
+
+def test_sched_broadcast_mode3_roundtrip():
+    """Mode 3 (broadcast: every wire frame to BOTH programs) is a
+    valid SCHED_SET, while 7 and the 0xFF refusal-probe mode stay
+    locally rejected — the read idiom depends on 0xFF refusing."""
+    assert mw.SCHED_BROADCAST == 3
+    payload = mw.encode_sched_set(mw.SCHED_BROADCAST, 1)
+    assert payload == b"\x03\x00\x00\x01"
+    frame = pdev.decode_frame(pdev.encode_frame(
+        pdev.KIND_SCHED_ACK, 1, 5,
+        struct.pack(">BBHI", mw.SCHED_BROADCAST, 0, 1, 0)))
+    ack = mw.decode_sched_ack(frame)
+    assert ack == mw.SchedAck(mode=mw.SCHED_BROADCAST, quantum=1,
+                              status=0)
+    for bad in (4, 7, 0xFF):
+        with pytest.raises(pdev.PyroFrameError):
+            mw.encode_sched_set(bad, 1)
 
 
 def test_mac_stats_zero_slack():
@@ -445,6 +463,20 @@ def test_set_sched_ack_roundtrip():
     ack = mw.set_sched(_config(FakeTransport(responder=responder)),
                        mw.SCHED_RR, 4)
     assert ack == mw.SchedAck(mode=mw.SCHED_RR, quantum=4, status=0)
+
+
+def test_set_sched_broadcast_over_transport():
+    def responder(frame):
+        dec = pdev.decode_frame(frame[14:])
+        mode, _resv, quantum = struct.unpack(">BBH", dec.payload)
+        return [ETH + pdev.encode_frame(
+            pdev.KIND_SCHED_ACK, dec.slot, dec.seq,
+            struct.pack(">BBHI", mode, 0, quantum, 0))]
+
+    ack = mw.set_sched(_config(FakeTransport(responder=responder)),
+                       mw.SCHED_BROADCAST, 1)
+    assert ack == mw.SchedAck(mode=mw.SCHED_BROADCAST, quantum=1,
+                              status=0)
 
 
 def test_read_mac_stats_and_no_reply_paths():

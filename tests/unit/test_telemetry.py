@@ -403,6 +403,39 @@ def test_wire_sched_section_live(monkeypatch):
         assert key in snap["scheduler"]
 
 
+def test_sched_mode_names_cover_every_mode():
+    """The name map tracks the macwire mode constants exactly — a mode
+    added on one side without the other fails here, not in a chart."""
+    import pyro.macwire as mw
+    assert T.SCHED_MODE_NAMES == {0: "p0_only", 1: "p1_only",
+                                  2: "round_robin", 3: "broadcast"}
+    assert T.SCHED_MODE_NAMES[mw.SCHED_BROADCAST] == "broadcast"
+    # unknown values map to a null name, never a guessed one
+    assert T.SCHED_MODE_NAMES.get(0xFF) is None
+
+
+def test_wire_sched_mode_name_broadcast(monkeypatch):
+    """Mode 3: each program counts every broadcast frame in its own
+    seen — EQUAL counters, not a partition — and both zero-slack
+    residuals stay exactly 0."""
+    import pyro.macwire as mw
+    cfg = _usable_cfg(monkeypatch)
+    monkeypatch.setattr(mw, "read_sched",
+                        lambda cfg, slot=1: mw.SchedState(mode=3,
+                                                          quantum=1))
+    monkeypatch.setattr(mw, "read_mac_stats",
+                        lambda cfg, slot=1: mw.MacStats(60, 0, 60, 0,
+                                                        0, 0))
+    snap = T.collect_snapshot(cfg=cfg, include_corpus=False)
+    wm = snap["scheduler"]["wire_mac"]
+    assert wm["available"] is True
+    assert wm["mode"] == 3 and wm["mode_name"] == "broadcast"
+    assert wm["p0_wire"]["seen"] == wm["p1_mac"]["seen"] == 60
+    der = wm["derived"]
+    assert der["zero_slack_residual_p0"] == 0
+    assert der["zero_slack_residual_p1"] == 0
+
+
 def test_wire_sched_p0_nulled_when_wire_counters_missing(monkeypatch):
     import pyro.device as pdev
     import pyro.macwire as mw

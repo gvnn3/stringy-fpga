@@ -25,7 +25,8 @@ OVERLAY_HASH = "0a5e000100000000000000000000a5e1"
 
 # anchors that exist ONLY in the multi-program emission
 _MAC_ANCHORS = ("pyro_rp_mac_prog", "pyro_mac_engine_top",
-                "sched_mode", "records_lost", "reports_sent")
+                "sched_mode", "records_lost", "reports_sent",
+                "rx_bcast_q")
 
 
 def test_old_mode_byte_identity_across_default_kwarg():
@@ -109,6 +110,48 @@ def test_mac_mode_composes_with_existing_knobs():
 def test_mac_mode_rejects_multicore():
     with pytest.raises(ValueError, match="cores"):
         w.generate_rp_child(HASH, mac_program=True, cores=2)
+
+
+def test_mode3_broadcast_dispatch_structure():
+    # SCHED mode 3 (broadcast): per-packet decision on the registered
+    # first beat, latched to tlast, lockstep handshake for broadcast
+    # frames; host frames never broadcast (bc_new is wire_tag-gated).
+    t = w.generate_rp_child(HASH, mac_program=True)
+    assert "bc_new  = wire_tag && (sched_mode == 2'd3)" in t
+    assert "rx_bc   = rx_inpkt ? rx_bcast_q : bc_new" in t
+    # coupled backpressure: a broadcast beat needs BOTH programs ready
+    assert "rx_bc ? (p0_s_tready && p1_s_tready)" in t
+    assert "(rx_tgt ? p1_s_tready : p0_s_tready)" in t
+    # both tvalids open under broadcast, unicast routing otherwise
+    assert "(rx_bc || !rx_tgt)" in t
+    assert "(rx_bc ||  rx_tgt)" in t
+    # packet-atomic: the broadcast latch mirrors the target lock
+    assert "rx_bcast_q <= rx_bc;" in t
+    assert "rx_bcast_q <= 1'b0;" in t
+
+
+def test_mode3_sched_validation_accepts_3_rejects_above():
+    # SCHED_SET accepts modes 0..3; 7 and 0xFF stay refused (the
+    # telemetry refusal probe reads the schedule via invalid mode
+    # 0xFF, so the refusal path is load-bearing).
+    t = w.generate_rp_child(HASH, mac_program=True)
+    assert "hdr[8*28 +: 8] <= 8'd3" in t
+    assert "hdr[8*28 +: 8] <= 8'd2" not in t
+    # refusal path intact: status 1, schedule unchanged
+    assert "sc_status     <= 32'd1;" in t
+    # quantum >= 1 still required in every mode
+    assert "{hdr[8*30 +: 8], hdr[8*31 +: 8]} != 16'd0" in t
+
+
+def test_mode3_rotation_still_gated_on_mode2():
+    # cur_prog/turn_cnt advance stays gated on round-robin mode; the
+    # broadcast mode has no turn to take.
+    t = w.generate_rp_child(HASH, mac_program=True)
+    assert "(sched_mode == 2'd2)) begin" in t
+    # reset default schedule unchanged: mode 2, quantum 1
+    assert "sched_mode    <= 2'd2;" in t
+    # host-frame routing unchanged: mac_host alone picks the codec
+    assert ": mac_host;" in t
 
 
 def test_mac_engine_source_list():

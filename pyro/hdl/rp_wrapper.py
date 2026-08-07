@@ -2534,11 +2534,14 @@ module pyro_rp_mac_prog #(
         end
 
         // ---- SCHED_SET: validate, apply-or-refuse, always ACK ----------
-        // mode u8 @28 (0 P0-only, 1 P1-only, 2 RR), quantum u16 BE
-        // @30-31 (>= 1).  A refusal leaves the schedule UNCHANGED and
-        // reports status 1 (contract).
+        // mode u8 @28 (0 P0-only, 1 P1-only, 2 RR, 3 broadcast),
+        // quantum u16 BE @30-31 (>= 1 in every mode; unused in modes
+        // 0/1/3).  A refusal leaves the schedule UNCHANGED and reports
+        // status 1 (contract).  The refusal path is load-bearing: the
+        // telemetry refusal probe reads the active schedule via a
+        // deliberately invalid mode (0xFF), so 7/0xFF stay refused.
         M_SCHED: begin
-          if ((hdr[8*28 +: 8] <= 8'd2) &&
+          if ((hdr[8*28 +: 8] <= 8'd3) &&
               ({hdr[8*30 +: 8], hdr[8*31 +: 8]} != 16'd0)) begin
             sched_mode    <= hdr[8*28 +: 2];
             sched_quantum <= {hdr[8*30 +: 8], hdr[8*31 +: 8]};
@@ -2898,9 +2901,13 @@ endmodule : pyro_rp_mac_prog
 //     WIRE frames (tuser src bit 6 = 0x0040) follow the schedule —
 //     mode 0 = P0 only, mode 1 = P1 only, mode 2 = round-robin with
 //     `quantum` frames per program per turn (reset default: mode 2,
-//     quantum 1).  Packet-atomic: a locked target holds to tlast, so a
-//     switch can never happen mid-frame.  HOST frames NEVER enter the
-//     schedule: the three MAC kinds go to P1's codec, everything else
+//     quantum 1), mode 3 = BROADCAST: every wire frame is delivered to
+//     BOTH programs (passive analyzers — duplication is coverage), with
+//     a lockstep handshake so a broadcast beat advances only when both
+//     programs accept it.  Packet-atomic: the locked target and the
+//     broadcast latch hold to tlast, so a switch can never happen
+//     mid-frame.  HOST frames NEVER enter the schedule and are NEVER
+//     broadcast: the three MAC kinds go to P1's codec, everything else
 //     to P0 (R78 request/reply lockstep preserved per program).
 //   * TX: packet-atomic round-robin between P0 and P1 output.
 // ***************************************************************************
@@ -2990,6 +2997,7 @@ module pyro_rp #(
   // ---- RX dispatch (registered stage-0 beat, packet-atomic) --------------
   reg          rx_inpkt;    // mid-packet: target locked in rx_tgt_q
   reg          rx_tgt_q;
+  reg          rx_bcast_q;  // mid-packet: broadcast latched (mode 3)
   reg          cur_prog;    // whose turn in round-robin mode
   reg  [15:0]  turn_cnt;    // wire frames granted in the current turn
   reg   [1:0]  mode_p;      // schedule-change detect (previous values)
@@ -3005,25 +3013,33 @@ module pyro_rp #(
        (rx_kind == KIND_MAC_STAT_REQ));
 
   // Wire frames follow the schedule; host frames NEVER do (contract:
-  // src 0x0001 control traffic always reaches its codec).
+  // src 0x0001 control traffic always reaches its codec).  Mode 3
+  // (broadcast) delivers every wire frame to BOTH programs: rx_bc
+  // overrides the unicast target, and the handshake couples —
+  // d_tready needs both programs ready, so the two copies of a
+  // broadcast beat fire in lockstep and stay beat-aligned.
+  wire bc_new  = wire_tag && (sched_mode == 2'd3);
   wire tgt_new = wire_tag
       ? ((sched_mode == 2'd0) ? 1'b0 :
          (sched_mode == 2'd1) ? 1'b1 : cur_prog)
       : mac_host;
+  wire rx_bc   = rx_inpkt ? rx_bcast_q : bc_new;
   wire rx_tgt  = rx_inpkt ? rx_tgt_q : tgt_new;
-  assign d_tready = rx_tgt ? p1_s_tready : p0_s_tready;
+  assign d_tready = rx_bc ? (p0_s_tready && p1_s_tready)
+                          : (rx_tgt ? p1_s_tready : p0_s_tready);
 
-  assign p0_s_tvalid = si_v0 && d_tready && !rx_tgt;
-  assign p1_s_tvalid = si_v0 && d_tready &&  rx_tgt;
+  assign p0_s_tvalid = si_v0 && d_tready && (rx_bc || !rx_tgt);
+  assign p1_s_tvalid = si_v0 && d_tready && (rx_bc ||  rx_tgt);
 
   always @(posedge clk) begin
     if (!rstn) begin
-      rx_inpkt <= 1'b0;
-      rx_tgt_q <= 1'b0;
-      cur_prog <= 1'b0;
-      turn_cnt <= 16'd0;
-      mode_p   <= 2'd2;      // matches the P1 reset defaults
-      quant_p  <= 16'd1;
+      rx_inpkt   <= 1'b0;
+      rx_tgt_q   <= 1'b0;
+      rx_bcast_q <= 1'b0;
+      cur_prog   <= 1'b0;
+      turn_cnt   <= 16'd0;
+      mode_p     <= 2'd2;    // matches the P1 reset defaults
+      quant_p    <= 16'd1;
     end else begin
       mode_p  <= sched_mode;
       quant_p <= sched_quantum;
@@ -3033,7 +3049,9 @@ module pyro_rp #(
         turn_cnt <= 16'd0;
       end else if (d_fire && !rx_inpkt && wire_tag &&
                    (sched_mode == 2'd2)) begin
-        // a wire frame was GRANTED to cur_prog: advance the turn
+        // a wire frame was GRANTED to cur_prog: advance the turn.
+        // Rotation advances ONLY in mode 2; modes 0/1/3 freeze
+        // cur_prog/turn_cnt (broadcast has no turn to take).
         if ((turn_cnt + 16'd1) >= sched_quantum) begin
           turn_cnt <= 16'd0;
           cur_prog <= ~cur_prog;
@@ -3042,7 +3060,10 @@ module pyro_rp #(
         end
       end
       if (d_fire) begin
-        if (!rx_inpkt) rx_tgt_q <= rx_tgt;
+        if (!rx_inpkt) begin
+          rx_tgt_q   <= rx_tgt;
+          rx_bcast_q <= rx_bc;
+        end
         rx_inpkt <= !si_l0;
       end
     end

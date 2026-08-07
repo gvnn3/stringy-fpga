@@ -65,7 +65,7 @@ __all__ = [
     "REC_IPV4", "REC_IPV6", "REC_TCP", "REC_UDP", "REC_OTHER_L4",
     "REC_OPTS_ZEROED", "REC_TRUNCATED",
     "REPORT_LOSS", "REPORT_WIRE_ORIGIN",
-    "SCHED_P0_ONLY", "SCHED_P1_ONLY", "SCHED_RR",
+    "SCHED_P0_ONLY", "SCHED_P1_ONLY", "SCHED_RR", "SCHED_BROADCAST",
     # typed views
     "MacRecord", "MacReport", "MacKeyAck", "SchedAck", "SchedState",
     "MacStats",
@@ -119,6 +119,7 @@ REPORT_WIRE_ORIGIN = 1 << 2   # wire-origin marker, ALWAYS set
 SCHED_P0_ONLY = 0
 SCHED_P1_ONLY = 1
 SCHED_RR = 2
+SCHED_BROADCAST = 3     # every wire frame to BOTH programs
 
 _VLAN_TPIDS = (0x8100, 0x88A8)
 _ETH_IPV4 = 0x0800
@@ -278,10 +279,14 @@ def encode_sched_set(mode: int, quantum: int) -> bytes:
     """``SCHED_SET`` (0x11) payload: mode u8, resv u8, quantum u16 BE.
 
     Rejects locally what the device would refuse (status 1): a mode
-    outside 0..2 or a quantum outside 1..65535.
+    outside 0..3 or a quantum outside 1..65535.  Mode 3 (broadcast)
+    delivers every wire frame to BOTH programs; the INVALID 0xFF the
+    refusal-probe read depends on stays rejected here by design.
     """
-    if mode not in (SCHED_P0_ONLY, SCHED_P1_ONLY, SCHED_RR):
-        raise PyroFrameError("bad scheduler mode %r (0|1|2)" % (mode,))
+    if mode not in (SCHED_P0_ONLY, SCHED_P1_ONLY, SCHED_RR,
+                    SCHED_BROADCAST):
+        raise PyroFrameError(
+            "bad scheduler mode %r (0|1|2|3)" % (mode,))
     if not 1 <= int(quantum) <= 0xFFFF:
         raise PyroFrameError(
             "bad scheduler quantum %r (1..65535)" % (quantum,))

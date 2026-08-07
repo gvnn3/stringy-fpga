@@ -10,9 +10,12 @@ combined:
   the MAC_KEY_ACK keycheck against the host's own
   SipHash-2-4(key, "PYROMACKEYCHECK1") — a mismatch is a hard failure
   because the device would be digesting under a different key.
-* ``--sched MODE[/QUANTUM]`` (``p0``/``p1``/``rr`` or ``0``/``1``/
-  ``2``; quantum >= 1, default 1): sets the wire-frame dispatch via
-  SCHED_SET and refuses to continue on a nonzero ack status.
+* ``--sched MODE[/QUANTUM]`` (``p0``/``p1``/``rr``/``both`` or
+  ``0``/``1``/``2``/``3``; quantum >= 1, default 1): sets the
+  wire-frame dispatch via SCHED_SET and refuses to continue on a
+  nonzero ack status.  ``both`` is mode 3 (broadcast): every wire
+  frame is delivered to BOTH programs — full coverage instead of RR
+  isolation, and each program counts every frame in its own seen.
 * ``--stats``: one-shot MAC_STAT_REPLY dump with the zero-slack check
   (seen == digested + skip_nonip + skip_nokey EXACTLY).
 * ``--watch``: streams unsolicited MAC_REPORT frames (kind-filtered
@@ -43,9 +46,11 @@ import pyro.macwire as mw       # noqa: E402
 
 _MODES = {"p0": mw.SCHED_P0_ONLY, "0": mw.SCHED_P0_ONLY,
           "p1": mw.SCHED_P1_ONLY, "1": mw.SCHED_P1_ONLY,
-          "rr": mw.SCHED_RR, "2": mw.SCHED_RR}
+          "rr": mw.SCHED_RR, "2": mw.SCHED_RR,
+          "both": mw.SCHED_BROADCAST, "3": mw.SCHED_BROADCAST}
 _MODE_NAMES = {mw.SCHED_P0_ONLY: "p0-only", mw.SCHED_P1_ONLY: "p1-only",
-               mw.SCHED_RR: "round-robin"}
+               mw.SCHED_RR: "round-robin",
+               mw.SCHED_BROADCAST: "broadcast"}
 
 
 def parse_key(text):
@@ -74,8 +79,8 @@ def parse_sched(text):
     part = text.strip().lower().split("/")
     if part[0] not in _MODES or len(part) > 2:
         raise SystemExit(
-            "bad --sched %r: MODE[/QUANTUM], MODE in p0|p1|rr|0|1|2"
-            % text)
+            "bad --sched %r: MODE[/QUANTUM], MODE in "
+            "p0|p1|rr|both|0|1|2|3" % text)
     quantum = 1
     if len(part) == 2:
         try:
@@ -111,7 +116,8 @@ def main() -> int:
     ap.add_argument("--key-id", type=int, default=1,
                     help="key_id for --load-key (default 1)")
     ap.add_argument("--sched", metavar="MODE[/QUANTUM]",
-                    help="set dispatch: p0|p1|rr[/quantum]")
+                    help="set dispatch: p0|p1|rr|both[/quantum] "
+                         "(both = mode 3 broadcast)")
     ap.add_argument("--stats", action="store_true",
                     help="one-shot counter read + zero-slack check")
     ap.add_argument("--watch", action="store_true",

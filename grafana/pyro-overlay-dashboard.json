@@ -357,7 +357,8 @@
               "options": {
                 "0": { "text": "p0_only", "color": "blue" },
                 "1": { "text": "p1_only", "color": "orange" },
-                "2": { "text": "round_robin", "color": "green" }
+                "2": { "text": "round_robin", "color": "green" },
+                "3": { "text": "broadcast", "color": "purple" }
               }
             }
           ],

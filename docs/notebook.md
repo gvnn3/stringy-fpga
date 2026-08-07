@@ -17,42 +17,45 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+1. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+   Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
+   :complete:
+2. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-2. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+3. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-3. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+4. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-4. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+5. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-5. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+6. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-6. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+7. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-7. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+8. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-8. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+9. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-9. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-10. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-11. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-12. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-13. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-14. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-15. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-16. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-17. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-18. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-19. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-20. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-21. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-22. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-23. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-24. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+10. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+11. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+12. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+13. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+14. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+15. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+16. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+17. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+18. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+19. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+20. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+21. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+22. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+23. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+24. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+25. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -4244,3 +4247,92 @@ AH precedent).
 - IPv6 extension-header walk; optional 128-bit tag; key rotation
   cadence vs keycheck round-trip cost.
 - Third program slot, to confirm diversity is area-only.
+
+---
+
+# EXPERIMENT 7 Aug 2026 20:15:46 Broadcast Mode: Every Wire Frame
+to Both Programs, Coverage Without Partition :complete:
+
+## 1. Hypothesis
+
+Round-robin partitions the wire: each program sees only its share
+(SNORT coverage gap, alternating digests).  Since both programs
+are passive analyzers, a broadcast mode — every wire frame
+delivered to BOTH — should trade that isolation for full coverage
+at the cost of one latch and a coupled ready, with per-program
+zero-slack accounting intact and the counters EQUAL instead of
+partitioning.
+
+## 2. How
+
+- **Equipment:** U250 wiretap static on nf-server06; multi-program
+  child rebuilt and re-linked (R82b) against the locked static.
+- **Software:** SCHED mode 3 in the generated dispatcher: broadcast
+  decision latched per packet (rx_bcast_q mirrors rx_tgt_q),
+  lockstep handshake d_tready = p0_ready && p1_ready, rotation
+  frozen outside mode 2; SCHED_SET bound <= 3 (7/0xFF still
+  refused, so the telemetry refusal-probe read survives).  Host
+  surface: --sched both, mode_name "broadcast", Grafana mapping.
+  Spec v0.2.0 (MR4a broadcast accounting).  One ultracode workflow
+  under the new single-writer rules (a concurrent workflow's fixer
+  had git-checkout-reverted the first implementation; recovered
+  from the workflow journal, relaunched sequentially).
+- **Benchmarks:** xsim proof on the real elaboration (5 checks
+  incl. exact golden-model digest of a broadcast frame and a
+  whitebox mid-frame atomicity witness); silicon runner step 9.
+
+### Key commands
+
+```bash
+hw/dfx/build_overlay_rm.sh \
+    --static hw/dfx/build-wiretap/dcp/static_routed_locked.dcp \
+    --out hw/dfx/build-wiretap --tag multi_mac_wire --mac
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_mac_silicon.py --window 1.0
+```
+
+## 3. Observations
+
+- xsim: SCHED_SET 3 accepted, 7/0xFF refused; ONE IPv4 wire frame
+  -> P0 +1 AND P1 +1 AND a MAC_REPORT digest equal to
+  digest_packet EXACTLY; 6 mixed frames -> equal counters
+  (digested +4 / skip_nonip +2), zero-slack absolute; back to
+  mode 2 -> exact 2/2; mid-frame SCHED_SET neither tears nor
+  dual-targets (witness latch never fired).  Old-mode emissions
+  byte-identical to HEAD across all six legacy invocations.
+- Relink: **WNS +0.020 ns** — third consecutive link at the same
+  margin; the broadcast logic cost nothing.  pr_verify all four
+  configs.
+- Silicon (all 10 runner steps PASS): load 15.1 s; rekey A->B->A
+  exact; RR window 269,299 frames at **0.500/0.500**; broadcast
+  window: **P0 seen +266,397 == P1 seen +266,397** — every frame
+  reached both programs at ~266k fps EACH, zero drops, both
+  zero-slack invariants exact; restore to rr/1 acked and
+  partitioning resumed.  digested=0 as expected (tx_gen is
+  non-IP; on-wire digest content still awaits a QSFP cable).
+- Broadcast throughput ~266k fps vs RR ~269k fps: the coupled
+  ready cost ~1% at this load.
+
+## 4. Data analysis
+
+The coverage-vs-isolation dial now exists in silicon and costs one
+mux term: mode 2 divides the wire (each program at half load, half
+coverage), mode 3 duplicates it (both at full coverage, coupled
+backpressure).  The equal-counters accounting held exactly at
+quarter-million-frame scale, which is the strongest evidence the
+lockstep handshake never drops or double-counts a beat.  Scheduling
+policy is now a pure runtime choice — partition, pin, or broadcast
+— switched in-band in milliseconds with no residency event, which
+is the overlay-scheduling thesis extended one step: not just WHO
+runs, but the delivery TOPOLOGY is now programmable data.
+
+## 5. Ideas for future experiments
+
+- On-wire IP traffic (QSFP cable to ens4f1np1) — real digests +
+  MAC_REPORT content on silicon in both RR and broadcast.
+- Backpressure asymmetry: throttle one program (long P0 scan vs
+  fast P1) and measure the coupled-ready cost beyond ~1%.
+- Third program: broadcast generalizes to per-program enable masks
+  (mode bits as a delivery bitmap) — the natural next step.
+- Quantum sweep at mode 2 (64, 1024) for cache-locality effects on
+  the A5 engine's URAM working set.

@@ -1,12 +1,12 @@
 # Specification: Wire-Packet MAC Digest as a Co-Resident Program (WIRE-MAC)
 
 - **Spec ID:** `wire-mac-offload`
-- **Version:** 0.1.0 (initial draft for owner review)
+- **Version:** 0.2.0 (draft; adds the broadcast schedule mode 3)
 - **Status:** **DRAFT** — not adopted. Per §8 no phase is authorized
   until the owner bumps to 1.0.0 with an adoption note.
 - **Owner:** George Neville-Neil (to adopt); drafted by Spec Writer
   2026-08-06
-- **Date:** 2026-08-06
+- **Date:** 2026-08-07
 - **Depends on:** `specs/python-regex-offload.md` (PYRO) **v3.0.0**
   (shell, R78 frame protocol, R80 boundary, R90 wire-ingest static) and
   `specs/snort-rule-offload.md` (SNORT-PF) **v2.1.0** (the A5 overlay
@@ -33,10 +33,14 @@ never by reconfiguration.**
   each wire packet it is given and reports the digest to the host. It
   filters nothing, verifies nothing, and drops nothing: it *reports*.
 
-A packet-atomic round-robin dispatcher divides the **wire** frame
-stream (tuser src `0x0040`) between the two programs according to a
-host-set schedule (`SCHED_SET`, §4.4). Host R78 control frames (src
-`0x0001`) always go to the codec regardless of schedule state.
+A packet-atomic dispatcher steers the **wire** frame stream (tuser
+src `0x0040`) according to a host-set schedule (`SCHED_SET`, §4.4):
+modes 0–2 divide the stream between the two programs (round-robin
+under mode 2); mode 3 **broadcasts** every wire frame to BOTH
+programs — both are passive analyzers, so broadcast trades the
+division modes' isolation for full coverage of the wire by each
+program (MR4/MR4a). Host R78 control frames (src `0x0001`) always go
+to the codec regardless of schedule state and are never broadcast.
 
 **JTAG/PR reconfiguration is explicitly BANNED as a scheduling
 mechanism** (MR2). JTAG remains only the load path for the one
@@ -146,9 +150,16 @@ Key properties, stated once:
    (key loads, schedule changes, stats) is lockstep request/reply and
    never subject to the schedule — the host can always reach the child
    no matter which program owns the wire stream.
-3. **Dispatch is division, not duplication.** A wire frame goes to
-   exactly one program. Under mode 2 each program samples the wire; no
-   completeness claim survives that sampling (§6 Non-goals).
+3. **Dispatch divides in modes 0–2 and duplicates in mode 3.** Under
+   modes 0–2 a wire frame goes to exactly one program; under mode 2
+   each program samples the wire and no completeness claim survives
+   that sampling (§6 Non-goals). Under mode 3 (broadcast) every wire
+   frame is delivered to BOTH programs — duplication is coverage,
+   not double processing, because both programs are passive
+   analyzers. Broadcast couples backpressure: a broadcast beat
+   advances only when both programs can accept it, so one slow
+   program can stall the other's copy (the coverage-vs-isolation
+   trade, §6).
 4. **P1 reports, the wrapper packages.** The engine emits one result
    strobe per digested frame; the wrapper stamps `wire_seq`, batches
    records into `MAC_REPORT` frames, and counts what it must drop.
@@ -178,15 +189,32 @@ Requirements are numbered `MR1…` in this spec's namespace.
   ONLY to wire frames (tuser src `0x0040`). Host control frames
   (src `0x0001`) SHALL always be delivered to the R78 codec regardless
   of schedule mode, quantum position, or program busy state.
-- **MR4 (packet-atomic round-robin).** Dispatch SHALL be
-  packet-atomic: the owning program is chosen at the frame's first
+- **MR4 (packet-atomic dispatch).** Dispatch SHALL be
+  packet-atomic: the dispatch decision is made at the frame's first
   beat and holds through `tlast`. Modes: 0 = P0 only, 1 = P1 only,
   2 = round-robin with `quantum` wire frames per program per turn
-  (quantum ≥ 1). Reset default SHALL be mode 2, quantum 1.
-- **MR5 (schedule validation).** `SCHED_SET` with mode > 2 or
+  (quantum ≥ 1), 3 = broadcast — every wire frame is delivered to
+  BOTH programs with a lockstep handshake: a broadcast beat advances
+  only when both programs accept it, so the two copies stay
+  beat-aligned. Host frames SHALL never be broadcast (MR3 routing is
+  unchanged in every mode). Round-robin rotation state advances only
+  in mode 2 and resets on any schedule change; `quantum` MUST still
+  be ≥ 1 in every mode and is unused in modes 0/1/3. Reset default
+  SHALL be mode 2, quantum 1.
+- **MR4a (broadcast accounting).** Under mode 3 each program SHALL
+  count every broadcast wire frame in its own `seen`-class counters:
+  over an all-broadcast interval the two programs' counts are EQUAL,
+  not a partition of the wire total. The per-program zero-slack
+  invariant (MR23) is unchanged and holds for each program
+  independently. P1's `wire_seq` remains "frames delivered to P1"
+  and therefore advances once per broadcast frame.
+- **MR5 (schedule validation).** `SCHED_SET` with mode > 3 or
   quantum == 0 SHALL be rejected: `SCHED_ACK` status = 1 and the
   active settings unchanged. A valid request takes effect at the next
-  wire-frame boundary and is acknowledged with status = 0.
+  wire-frame boundary and is acknowledged with status = 0. The
+  refusal path is load-bearing: the telemetry refusal probe reads
+  the active schedule by sending a deliberately invalid mode
+  (`0xFF`), so values such as 7 and `0xFF` MUST keep being refused.
 
 ### 4.2 MAC coverage model (RFC 4302 mutable-field discipline)
 
@@ -360,13 +388,19 @@ Normative home on adoption: a PYRO R78 MINOR amendment (§8).
 
   ```
   off  size  field    enc     meaning
-  0    1     mode     u8      0 P0-only, 1 P1-only, 2 RR
+  0    1     mode     u8      0 P0-only, 1 P1-only, 2 RR,
+                              3 broadcast (0.2.0)
   1    1     resv     u8      MUST be 0
   2    2     quantum  u16 BE  wire frames per program per
-                              turn, >= 1
+                              turn, >= 1 (unused in modes
+                              0/1/3)
   ```
 
-  Semantics and validation per MR4/MR5.
+  Semantics and validation per MR4/MR4a/MR5. Mode value 3 is
+  ADDITIVE in the MR5 sense: a device predating 0.2.0 refuses it
+  with `SCHED_ACK` status = 1 and an unchanged schedule — a
+  detectable, safe outcome, matching the R78.4 discipline of
+  additive change.
 - **MR21 (`0x12 SCHED_ACK`, device→host, echoes seq).** Payload:
 
   ```
@@ -475,10 +509,16 @@ measurement attestation, not a signature (see §6).
 - **Line-rate coverage.** The per-engine wire bound is MF1's
   ~30.5 MB/s; frames beyond it are dropped-and-counted upstream. Same
   §9 posture as SNORT-PF: banking is a future event, not this spec.
-- **Full SNORT wire completeness while scheduling.** Dispatch divides
+- **Full SNORT wire completeness while dividing.** Modes 1–2 divide
   the stream (§3 property 3): under mode 2, P0 samples the wire. No
-  nomination-completeness claim over wire traffic is made in any mode
-  except mode 0. Host-fed `MATCH_REQUEST` scanning is unaffected.
+  nomination-completeness claim over wire traffic is made in modes
+  1–2; modes 0 and 3 deliver the full wire stream to P0. Broadcast
+  buys that coverage by coupling backpressure (MR4): one slow
+  program can stall the other's copy of the wire — exactly the
+  isolation the division modes exist to provide. Coverage vs
+  isolation is host policy, chosen per deployment; this spec
+  defaults to isolation (reset mode 2). Host-fed `MATCH_REQUEST`
+  scanning is unaffected.
 - **Security protocol.** This is not IPsec AH: no anti-replay, no key
   negotiation, no SA management, no confidentiality, and a 64-bit tag
   is not a signature. The digest attests transit invariance to a
@@ -551,6 +591,19 @@ Additionally:
 
 ## 9. Changelog
 
+- **0.2.0** (2026-08-07) — Broadcast schedule mode. `SCHED_SET`
+  mode 3 delivers every wire frame to BOTH programs (both are
+  passive analyzers; broadcast trades RR isolation for full
+  coverage): MR4 amended (mode 3, per-packet broadcast decision
+  latched to `tlast`, lockstep handshake, host frames never
+  broadcast, rotation frozen outside mode 2), NEW MR4a (broadcast
+  accounting — equal per-program counters, per-program zero-slack
+  unchanged, P1 `wire_seq` = frames delivered to P1), MR5 (mode > 3
+  rejected; the `0xFF` telemetry refusal probe preserved), MR20
+  (mode value 3, additive — older devices refuse it detectably),
+  §0/§3 property 3 amended (divides in modes 0–2, duplicates in
+  mode 3, coupled backpressure), §6 coverage-vs-isolation note.
+  Modes 0/1/2 are functionally identical to 0.1.0. Not adopted.
 - **0.1.0** (2026-08-06) — Initial draft for owner review. The
   co-resident two-program experiment (P0 = A5 SNORT overlay
   unchanged, P1 = SipHash-2-4 wire-packet MAC digest), run-time

@@ -41,7 +41,14 @@ Order of operations is safety-first and the order IS the experiment:
      the wire), an honest limitation this script prints.  RR
      fairness: each program's wire-seen delta lands within
      [0.4, 0.6] of their sum (packet-atomic RR, quantum 1).
-  9  epilogue: loopback OFF (left off), final stats, one
+  9  broadcast window: SCHED_SET mode 3 (broadcast) acks (mode 3,
+     status 0); a second --window loopback window delivers EVERY
+     wire frame to BOTH programs, so the P0 wire seen delta EQUALS
+     the P1 mac seen delta EXACTLY (equal counters, not a
+     partition); both zero-slack invariants stay exact on the
+     deltas and the P1 digested delta is 0 (tx_gen is non-IP);
+     then SCHED_SET back to rr quantum 1 acks, restoring mode 2.
+  10 epilogue: loopback OFF (left off), final stats, one
      AC_M3_<check> line per step and AC_M3_RESULT last.
 
 Usage:
@@ -414,8 +421,81 @@ def main():
                             "[0.4, 0.6]" % (name, share))
     step("wire_window", errs)
 
-    # ---- 9. epilogue ------------------------------------------------
-    print("=== 9. epilogue (loopback stays OFF) ===")
+    # ---- 9. broadcast window (mode 3: every frame to BOTH) ---------
+    print("=== 9. broadcast window (%.1f s of loopback) ==="
+          % args.window)
+    errs = []
+    ack = mw.set_sched(cfg, mw.SCHED_BROADCAST, quantum=1, slot=SLOT)
+    if ack is None:
+        errs.append("no SCHED_ACK for broadcast/1")
+    elif (ack.mode, ack.quantum, ack.status) != (mw.SCHED_BROADCAST,
+                                                 1, 0):
+        errs.append("broadcast/1 ack wrong: %s" % (ack,))
+    else:
+        print("broadcast/1 ack: %s" % (ack,))
+    if errs:
+        step("broadcast", errs)
+        return finish()
+    s0 = mw.read_mac_stats(cfg, slot=SLOT)
+    p0 = pdev.read_perf_counters(cfg, slot=SLOT, with_wire=True)
+    w0 = p0[2] if p0 else None
+    if s0 is None or w0 is None:
+        errs.append("pre-broadcast counters unavailable (stats %s, "
+                    "wire %s)" % (s0 is not None, w0 is not None))
+        step("broadcast", errs)
+        return finish()
+    loopback("--keep")
+    try:
+        time.sleep(args.window)
+    finally:
+        loopback("--off")
+    time.sleep(0.2)
+    s1 = mw.read_mac_stats(cfg, slot=SLOT)
+    p1 = pdev.read_perf_counters(cfg, slot=SLOT, with_wire=True)
+    w1 = p1[2] if p1 else None
+    if s1 is None or w1 is None:
+        errs.append("post-broadcast counters unavailable")
+        step("broadcast", errs)
+        return finish()
+    ds = mw.MacStats(*(b - a for a, b in zip(s0, s1)))
+    dw = pdev.WireCounters(*(b - a for a, b in zip(w0, w1)))
+    print("P1 deltas: seen=+%d digested=+%d skip_nonip=+%d "
+          "skip_nokey=+%d" % (ds.seen, ds.digested, ds.skip_nonip,
+                              ds.skip_nokey))
+    print("P0 wire deltas: seen=+%d scanned=+%d drops=+%d noms=+%d"
+          % (dw.seen, dw.scanned, dw.drops, dw.noms))
+    if dw.seen <= 0:
+        errs.append("no wire frames dispatched in the broadcast "
+                    "window")
+    if dw.seen != ds.seen:
+        errs.append("broadcast delivery: P0 wire seen +%d != P1 mac "
+                    "seen +%d — mode 3 delivers EVERY wire frame to "
+                    "BOTH programs (equal counters, not a partition)"
+                    % (dw.seen, ds.seen))
+    else:
+        print("broadcast delivery: P0 seen +%d == P1 seen +%d"
+              % (dw.seen, ds.seen))
+    if ds.seen != ds.digested + ds.skip_nonip + ds.skip_nokey:
+        errs.append("P1 zero-slack VIOLATION on deltas: %d != %d+%d+%d"
+                    % (ds.seen, ds.digested, ds.skip_nonip,
+                       ds.skip_nokey))
+    if dw.seen != dw.scanned + dw.drops:
+        errs.append("P0 wire slack: seen +%d != scanned +%d + "
+                    "drops +%d" % (dw.seen, dw.scanned, dw.drops))
+    if ds.digested != 0:
+        errs.append("P1 digested +%d != 0 — loopback carries no IP"
+                    % ds.digested)
+    ack = mw.set_sched(cfg, mw.SCHED_RR, quantum=1, slot=SLOT)
+    if ack is None:
+        errs.append("no SCHED_ACK restoring rr/1 after broadcast")
+    elif (ack.mode, ack.quantum, ack.status) != (mw.SCHED_RR, 1, 0):
+        errs.append("rr/1 restore ack wrong: %s" % (ack,))
+    else:
+        print("restored rr/1 ack: %s" % (ack,))
+    step("broadcast", errs)
+
+    # ---- 10. epilogue ----------------------------------------------
+    print("=== 10. epilogue (loopback stays OFF) ===")
     loopback("--off")
     st = mw.read_mac_stats(cfg, slot=SLOT)
     pf = pdev.read_perf_counters(cfg, slot=SLOT, with_wire=True)

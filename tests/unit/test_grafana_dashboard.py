@@ -119,6 +119,22 @@ def test_new_panels_reference_only_emitted_metrics():
             assert not missing, (p["title"], sorted(missing))
 
 
+def test_scheduler_mode_mapping_covers_every_mode_name():
+    """The mode stat's value mapping tracks SCHED_MODE_NAMES exactly:
+    a mode added to the exporter without a dashboard mapping (or the
+    reverse) fails here, not as a bare number in Grafana."""
+    dash = load_dashboard()
+    panel = [p for p in dash["panels"]
+             if p.get("title") == "Scheduler mode"][0]
+    mapping = panel["fieldConfig"]["defaults"]["mappings"][0]
+    assert mapping["type"] == "value"
+    opts = mapping["options"]
+    assert {int(k) for k in opts} == set(T.SCHED_MODE_NAMES)
+    for value, name in T.SCHED_MODE_NAMES.items():
+        assert opts[str(value)]["text"] == name, value
+    assert opts["3"]["text"] == "broadcast"
+
+
 def test_new_panels_rate_only_over_counters():
     """rate() is only meaningful over cumulative counters; a gauge
     inside rate() would render as silent nonsense."""

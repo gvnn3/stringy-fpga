@@ -108,7 +108,8 @@ SR3_NOTE = ("0 by SR3: hard misses among resident rules are a verified "
 
 #: WIRE-MAC scheduler mode names (SCHED_SET modes; an unknown value
 #: maps to a null name, never a guessed one).
-SCHED_MODE_NAMES = {0: "p0_only", 1: "p1_only", 2: "round_robin"}
+SCHED_MODE_NAMES = {0: "p0_only", 1: "p1_only", 2: "round_robin",
+                    3: "broadcast"}
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_RULES = os.path.join(_REPO, "third_party",
@@ -877,10 +878,10 @@ def prometheus_text(snapshot: dict) -> str:
 
         emit("pyro_sched_mode", "gauge",
              "WIRE-MAC dispatch mode (0 p0_only, 1 p1_only, "
-             "2 round_robin), read via the SCHED_SET refusal probe: an "
-             "invalid mode (0xFF) is refused, nothing is written, the "
-             "rotation is untouched, and the ACK echoes live state.",
-             wm.get("mode"))
+             "2 round_robin, 3 broadcast), read via the SCHED_SET "
+             "refusal probe: an invalid mode (0xFF) is refused, "
+             "nothing is written, the rotation is untouched, and the "
+             "ACK echoes live state.", wm.get("mode"))
         emit("pyro_sched_quantum", "gauge",
              "RR quantum (consecutive wire frames granted per program "
              "per turn), same refusal-probe read.", wm.get("quantum"))
