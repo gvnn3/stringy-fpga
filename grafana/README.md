@@ -89,6 +89,13 @@ ratio, and the rules-missed decomposition (hard misses pinned at 0 by the SR3
 invariant, OVF truncations, non-resident, lowering-dropped) — plus table
 identity (epoch, capacity, commit flags) and most-recent-scan throughput.
 
+Below those sits a Scheduler row for the WIRE-MAC round-robin
+scheduler: mode and quantum as read by the SCHED_ACK refusal probe (an
+invalid SCHED_SET is refused, but the ACK still echoes the live state —
+a read that never writes), per-program wire grant rate and 0-1 share
+(P0 keeps blue and P1 keeps orange in every panel), and 0-healthy stat
+tiles for MAC records lost and the two zero-slack residuals.
+
 Caveats are encoded in panel descriptions rather than hidden: netdev counters
 zero on onic reload, EQDMA multi-queue loss never sets tuser_err so only the
 request-loss ratio sees it, and PERF counters describe the last scan, not an

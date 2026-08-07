@@ -54,6 +54,16 @@ constant/skewed garbage, not a measurement.  Presence of a
 TABLE_STATUS_REPLY is the fingerprint that the resident child is the
 overlay engine, so that same reply gates the perf read.
 
+The WIRE-MAC scheduler (``scheduler.wire_mac``) is read with the
+SCHED_SET refusal probe: an INVALID mode (0xFF) the generated wrapper
+refuses — nothing is written and the RR rotation is untouched — while
+the SCHED_ACK still echoes the LIVE mode+quantum (proven on silicon
+2026-08-06; :func:`pyro.macwire.read_sched` owns the idiom and the
+never-write-to-read rule).  Per-program grant truth comes from where
+each program counts it: P0 from the wire counters, P1 from the MAC
+stats.  When the MAC child does not answer, the section is
+absent-with-reason ({"available": false, ...}), never a fake number.
+
 Corpus-derived numbers (total rules, groupable rules, lowering losses) come
 from one lazily-computed, cached :func:`corpus_summary` — ``pack_groups``
 over the 4,017-rule corpus takes seconds and its result is a pure function
@@ -95,6 +105,10 @@ SR3_NOTE = ("0 by SR3: hard misses among resident rules are a verified "
             "invariant (two-sided oracle + on-silicon bringup: device "
             "nomination set == model set, exactly), not a runtime "
             "measurement")
+
+#: WIRE-MAC scheduler mode names (SCHED_SET modes; an unknown value
+#: maps to a null name, never a guessed one).
+SCHED_MODE_NAMES = {0: "p0_only", 1: "p1_only", 2: "round_robin"}
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_RULES = os.path.join(_REPO, "third_party",
@@ -449,6 +463,96 @@ def _device_section(cfg) -> dict:
     return sec
 
 
+def _wire_sched_section(cfg, device_sec: dict) -> dict:
+    """WIRE-MAC RR scheduler state + per-program grant truth.
+
+    The mode/quantum read is the REFUSAL PROBE (see
+    :func:`pyro.macwire.read_sched`): an invalid ``SCHED_SET`` the
+    wrapper refuses without touching any state, whose ack echoes the
+    live values.  Grant truth is per-program, from the one place each
+    is true: P0 from the wire counters (``seen == scanned + drops``,
+    no slack), P1 from the MAC stats (``seen == digested + nonip +
+    nokey``, no slack) — each program counts the wire frames granted
+    to it, so the RR split IS ``p0.seen`` vs ``p1.seen``.  Whenever a
+    number cannot be read honestly the section (or field) is absent
+    with a reason, never fabricated; a device that ACKs the invalid
+    probe with status 0 APPLIED it, and :func:`pyro.macwire.read_sched`
+    raises rather than report that as truth (a snapshot that lies is
+    worse than one that fails loudly).
+    """
+    if cfg is None:
+        return {"available": False,
+                "reason": "no DeviceConfig — host-only snapshot"}
+    if not device_sec.get("usable"):
+        return {"available": False,
+                "reason": ("device probe failed — nothing past a "
+                           "failed probe is read (silence is "
+                           "overloaded)")}
+    from . import device as _device
+    from . import macwire as _macwire
+    st = _macwire.read_sched(cfg, slot=1)
+    if st is None:
+        return {"available": False,
+                "reason": ("no SCHED_ACK — resident child has no "
+                           "WIRE-MAC scheduler (classic overlay child "
+                           "drops the unknown kind, R78.4); expected "
+                           "disposition, not a fault")}
+    sec: dict = {
+        "available": True,
+        "mode": st.mode,
+        "quantum": st.quantum,
+        "mode_name": SCHED_MODE_NAMES.get(st.mode),
+    }
+    pc = _device.read_perf_counters(cfg, slot=1, with_wire=True)
+    wire = pc[2] if pc is not None else None
+    if wire is None:
+        sec["p0_wire"] = {
+            "seen": None, "scanned": None, "drops": None, "noms": None,
+            "note": ("no wire counters (no PERF_REPLY, or child "
+                     "pre-OQ-2) — P0 grant truth unavailable"),
+        }
+    else:
+        sec["p0_wire"] = {"seen": wire.seen, "scanned": wire.scanned,
+                          "drops": wire.drops, "noms": wire.noms}
+    ms = _macwire.read_mac_stats(cfg, slot=1)
+    if ms is None:
+        sec["p1_mac"] = {
+            "seen": None, "digested": None, "skip_nonip": None,
+            "skip_nokey": None, "reports_sent": None,
+            "records_lost": None,
+            "note": ("no MAC_STAT_REPLY (transient) — P1 grant truth "
+                     "unavailable"),
+        }
+    else:
+        sec["p1_mac"] = {
+            "seen": ms.seen, "digested": ms.digested,
+            "skip_nonip": ms.skip_nonip, "skip_nokey": ms.skip_nokey,
+            "reports_sent": ms.reports_sent,
+            "records_lost": ms.records_lost,
+        }
+    total = (None if wire is None or ms is None
+             else wire.seen + ms.seen)
+    sec["derived"] = {
+        "wire_total": total,
+        # 0 granted frames: 0/0 has no honest value, so the shares are
+        # null until a frame has been granted (never a fake 0).
+        "p0_share": (None if not total
+                     else round(wire.seen / total, 6)),
+        "p1_share": (None if not total
+                     else round(ms.seen / total, 6)),
+        # Conservation residuals: healthy is EXACTLY 0; anything else
+        # means torn counters or unaccounted frames.
+        "zero_slack_residual_p0": (
+            None if wire is None
+            else wire.seen - wire.scanned - wire.drops),
+        "zero_slack_residual_p1": (
+            None if ms is None
+            else ms.seen - ms.digested - ms.skip_nonip
+            - ms.skip_nokey),
+    }
+    return sec
+
+
 def collect_snapshot(cfg=None, state: Optional[TelemetryState] = None,
                      daemon=None, scheduler=None,
                      include_corpus: Optional[bool] = None,
@@ -547,6 +651,11 @@ def collect_snapshot(cfg=None, state: Optional[TelemetryState] = None,
                     sched["resident_group"] = pipe.group.name
         except Exception:
             sched["port_mix"] = None
+
+    # The WIRE-MAC RR dispatch scheduler (specs/wire-mac-offload.md) is
+    # a DIFFERENT scheduler from the SR10 residency one whose keys live
+    # above, so it is namespaced under its own key rather than mixed in.
+    sched["wire_mac"] = _wire_sched_section(cfg, device)
 
     return {
         "ts": time.time(),
@@ -756,5 +865,71 @@ def prometheus_text(snapshot: dict) -> str:
                     "Exponentially-decayed byte mix per port class (SR19 "
                     "display view; scheduling uses the per-port form).",
                     sched["port_mix"], "class")
+
+    wm = sched.get("wire_mac") or {}
+    if wm.get("available"):
+        def by_program(p0, p1):
+            # emit_family emits HELP/TYPE for any non-empty dict, so
+            # null samples are dropped BEFORE the call (a family with
+            # no samples must not appear at all).
+            return {k: v for k, v in (("p0", p0), ("p1", p1))
+                    if v is not None}
+
+        emit("pyro_sched_mode", "gauge",
+             "WIRE-MAC dispatch mode (0 p0_only, 1 p1_only, "
+             "2 round_robin), read via the SCHED_SET refusal probe: an "
+             "invalid mode (0xFF) is refused, nothing is written, the "
+             "rotation is untouched, and the ACK echoes live state.",
+             wm.get("mode"))
+        emit("pyro_sched_quantum", "gauge",
+             "RR quantum (consecutive wire frames granted per program "
+             "per turn), same refusal-probe read.", wm.get("quantum"))
+        p0 = wm.get("p0_wire") or {}
+        p1 = wm.get("p1_mac") or {}
+        emit_family("pyro_sched_seen_total", "counter",
+                    "Wire frames GRANTED to each program (p0 from the "
+                    "wire counters, p1 from the MAC stats — each "
+                    "program counts its own grants, so the RR split is "
+                    "p0 vs p1 of this family).",
+                    by_program(p0.get("seen"), p1.get("seen")),
+                    "program")
+        emit("pyro_wire_scanned_total", "counter",
+             "P0 wire frames scanned (seen == scanned + drops holds "
+             "with no slack).", p0.get("scanned"))
+        emit("pyro_wire_drops_total", "counter",
+             "P0 wire frames dropped before scan.", p0.get("drops"))
+        emit("pyro_wire_noms_total", "counter",
+             "P0 wire-scan nominations.", p0.get("noms"))
+        emit("pyro_mac_digested_total", "counter",
+             "P1 frames digested (seen == digested + skip_nonip + "
+             "skip_nokey holds with no slack).", p1.get("digested"))
+        emit("pyro_mac_skip_nonip_total", "counter",
+             "P1 frames skipped: non-IP EtherType (exists only once a "
+             "key is live — MR15).", p1.get("skip_nonip"))
+        emit("pyro_mac_skip_nokey_total", "counter",
+             "P1 frames skipped: no committed key (fail-closed — EVERY "
+             "wire frame counts here until a key is live).",
+             p1.get("skip_nokey"))
+        emit("pyro_mac_reports_sent_total", "counter",
+             "MAC_REPORT frames the device emitted.",
+             p1.get("reports_sent"))
+        emit("pyro_mac_records_lost_total", "counter",
+             "MAC records lost to report backpressure — healthy is 0.",
+             p1.get("records_lost"))
+        der = wm.get("derived") or {}
+        emit_family("pyro_sched_share", "gauge",
+                    "Per-program fraction of all granted wire frames "
+                    "(0..1); omitted until any frame has been granted "
+                    "(0/0 has no honest value).",
+                    by_program(der.get("p0_share"),
+                               der.get("p1_share")), "program")
+        emit_family("pyro_sched_zero_slack_residual", "gauge",
+                    "Per-program conservation residual — healthy is "
+                    "EXACTLY 0 (p0: seen-scanned-drops; p1: seen-"
+                    "digested-nonip-nokey); nonzero means torn "
+                    "counters or unaccounted frames.",
+                    by_program(der.get("zero_slack_residual_p0"),
+                               der.get("zero_slack_residual_p1")),
+                    "program")
 
     return "\n".join(lines) + "\n"

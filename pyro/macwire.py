@@ -67,7 +67,8 @@ __all__ = [
     "REPORT_LOSS", "REPORT_WIRE_ORIGIN",
     "SCHED_P0_ONLY", "SCHED_P1_ONLY", "SCHED_RR",
     # typed views
-    "MacRecord", "MacReport", "MacKeyAck", "SchedAck", "MacStats",
+    "MacRecord", "MacReport", "MacKeyAck", "SchedAck", "SchedState",
+    "MacStats",
     # payload codecs
     "encode_mac_report", "decode_mac_report",
     "encode_mac_key_load", "decode_mac_key_ack",
@@ -76,7 +77,8 @@ __all__ = [
     # masking / digest golden model
     "mask_packet", "digest_packet", "key_check",
     # transports
-    "MacReportListener", "load_key", "set_sched", "read_mac_stats",
+    "MacReportListener", "load_key", "set_sched", "read_sched",
+    "read_mac_stats",
 ]
 
 # ---------------------------------------------------------------------------
@@ -169,6 +171,13 @@ class SchedAck(NamedTuple):
     mode: int
     quantum: int
     status: int
+
+
+class SchedState(NamedTuple):
+    """The LIVE scheduler settings as read by :func:`read_sched`
+    (mode/quantum echoed by a refused ``SCHED_SET`` probe)."""
+    mode: int
+    quantum: int
 
 
 class MacStats(NamedTuple):
@@ -652,6 +661,53 @@ def set_sched(config: DeviceConfig, mode: int, quantum: int = 1,
                        encode_sched_set(mode, quantum),
                        KIND_SCHED_ACK, slot)
     return None if dec is None else decode_sched_ack(dec)
+
+
+#: The refusal-probe payload :func:`read_sched` sends: an INVALID mode
+#: (0xFF, quantum 0 — invalid too, belt and braces).  Built directly
+#: because :func:`encode_sched_set` locally rejects what the device
+#: refuses, by design.
+_SCHED_PROBE = struct.pack(">BBH", 0xFF, 0, 0)
+
+
+def read_sched(config: DeviceConfig,
+               slot: int = 1) -> Optional[SchedState]:
+    """Read the LIVE scheduler mode+quantum via the REFUSAL PROBE.
+
+    There is no SCHED_GET kind; the read idiom is a ``SCHED_SET``
+    whose mode is INVALID (0xFF).  The generated wrapper refuses it —
+    ``sc_ok`` is false, so no register is written, and the rotation
+    state (cur_prog/turn_cnt) is untouched because the RTL
+    change-detect only fires on a value CHANGE and nothing changed —
+    while the ``SCHED_ACK`` still echoes the live post-op
+    mode+quantum with a NONZERO status.  Proven on silicon 2026-08-06
+    (AC-M3 step 5).
+
+    NEVER "write back what you think is current" as a read: a VALID
+    same-value ``SCHED_SET`` happens to be rotation-safe too, but a
+    valid DIFFERENT value resets the rotation — only an invalid mode
+    is safe against every possible live state.  That also makes the
+    R84 retry loop below harmless: a refused probe changes nothing no
+    matter how often it is resent.
+
+    ``None`` = no ack (child predates the amendment and drops the
+    kind, R78.4; or no transport configured — fail-closed), the same
+    shape as :func:`read_mac_stats`.  An ack with ``status == 0``
+    means the device APPLIED the invalid mode: that is a device-side
+    contract violation, and this raises :class:`RuntimeError` rather
+    than ever returning it as truth.
+    """
+    dec = _mac_request(config, KIND_SCHED_SET, _SCHED_PROBE,
+                       KIND_SCHED_ACK, slot)
+    if dec is None:
+        return None
+    ack = decode_sched_ack(dec)
+    if ack.status == 0:
+        raise RuntimeError(
+            "SCHED_ACK status 0 for the invalid-mode refusal probe: "
+            "the device APPLIED mode 0x%02x quantum %d — refusing to "
+            "report that as scheduler state" % (ack.mode, ack.quantum))
+    return SchedState(mode=ack.mode, quantum=ack.quantum)
 
 
 def read_mac_stats(config: DeviceConfig,

@@ -329,3 +329,203 @@ def test_shell_id_parsed_from_probe_reason():
               "transport: CAP_NET_RAW present")
     assert T._shell_id_from(reason) == 0x02020000
     assert T._shell_id_from("device_usable=false — probe: no reply") is None
+
+
+# --------------------------------------------------------------------------
+# WIRE-MAC scheduler section (refusal-probe read; absent-with-reason)
+# --------------------------------------------------------------------------
+def _usable_cfg(monkeypatch):
+    """A 'usable device' with every read seam-injected: no transport is
+    ever opened (the monkeypatched module functions ARE the device)."""
+    import pyro.device as pdev
+    monkeypatch.setattr(pdev, "probe_device",
+                        lambda cfg: (True,
+                                     "static_shell_id=0x02020000"))
+    monkeypatch.setattr(pdev, "read_table_status",
+                        lambda cfg, slot=1: None)
+
+    def perf(cfg, slot=1, with_wire=False):
+        wire = pdev.WireCounters(seen=60, scanned=58, drops=2, noms=5)
+        return (100, 800, wire) if with_wire else (100, 800)
+
+    monkeypatch.setattr(pdev, "read_perf_counters", perf)
+    return pdev.DeviceConfig(iface=None, chardev=None)
+
+
+def test_wire_sched_host_only_absent_with_reason():
+    wm = T.collect_snapshot(cfg=None)["scheduler"]["wire_mac"]
+    assert wm["available"] is False
+    assert "host-only" in wm["reason"]
+    assert "mode" not in wm                # nothing fabricated
+
+
+def test_wire_sched_absent_when_no_sched_ack(monkeypatch):
+    """A classic overlay child drops the 0x11 kind (R78.4): the section
+    is absent WITH the reason, and no counter is read past it."""
+    import pyro.macwire as mw
+    cfg = _usable_cfg(monkeypatch)
+    monkeypatch.setattr(mw, "read_sched", lambda cfg, slot=1: None)
+    snap = T.collect_snapshot(cfg=cfg, include_corpus=False)
+    wm = snap["scheduler"]["wire_mac"]
+    assert wm["available"] is False
+    assert "SCHED_ACK" in wm["reason"] and "R78.4" in wm["reason"]
+    assert "mode" not in wm and "p0_wire" not in wm
+
+
+def test_wire_sched_section_live(monkeypatch):
+    import pyro.macwire as mw
+    cfg = _usable_cfg(monkeypatch)
+    monkeypatch.setattr(mw, "read_sched",
+                        lambda cfg, slot=1: mw.SchedState(mode=2,
+                                                          quantum=4))
+    monkeypatch.setattr(mw, "read_mac_stats",
+                        lambda cfg, slot=1: mw.MacStats(40, 30, 6, 4,
+                                                        3, 0))
+    snap = T.collect_snapshot(cfg=cfg, include_corpus=False)
+    wm = snap["scheduler"]["wire_mac"]
+    assert wm["available"] is True
+    assert wm["mode"] == 2 and wm["mode_name"] == "round_robin"
+    assert wm["quantum"] == 4
+    assert wm["p0_wire"] == {"seen": 60, "scanned": 58, "drops": 2,
+                             "noms": 5}
+    assert wm["p1_mac"] == {"seen": 40, "digested": 30,
+                            "skip_nonip": 6, "skip_nokey": 4,
+                            "reports_sent": 3, "records_lost": 0}
+    der = wm["derived"]
+    assert der["wire_total"] == 100
+    assert der["p0_share"] == pytest.approx(0.6)
+    assert der["p1_share"] == pytest.approx(0.4)
+    assert der["zero_slack_residual_p0"] == 0
+    assert der["zero_slack_residual_p1"] == 0
+    # the SR10 residency scheduler keys are untouched by the new
+    # section — different scheduler, namespaced key
+    for key in ("resident_group", "scores", "port_mix"):
+        assert key in snap["scheduler"]
+
+
+def test_wire_sched_p0_nulled_when_wire_counters_missing(monkeypatch):
+    import pyro.device as pdev
+    import pyro.macwire as mw
+    cfg = _usable_cfg(monkeypatch)
+    monkeypatch.setattr(pdev, "read_perf_counters",
+                        lambda cfg, slot=1, with_wire=False:
+                        (100, 800, None) if with_wire else (100, 800))
+    monkeypatch.setattr(mw, "read_sched",
+                        lambda cfg, slot=1: mw.SchedState(0, 1))
+    monkeypatch.setattr(mw, "read_mac_stats",
+                        lambda cfg, slot=1: mw.MacStats(10, 10, 0, 0,
+                                                        1, 0))
+    snap = T.collect_snapshot(cfg=cfg, include_corpus=False)
+    wm = snap["scheduler"]["wire_mac"]
+    assert wm["available"] is True and wm["mode_name"] == "p0_only"
+    assert wm["p0_wire"]["seen"] is None
+    assert "note" in wm["p0_wire"]         # absent WITH the reason
+    der = wm["derived"]
+    assert der["wire_total"] is None
+    assert der["p0_share"] is None and der["p1_share"] is None
+    assert der["zero_slack_residual_p0"] is None
+    assert der["zero_slack_residual_p1"] == 0
+
+
+def test_wire_sched_status0_violation_propagates(monkeypatch):
+    """read_sched raising on an APPLIED invalid mode must stay loud:
+    a snapshot that swallows it would report the lie's neighborhood
+    as healthy."""
+    import pyro.macwire as mw
+    cfg = _usable_cfg(monkeypatch)
+
+    def boom(cfg, slot=1):
+        raise RuntimeError("SCHED_ACK status 0 for the refusal probe")
+
+    monkeypatch.setattr(mw, "read_sched", boom)
+    with pytest.raises(RuntimeError):
+        T.collect_snapshot(cfg=cfg, include_corpus=False)
+
+
+# --------------------------------------------------------------------------
+# Prometheus: WIRE-MAC scheduler metrics (synthesized section — no HW)
+# --------------------------------------------------------------------------
+def wire_mac_section():
+    return {
+        "available": True, "mode": 2, "quantum": 4,
+        "mode_name": "round_robin",
+        "p0_wire": {"seen": 60, "scanned": 58, "drops": 2, "noms": 5},
+        "p1_mac": {"seen": 40, "digested": 30, "skip_nonip": 6,
+                   "skip_nokey": 4, "reports_sent": 3,
+                   "records_lost": 0},
+        "derived": {"wire_total": 100, "p0_share": 0.6,
+                    "p1_share": 0.4, "zero_slack_residual_p0": 0,
+                    "zero_slack_residual_p1": 0},
+    }
+
+
+def test_prometheus_wire_sched_metrics():
+    snap = T.collect_snapshot(cfg=None)
+    snap["scheduler"]["wire_mac"] = wire_mac_section()
+    text = T.prometheus_text(snap)
+    assert "\npyro_sched_mode 2" in text
+    assert "\npyro_sched_quantum 4" in text
+    assert 'pyro_sched_seen_total{program="p0"} 60' in text
+    assert 'pyro_sched_seen_total{program="p1"} 40' in text
+    assert 'pyro_sched_share{program="p0"} 0.6' in text
+    assert 'pyro_sched_share{program="p1"} 0.4' in text
+    assert 'pyro_sched_zero_slack_residual{program="p0"} 0' in text
+    assert 'pyro_sched_zero_slack_residual{program="p1"} 0' in text
+    assert "\npyro_wire_scanned_total 58" in text
+    assert "\npyro_wire_drops_total 2" in text
+    assert "\npyro_wire_noms_total 5" in text
+    assert "\npyro_mac_digested_total 30" in text
+    assert "\npyro_mac_records_lost_total 0" in text
+    # types: cumulative device counters are counters; control state
+    # and derived ratios are gauges
+    assert "# TYPE pyro_sched_seen_total counter" in text
+    assert "# TYPE pyro_mac_digested_total counter" in text
+    assert "# TYPE pyro_sched_mode gauge" in text
+    assert "# TYPE pyro_sched_quantum gauge" in text
+    assert "# TYPE pyro_sched_share gauge" in text
+    assert "# TYPE pyro_sched_zero_slack_residual gauge" in text
+    # every line stays well-formed with the new families present
+    for line in text.strip().split("\n"):
+        assert (line.startswith("# HELP pyro_")
+                or line.startswith("# TYPE pyro_")
+                or _METRIC_RE.match(line)), line
+
+
+def test_prometheus_wire_sched_absent_when_unavailable():
+    text = T.prometheus_text(T.collect_snapshot(cfg=None))
+    assert "pyro_sched_mode" not in text
+    assert "pyro_sched_seen_total" not in text
+    assert "pyro_wire_scanned_total" not in text
+    assert "pyro_mac_digested_total" not in text
+
+
+def test_prometheus_wire_sched_partial_p0_omitted():
+    """Null p0 numbers are OMITTED (no fake 0), including the labeled
+    families: p1 samples stand alone, and a family with no samples
+    emits neither HELP nor TYPE."""
+    snap = T.collect_snapshot(cfg=None)
+    wm = wire_mac_section()
+    wm["p0_wire"] = {"seen": None, "scanned": None, "drops": None,
+                     "noms": None, "note": "no wire counters"}
+    wm["derived"] = {"wire_total": None, "p0_share": None,
+                     "p1_share": None, "zero_slack_residual_p0": None,
+                     "zero_slack_residual_p1": 0}
+    snap["scheduler"]["wire_mac"] = wm
+    text = T.prometheus_text(snap)
+    assert "pyro_wire_scanned_total" not in text
+    assert 'pyro_sched_seen_total{program="p0"}' not in text
+    assert 'pyro_sched_seen_total{program="p1"} 40' in text
+    assert "pyro_sched_share" not in text
+    assert 'pyro_sched_zero_slack_residual{program="p0"}' not in text
+    assert 'pyro_sched_zero_slack_residual{program="p1"} 0' in text
+    # HELP/TYPE discipline holds: everything sampled is documented,
+    # nothing documented lacks a sample
+    helped, typed, sampled = set(), set(), set()
+    for line in text.strip().split("\n"):
+        if line.startswith("# HELP "):
+            helped.add(line.split()[2])
+        elif line.startswith("# TYPE "):
+            typed.add(line.split()[2])
+        else:
+            sampled.add(line.split("{")[0].split(" ")[0])
+    assert sampled == helped == typed

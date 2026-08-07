@@ -338,6 +338,322 @@
         "overrides": []
       },
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single", "sort": "none" } }
+    },
+    {
+      "type": "stat",
+      "title": "Scheduler mode",
+      "description": "Refusal probe: invalid SCHED_SET; ACK echoes live state.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 30 },
+      "id": 14,
+      "targets": [
+        { "expr": "pyro_sched_mode", "legendFormat": "mode", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "p0_only", "color": "blue" },
+                "1": { "text": "p1_only", "color": "orange" },
+                "2": { "text": "round_robin", "color": "green" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "text", "value": null } ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [ "lastNotNull" ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Quantum",
+      "description": "Frames per RR turn, from the live SCHED_ACK echo.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 30 },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "pyro_sched_quantum",
+          "legendFormat": "quantum",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "text", "value": null } ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [ "lastNotNull" ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "MAC records lost",
+      "description": "P1 report records dropped; healthy is exactly 0.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 30 },
+      "id": 16,
+      "targets": [
+        {
+          "expr": "pyro_mac_records_lost_total",
+          "legendFormat": "records lost",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [ "lastNotNull" ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "P0 zero-slack residual",
+      "description": "p0: seen - scanned - drops; healthy is exactly 0.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 30 },
+      "id": 17,
+      "targets": [
+        {
+          "expr": "pyro_sched_zero_slack_residual{program=\"p0\"}",
+          "legendFormat": "p0 residual",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "0", "color": "green" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "red", "value": null } ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [ "lastNotNull" ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "P1 zero-slack residual",
+      "description": "p1: seen - digested - nonip - nokey; healthy 0.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 30 },
+      "id": 18,
+      "targets": [
+        {
+          "expr": "pyro_sched_zero_slack_residual{program=\"p1\"}",
+          "legendFormat": "p1 residual",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "0", "color": "green" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "red", "value": null } ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [ "lastNotNull" ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Wire grant rate by program",
+      "description": "Each program counts the wire frames granted to it.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 34 },
+      "id": 19,
+      "targets": [
+        {
+          "expr": "rate(pyro_sched_seen_total{program=\"p0\"}[1m])",
+          "legendFormat": "p0",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(pyro_sched_seen_total{program=\"p1\"}[1m])",
+          "legendFormat": "p1",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "fps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "green", "value": null } ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "p0" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "blue" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p1" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "orange" }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Wire grant share",
+      "description": "RR split of grants; fixed 0-1 scale, single axis.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 34 },
+      "id": 20,
+      "targets": [
+        {
+          "expr": "pyro_sched_share{program=\"p0\"}",
+          "legendFormat": "p0",
+          "refId": "A"
+        },
+        {
+          "expr": "pyro_sched_share{program=\"p1\"}",
+          "legendFormat": "p1",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "green", "value": null } ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "p0" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "blue" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p1" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "orange" }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ],
   "refresh": "10s",

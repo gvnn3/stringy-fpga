@@ -468,6 +468,50 @@ def test_read_mac_stats_and_no_reply_paths():
     assert mw.read_mac_stats(bare) is None
 
 
+def test_read_sched_refusal_probe_roundtrip():
+    """The read IS a refused write: the probe payload must carry the
+    INVALID mode 0xFF (never a valid write-back — a valid DIFFERENT
+    value resets the rotation), and the ack's LIVE mode/quantum come
+    back with a nonzero (refused) status."""
+    def responder(frame):
+        dec = pdev.decode_frame(frame[14:])
+        assert dec.kind == pdev.KIND_SCHED_SET
+        assert dec.payload == b"\xff\x00\x00\x00"   # mode 0xFF, q 0
+        return [ETH + pdev.encode_frame(
+            pdev.KIND_SCHED_ACK, dec.slot, dec.seq,
+            struct.pack(">BBHI", mw.SCHED_RR, 0, 4, 1))]
+
+    tr = FakeTransport(responder=responder)
+    st = mw.read_sched(_config(tr))
+    assert st == mw.SchedState(mode=mw.SCHED_RR, quantum=4)
+    assert len(tr.sent) == 1 and tr.closed == 1
+
+
+def test_read_sched_status_zero_is_a_loud_failure():
+    """status==0 for the invalid-mode probe means the device APPLIED
+    mode 0xFF — a contract violation, never returned as truth."""
+    def responder(frame):
+        dec = pdev.decode_frame(frame[14:])
+        return [ETH + pdev.encode_frame(
+            pdev.KIND_SCHED_ACK, dec.slot, dec.seq,
+            struct.pack(">BBHI", 0xFF, 0, 1, 0))]
+
+    cfg = _config(FakeTransport(responder=responder))
+    with pytest.raises(RuntimeError):
+        mw.read_sched(cfg)
+
+
+def test_read_sched_no_reply_and_fail_closed():
+    # a pre-amendment child drops the unknown kind: no ack -> None
+    silent = pdev.DeviceConfig(
+        iface=None, chardev=None, probe_attempts=1, probe_timeout_s=0.01,
+        transport_factory=lambda _cfg: FakeTransport())
+    assert mw.read_sched(silent) is None
+    # fail-closed: no transport configured at all -> None, no raise
+    bare = pdev.DeviceConfig(iface=None, chardev=None)
+    assert mw.read_sched(bare) is None
+
+
 def test_status_refusal_yields_none():
     def responder(frame):
         dec = pdev.decode_frame(frame[14:])

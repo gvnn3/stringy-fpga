@@ -40,6 +40,7 @@ import struct
 import sys
 import threading
 import time
+import traceback
 from collections import deque
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -392,7 +393,21 @@ def run_serve(cfg, state, port, interval, drive=None):
     ring.append(T.collect_snapshot(cfg, state))
     lock = threading.Lock()
 
+    # A dead collector must be LOUD.  Without the guard below, any
+    # exception here (e.g. read_sched's deliberate RuntimeError when a
+    # status==0 ACK claims an invalid mode was APPLIED) kills this
+    # daemon thread silently and the server keeps serving the frozen
+    # ring — stale /metrics forever, the opposite of the honesty rule.
+    fail = {}
+
     def collector():
+        try:
+            _collect_loop()
+        except Exception:
+            fail["tb"] = traceback.format_exc()
+            server.shutdown()
+
+    def _collect_loop():
         while True:
             time.sleep(interval)
             if drv is not None:
@@ -416,7 +431,6 @@ def run_serve(cfg, state, port, interval, drive=None):
             with lock:
                 ring.append(snap)
 
-    threading.Thread(target=collector, daemon=True).start()
     dashboard_path = os.path.join(REPO, DASHBOARD)
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -458,12 +472,19 @@ def run_serve(cfg, state, port, interval, drive=None):
             pass
 
     server = http.server.ThreadingHTTPServer(("", port), Handler)
+    threading.Thread(target=collector, daemon=True).start()
     print("serving on :%d (collect every %.1fs; iface=%s)"
           % (port, interval, cfg.iface if cfg else None), file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         return 0
+    if fail:
+        print(fail["tb"], file=sys.stderr, end="")
+        print("collector thread died; refusing to serve stale "
+              "telemetry", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main(argv=None):
