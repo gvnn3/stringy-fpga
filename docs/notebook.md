@@ -4606,8 +4606,11 @@ On this card today:
   the static layer; driver streams the .bin) — dynamic region IS
   host-reprogrammable over PCIe at ~50 ms/shell.
 - **Wiretap/OpenNIC shell (resident)**: neither ICAP nor MCAP —
-  the static wires no ICAPE3, and the QDMA IP was not configured
-  with Tandem/PR-over-PCIe, so `pyro_rp` is JTAG-only.
+  the static wires no ICAPE3, and MCAP is CONFIRMED absent: the
+  extended capability chain on 02:00.0 (`sudo lspci -s 02:00.0
+  -vvv`, 11 Aug) holds only AER [100], Secondary PCIe [1c0] and
+  Virtual Channel [200] — no Vendor-Specific (MCAP VSEC) entry.
+  `pyro_rp` is JTAG-only on this shell.
 
 ## 4. Data analysis
 
@@ -4627,9 +4630,6 @@ JTAG.
 
 ## 5. Ideas for future experiments
 
-- Confirm from the OpenNIC shell QDMA IP configuration that MCAP
-  is truly disabled (read the PCIe extended capability list on
-  02:00.0 for the MCAP VSEC) — a 5-minute lspci check.
 - If a static rebuild is authorized: ICAP first (per 10:32:14),
   MCAP second as recovery; re-derive the switch-cost ladder.
 - Measure MCAP throughput on any MCAP-enabled shell to replace
