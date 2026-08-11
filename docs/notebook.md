@@ -7,6 +7,10 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 - Entries are kept in **reverse chronological order** — newest experiment first,
   immediately after the Table of Contents.
+- ToC numbers are **stable chronological IDs**: #1 is the oldest
+  experiment, forever. A new entry takes the next number and is
+  listed first; existing numbers never change (adopted 11 Aug 2026 —
+  numbers before that date drifted positionally).
 - Every entry title carries both a **date and a time stamp** in the form
   `DD Mon YYYY HH:MM:SS` recording when the experiment was written up.
 - Anchor IDs include the time: `#dd-mon-yyyy-hhmmss`.
@@ -17,75 +21,75 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 11 Aug 2026 11:32:45 URAM-Footprint Sweep: a
+35. [EXPERIMENT 11 Aug 2026 11:32:45 URAM-Footprint Sweep: a
    24,576-State Child Fits a Half-Height Region — 50% Raster Cut
    for 62% Corpus](#11-aug-2026-113245) :complete:
-2. [EXPERIMENT 11 Aug 2026 11:24:34 pyro_rp Frame-Count Audit:
+34. [EXPERIMENT 11 Aug 2026 11:24:34 pyro_rp Frame-Count Audit:
    7.90 MB Raster, URAM Columns Bind, Right-Sizing Caps at
    ~25%](#11-aug-2026-112434) :complete:
-3. [EXPERIMENT 11 Aug 2026 11:09:05 Why 5 MB from Two .v Files:
+33. [EXPERIMENT 11 Aug 2026 11:09:05 Why 5 MB from Two .v Files:
    Bitstream Size Is Region Raster, Not Logic](#11-aug-2026-110905)
    :complete:
-4. [EXPERIMENT 11 Aug 2026 11:06:12 SNORT Program Source
+32. [EXPERIMENT 11 Aug 2026 11:06:12 SNORT Program Source
    Walkthrough: Rules-to-Table Pipeline and the Program-Agnostic
    Engine](#11-aug-2026-110612) :complete:
-5. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
+31. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
    All LUTs Be Dynamic? The ~5% Floor and Why](#11-aug-2026-110221)
    :complete:
-6. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
+30. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
    Static vs Dynamic Under Both Shells](#11-aug-2026-110034)
    :complete:
-7. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
+29. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
    on FPGA — Adjacent Work and Why the Gap
    Exists](#11-aug-2026-104819) :complete:
-8. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
+28. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
    ICAP, MCAP, JTAG — What "Over PCIe" Actually
    Means](#11-aug-2026-103732) :complete:
-9. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
+27. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
    ~6 ms Projected vs 13.6-16.2 s JTAG Measured](#11-aug-2026-103214)
    :complete:
-10. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+26. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
    Per-Packet Scan Latency, and a FAIL That Measured the RR
    Share](#11-aug-2026-102845) :complete:
-11. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+25. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
    Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
    :complete:
-12. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+24. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-13. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+23. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-14. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+22. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-15. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+21. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-16. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+20. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-17. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+19. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
 18. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-19. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+17. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-20. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-21. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-22. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-23. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-24. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-25. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-26. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-27. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-28. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-29. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-30. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-31. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-32. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-33. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-34. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-35. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+16. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+15. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+14. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+13. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+12. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+11. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+10. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+9. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+8. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+7. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+6. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+5. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+4. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+3. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+2. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+1. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
