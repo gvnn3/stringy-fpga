@@ -17,51 +17,54 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
+1. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
+   ICAP, MCAP, JTAG — What "Over PCIe" Actually
+   Means](#11-aug-2026-103732) :complete:
+2. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
    ~6 ms Projected vs 13.6-16.2 s JTAG Measured](#11-aug-2026-103214)
    :complete:
-2. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+3. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
    Per-Packet Scan Latency, and a FAIL That Measured the RR
    Share](#11-aug-2026-102845) :complete:
-3. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+4. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
    Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
    :complete:
-4. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+5. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-5. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+6. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-6. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+7. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-7. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+8. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-8. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+9. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-9. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+10. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-10. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+11. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-11. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+12. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-12. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-13. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-14. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-15. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-16. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-17. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-18. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-19. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-20. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-21. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-22. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-23. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-24. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-25. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-26. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-27. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+13. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+14. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+15. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+16. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+17. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+18. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+19. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+20. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+21. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+22. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+23. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+24. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+25. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+26. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+27. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+28. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -4541,3 +4544,95 @@ calibration point.
 - Frame-count audit: compare pyro_rp (5.6 MB) against its pblock
   extent to see whether a tighter floorplan could shave the image
   (and the load) further.
+
+---
+
+# EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
+ICAP, MCAP, JTAG — What "Over PCIe" Actually Means :complete:
+
+## 1. Hypothesis
+
+Can the dynamic region be reprogrammed over the PCIe bus, or only
+through the ICAP? Companion analysis to the 10:32:14 ICAP estimate:
+enumerate every configuration-frame entry point on this die and
+what each would cost. No new silicon data.
+
+## 2. How
+
+- **Equipment:** none exercised; UltraScale+ XCU250 architecture
+  facts plus prior measurements on this card and the Coyote driver
+  sources (`driver/include/reconfig/reconfig_mem.h`: bitstreams
+  "need to be written to the ICAP from the driver via PCIe and the
+  XDMA core").
+- **Software:** analysis only.
+- **Benchmarks (inputs):** JTAG PR measured here (13.6-16.2 s);
+  Coyote ICAP calibration (55.8 MB in 49 ms); MCAP frame delivery
+  via PCIe extended-config-space writes (single-digit MB/s class).
+
+### Key commands
+
+```bash
+# none — architecture analysis; sources cited inline
+```
+
+## 3. Observations
+
+Configuration frames can only enter the fabric through a
+configuration port; "PR over PCIe" always means PCIe delivery PLUS
+one of these ports:
+
+| Port        | Needs in static    | Rate          | 5.6 MB rp | 55.8 MB shell |
+|-------------|--------------------|---------------|-----------|---------------|
+| ICAP        | ICAPE3 + ctrl      | ~0.8-1.1 GB/s | ~6 ms     | ~50 ms [m]    |
+| MCAP (VSEC) | PCIe IP option     | ~MB/s class   | ~1-2 s    | ~10-20 s      |
+| JTAG        | none (cable)       | ~0.35 MB/s    | 13.6-16.2 s [m] | minutes |
+
+[m] = measured (Coyote docs / this card); others projected.
+
+Breakdown of the Coyote 49 ms (driver source, `reconfig_hw.c`):
+the driver does not copy the bitstream itself — it queues hugepage
+descriptors (addr + len) to a config engine in the static region,
+which fetches pages from host memory over XDMA and streams them
+into the ICAP, with RECONFIG_THRESHOLD commands in flight. Data
+transfer and configuration therefore OVERLAP; the 49 ms is the
+pipeline drained at its slowest stage, the ICAP (~1.1 GB/s
+effective). Standalone PCIe delivery of 55.8 MB would be ~4.5-5 ms
+(~10% bus duty during the load) — the transfer is fully hidden
+under the ICAP write.
+
+On this card today:
+
+- **Coyote shell**: PCIe DMA -> ICAP path exists (XDMA + ICAPE3 in
+  the static layer; driver streams the .bin) — dynamic region IS
+  host-reprogrammable over PCIe at ~50 ms/shell.
+- **Wiretap/OpenNIC shell (resident)**: neither ICAP nor MCAP —
+  the static wires no ICAPE3, and the QDMA IP was not configured
+  with Tandem/PR-over-PCIe, so `pyro_rp` is JTAG-only.
+
+## 4. Data analysis
+
+The question "PCIe or ICAP?" is a false dichotomy: PCIe is the
+delivery channel, the port is the funnel, and the funnel sets the
+rate. ICAP is the only port in the same decade as the bus (and
+still ~10x slower than PCIe delivery); MCAP exists precisely so a
+host can do PR with zero fabric support, but frame-by-config-write
+delivery caps it at JTAG-class times without the cable — useful
+for recovery, useless for scheduling. For a future wiretap static
+rebuild the ordering is therefore unambiguous: wire an ICAP
+(millisecond exec tier, the 10:32:14 projection) rather than
+enable MCAP (second-class exec, no ladder movement). Enabling both
+costs little and MCAP would serve as a cable-free recovery path
+for a wedged RP — today's `pyro_wedge_recover.sh` still assumes
+JTAG.
+
+## 5. Ideas for future experiments
+
+- Confirm from the OpenNIC shell QDMA IP configuration that MCAP
+  is truly disabled (read the PCIe extended capability list on
+  02:00.0 for the MCAP VSEC) — a 5-minute lspci check.
+- If a static rebuild is authorized: ICAP first (per 10:32:14),
+  MCAP second as recovery; re-derive the switch-cost ladder.
+- Measure MCAP throughput on any MCAP-enabled shell to replace
+  the "single-digit MB/s class" estimate with a number.
+- Coyote example 05 run to convert the 49 ms shell-ICAP figure
+  from documentation to a local measurement.
