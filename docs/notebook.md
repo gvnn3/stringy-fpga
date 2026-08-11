@@ -4913,13 +4913,13 @@ wc -l pyro/snort/*.py pyro/overlay/table.py hw/rtl/*.v
 
 | Stage | Source |
 |-------|--------|
-| Input: 4,017 Snort3 community alert rules | `third_party/snort3-community-rules/` |
+| Input: 4,017 Snort3 community rules | `third_party/`<br>`snort3-community-rules/` |
 | Rule parsing | `pyro/snort/rules.py` (392 ln) |
 | Triage: which rules offload | `pyro/snort/triage.py` (482 ln) |
 | Lowering: content chains -> A5 patterns | `pyro/snort/lowering.py` (612 ln) |
-| SR6 rule-group packing (5 groups, 1-124 KB) | `pyro/snort/groups.py` (804 ln) |
+| SR6 group packing (5 groups, 1-124 KB) | `pyro/snort/groups.py` (804 ln) |
 | Table build + serialize (bytes to card) | `pyro/overlay/table.py` (387 ln) |
-| Runtime residency + scheduling | `pyro/snort/daemon.py` (693), `scheduler.py` (223) |
+| Runtime residency + scheduling | `daemon.py` (693), `scheduler.py` (223) |
 | S4 shared ROM-trie variant | `pyro/snort/shared_trie.py` (267 ln) |
 
 **The circuit (13,072 LUT synthesized, never changes with rules):**
