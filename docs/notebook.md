@@ -17,69 +17,72 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 11 Aug 2026 11:09:05 Why 5 MB from Two .v Files:
+1. [EXPERIMENT 11 Aug 2026 11:24:34 pyro_rp Frame-Count Audit:
+   7.90 MB Raster, URAM Columns Bind, Right-Sizing Caps at
+   ~25%](#11-aug-2026-112434) :complete:
+2. [EXPERIMENT 11 Aug 2026 11:09:05 Why 5 MB from Two .v Files:
    Bitstream Size Is Region Raster, Not Logic](#11-aug-2026-110905)
    :complete:
-2. [EXPERIMENT 11 Aug 2026 11:06:12 SNORT Program Source
+3. [EXPERIMENT 11 Aug 2026 11:06:12 SNORT Program Source
    Walkthrough: Rules-to-Table Pipeline and the Program-Agnostic
    Engine](#11-aug-2026-110612) :complete:
-3. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
+4. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
    All LUTs Be Dynamic? The ~5% Floor and Why](#11-aug-2026-110221)
    :complete:
-4. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
+5. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
    Static vs Dynamic Under Both Shells](#11-aug-2026-110034)
    :complete:
-5. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
+6. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
    on FPGA — Adjacent Work and Why the Gap
    Exists](#11-aug-2026-104819) :complete:
-6. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
+7. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
    ICAP, MCAP, JTAG — What "Over PCIe" Actually
    Means](#11-aug-2026-103732) :complete:
-7. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
+8. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
    ~6 ms Projected vs 13.6-16.2 s JTAG Measured](#11-aug-2026-103214)
    :complete:
-8. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+9. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
    Per-Packet Scan Latency, and a FAIL That Measured the RR
    Share](#11-aug-2026-102845) :complete:
-9. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+10. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
    Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
    :complete:
-10. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+11. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-11. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+12. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-12. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+13. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-13. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+14. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-14. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+15. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-15. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+16. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-16. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+17. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-17. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+18. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-18. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-19. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-20. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-21. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-22. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-23. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-24. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-25. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-26. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-27. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-28. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-29. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-30. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-31. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-32. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-33. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+19. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+20. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+21. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+22. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+23. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+24. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+25. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+26. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+27. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+28. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+29. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+30. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+31. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+32. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+33. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+34. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -5030,3 +5033,102 @@ the 80k budget) worth ~60% off every future load.
 - Check whether the .bin (headerless) vs .bit delta is constant
   across partials (160 B observed) — trivial, but pins the
   format overhead term.
+
+---
+
+# EXPERIMENT 11 Aug 2026 11:24:34 pyro_rp Frame-Count Audit:
+7.90 MB Raster, URAM Columns Bind, Right-Sizing Caps at ~25%
+:complete:
+
+## 1. Hypothesis
+
+The bitstream-size entry (11:09:05) projected that right-sizing
+the pyro_rp pblock to the child's ~21k-LUT reality could cut every
+image and load time ~60%. Measure the region's actual site
+capacity, its exact configuration-frame raster, and the legal
+shrink — does the projection hold?
+
+## 2. How
+
+- **Equipment:** device-model queries + bitgen only; no hardware
+  touched. pyro_rp = `CLOCKREGION_X0Y9:CLOCKREGION_X3Y10` (SLR2;
+  `hw/dfx/platform_manifest.json`, chosen to dodge OpenNIC's
+  packet-adapter pblocks on row Y8).
+- **Software:** Vivado 2025.2 batch. Site census via
+  `get_sites -of_objects [get_clock_regions ...]` on the
+  xcu250 device model; exact raster via
+  `write_bitstream -cell` on
+  `build-wiretap/dcp/static_routed_locked.dcp` with
+  `BITSTREAM.GENERAL.COMPRESS FALSE` (the build default is TRUE,
+  `build_static.tcl:106`, so all shipped partial sizes are
+  content-dependent). RM cell discovered by the
+  `HD.RECONFIGURABLE` filter:
+  `box_250mhz_inst/pyro_250mhz_inst/g_intf[0].pyro_rp_inst`.
+- **Benchmarks:** n/a — census + one bitgen.
+
+### Key commands
+
+```bash
+vivado -mode batch -source rp_audit.tcl    # site census
+vivado -mode batch -source rp_frames.tcl   # uncompressed partial
+```
+
+## 3. Observations
+
+Site capacity of the 8 clock regions (device model):
+
+| CR col | SLICE/CR | RAMB36/CR | URAM/CR | DSP present |
+|--------|----------|-----------|---------|-------------|
+| X0     | 1,860    | 24        | **0**   | yes         |
+| X1     | 1,560    | 24        | **16**  | yes         |
+| X2     | 2,280    | 36        | **0**   | yes         |
+| X3     | 1,320    | 12        | **16**  | yes         |
+
+Totals (x2 rows): **14,040 SLICE = 112,320 LUTs**, 192 BRAM36,
+64 URAM, 768 DSP. The quoted "80k LUT budget" is a ~71% derate
+of true capacity. Child usage (multi_mac_wire): 21,034 LUT
+(**18.7%**), 111.5 BRAM36 (**58.1%**), 50 URAM (**78.1%**).
+
+Raster (uncompressed partial, measured): **7,895,489 B = 7.90 MB
+~= 21,224 frames** x 372 B (UltraScale+ frame = 93 x 32-bit
+words), minus a few KB of header. Against it, the shipped
+compressed partials:
+
+| Partial        | Size    | vs raster |
+|----------------|---------|-----------|
+| id_stub        | 3.39 MB | -57%      |
+| overlay_wire   | 5.40 MB | -32%      |
+| multi_mac_wire | 5.64 MB | -29%      |
+
+## 4. Data analysis
+
+Two corrections to prior entries land at once. (1) The "region
+floor" framing of 11:09:05 conflated the compressed stub with the
+raster: the true raster is 7.90 MB; compression is doing 29-57%
+of the work everywhere, scaling with emptiness. (2) The ~60%
+right-sizing projection is refuted by column geography: URAM
+exists only in the X1/X3 columns, 16 per CR, 4 column-regions
+total, and the child needs 50 (3 columns = 48 < 50), so every
+URAM column-region must stay. The smallest legal rectangle is
+`X1Y9:X3Y10` — 6/8 CRs, 82,560 LUTs, 144 BRAM36 (>= 111.5), 64
+URAM — dropping only the X0 pair: **~25% of the raster, not
+~60%**. The region is memory-bound in exactly the way the engine
+is: LUTs are 5x oversupplied while URAM is 78% consumed. Levers
+that would actually move image size: reduce URAM footprint
+(smaller trie residency), or accept the ~25%. JTAG load time
+(13.6-16.2 s at 5.4-5.6 MB compressed) scales with compressed
+bytes, so the realistic best case from floorplanning alone is
+~10-12 s — another reason the ICAP path (ms-class regardless) is
+the lever that matters.
+
+## 5. Ideas for future experiments
+
+- Measure, not estimate, the X1Y9:X3Y10 shrink: rebuild the
+  static with the smaller pblock and diff raster + compressed
+  sizes + JTAG wall time (a static rebuild event — R82b applies).
+- URAM-footprint sweep: rebuild the overlay child at reduced
+  trie capacity (32 URAM) and check whether 3 URAM columns
+  (X1-only rectangle) becomes legal — that unlocks a ~50% area
+  cut if pattern residency can shrink.
+- Confirm the 372 B/frame arithmetic against the .prm frame
+  manifest emitted next to the partials.
