@@ -17,60 +17,63 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
+1. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
+   All LUTs Be Dynamic? The ~5% Floor and Why](#11-aug-2026-110221)
+   :complete:
+2. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
    Static vs Dynamic Under Both Shells](#11-aug-2026-110034)
    :complete:
-2. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
+3. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
    on FPGA — Adjacent Work and Why the Gap
    Exists](#11-aug-2026-104819) :complete:
-3. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
+4. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
    ICAP, MCAP, JTAG — What "Over PCIe" Actually
    Means](#11-aug-2026-103732) :complete:
-4. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
+5. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
    ~6 ms Projected vs 13.6-16.2 s JTAG Measured](#11-aug-2026-103214)
    :complete:
-5. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+6. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
    Per-Packet Scan Latency, and a FAIL That Measured the RR
    Share](#11-aug-2026-102845) :complete:
-6. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+7. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
    Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
    :complete:
-7. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+8. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-8. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+9. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-9. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+10. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-10. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+11. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-11. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+12. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-12. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+13. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-13. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+14. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-14. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+15. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-15. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-16. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-17. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-18. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-19. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-20. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-21. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-22. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-23. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-24. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-25. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-26. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-27. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-28. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-29. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-30. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+16. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+17. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+18. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+19. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+20. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+21. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+22. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+23. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+24. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+25. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+26. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+27. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+28. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+29. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+30. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+31. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -4800,3 +4803,76 @@ Coyote's shell as the resident static.
   split matters more than LUTs for A5-style engines.
 - If an N=16 engine ladder ever lands: 80k-pocket fit study vs a
   Coyote-hosted vFPGA port.
+
+---
+
+# EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
+All LUTs Be Dynamic? The ~5% Floor and Why :complete:
+
+## 1. Hypothesis
+
+Companion to the 11:00:34 LUT census: could a shell make 100% of
+the card's 1.728M LUTs dynamic, and if not, what is the minimum
+static footprint? Architecture analysis; no new synthesis.
+
+## 2. How
+
+- **Equipment:** U250 facts from prior entries (LUT census,
+  PR-delivery-paths, MCAP-absence lspci check); Coyote static
+  utilization from our 7 Aug build report.
+- **Software:** analysis only; UltraScale+ DFX rules.
+- **Benchmarks:** n/a.
+
+### Key commands
+
+```bash
+# none — architecture analysis
+```
+
+## 3. Observations
+
+UltraScale+ DFX permits reconfigurable partitions containing
+nearly everything (logic, BRAM/URAM, IOBs, GTs), so a ~100%
+pblock is drawable. Three structural costs arrive at that limit:
+
+1. **Frame delivery**: a fabric ICAP controller cannot sit inside
+   the region it rewrites (it would reprogram itself mid-stream);
+   an all-dynamic device falls back to hard-silicon paths only —
+   JTAG (13.6-16.2 s measured here) or MCAP (MB/s-class;
+   confirmed absent on the resident shell).
+2. **The PCIe endpoint dies**: XDMA/QDMA fabric logic inside the
+   rewritten region drops the link mid-load — surprise link-down,
+   host rescan, wedged drivers. Keeping the endpoint alive during
+   reconfiguration is the static layer's entire purpose (it is
+   why Coyote swaps 53 MiB of shell in 49 ms with the device
+   never leaving the bus).
+3. **Anchoring**: partition pins and the clock sources feeding
+   the boundary need static context; a 100% pblock leaves none.
+
+## 4. Data analysis
+
+"All LUTs dynamic" therefore collapses into "full reprogramming
+with the device off the bus" — exactly the cyt_top.bit cold-start
+flow (JTAG, seconds dark, PCIe rescan), i.e. not partial
+reconfiguration at all. For a card that stays enumerated, the
+minimum static is the PCIe endpoint + configuration path + PR
+plumbing, and Coyote's measured static layer is close to that
+floor: **80,009 LUTs = 4.6%** of the die, bounding the dynamic
+ceiling near **~95% architecturally**, of which Coyote's actual
+floorplan claims ~80% (the gap is placement margin plus I/O, GT
+and config columns that make poor pblock territory). The design
+space is then a one-axis dial: the wiretap shell sits at one end
+(4.6% dynamic, everything else frozen), Coyote near the other
+(~80% dynamic above a ~5% static floor); no shell on a
+PCIe-attached card can reach 100%.
+
+## 5. Ideas for future experiments
+
+- Price a "minimal Coyote": static layer stripped to XDMA + ICAP
+  path alone (no PR-region niceties) — how far under 80k LUTs
+  can the floor go on this die?
+- Two-tier DFX (nested): a small static + a big outer RP that
+  itself hosts pyro_rp-style inner RPs — Coyote's UltraScale+
+  nested-DFX support suggests the ladder is buildable.
+- Measure host-visible dark time for a full cyt_top.bit JTAG
+  reload (device-removed flow) as the "100% dynamic" cost datum.
