@@ -1697,3 +1697,425 @@ Add this information to the notebook as it's own entry.  Update the demo doc.  D
 
 Add the perf counters and re-link.
 
+## 2026-07-31 02:51:22
+
+Run the demo and dashboard end to end.
+
+## 2026-07-31 15:17:07
+
+Stop the server, update the notebook and fix the demo so that on eavy reload the switch time box doesn't increase in size.  The UI is wonky,
+
+## 2026-07-31 19:40:27
+
+Run the demo
+
+## 2026-08-01 19:10:12
+
+Commit this and update the notebook with the endurance result.
+
+## 2026-08-01 19:14:48
+
+run the demo
+
+## 2026-08-01 19:15:22
+
+I'm not seeing the dashboard.
+
+## 2026-08-01 19:17:20
+
+I see it now, stop the server.
+
+## 2026-08-01 19:17:59
+
+Add a graph generation mode to the demo that runs the system for 30, 60 or 500 seconds and collects data in a graph format suitable for us in a published paper.
+
+## 2026-08-03 16:14:40
+
+Update the notebook with the paper mode and figure results.
+
+## 2026-08-03 16:27:29
+
+Explain the current system as it exists, file by file and directory by directory.   HNow does each file work to implement the goal of building a system that measures using OS type primitives to manage resources on an FPGA?
+
+## 2026-08-03 16:29:13
+
+Add this walkthrough to the system-walkthrough doc and commit it.
+
+## 2026-08-03 16:31:35
+
+Update the notebook with the walkthrough entry.
+
+## 2026-08-03 19:25:33
+
+Reload skills
+
+## 2026-08-03 21:40:23
+
+clear
+
+## 2026-08-03 21:43:16
+
+Explain the telemetry UI and add dcumentation on the UI to the demo.md docs
+
+## 2026-08-03 21:44:33
+
+All documentation and code MUST adhere to the 80 column rule.  See FreeBSD style.9 manual page.
+
+## 2026-08-03 22:01:25
+
+Fix the remaining legacy files starting with rp_wrapper.py
+
+## 2026-08-04 03:27:36
+
+Explain the following parts of hte system
+1. How does a program get built for the FPGA?
+2. What code on the FPGA switches contexts?
+3. What does the telemetry mean?
+4. Where are the performance counters for the FPGA implemented in the VHDL?
+
+## 2026-08-04 03:35:04
+
+How does a context switch occur?
+
+## 2026-08-04 03:36:40
+
+Add the context switch explanation to the notebook and explain what an Aho-Corasick automaton is.
+
+## 2026-08-04 03:42:35
+
+Run the demo
+
+## 2026-08-04 12:28:39
+
+Update the notebook with the demo results
+
+## 2026-08-04 12:29:12
+
+Describe how FPGA overlays work in general, and then describe their specific use in this project, be specific, give references.
+
+## 2026-08-04 14:24:06
+
+Describe how FPGA overlays work in general, and then describe their specific use in this project, be specific, give references.
+
+## 2026-08-04 14:25:16
+
+Add this to the notebook.
+
+## 2026-08-04 14:31:53
+
+Do not report "80-column clean" just do it.
+
+## 2026-08-04 16:08:07
+
+Design an experiment to quantify the difference between matching in the FPGA vs. matching in the user space snort process.  Create a new branch, pyro-quantify to conduct the experiment.  Use ultracode ti build the experiment.  Add a notebook entry once the experiment is complete to describe the experiment completely using the notebook skill.
+
+## 2026-08-04 16:38:47
+
+Run the experiment
+
+## 2026-08-04 18:00:07
+
+Where is the packet generator that is used to test the system?
+
+## 2026-08-04 18:02:18
+
+Update the notebook with the results when the run completes, but first explain why there is a new syntheis build.
+
+## 2026-08-04 20:01:51
+
+Explain this comment fully “the engine is ~1,000× faster than its feed, which is the measured case for wire-rate ingest.”
+
+## 2026-08-04 20:03:06
+
+Is the 13ms per scan on the FPGA or the host?
+
+## 2026-08-04 20:07:00
+
+Merge this work.
+
+## 2026-08-04 20:08:13
+
+Start the SNORT-PF §3  work.
+
+## 2026-08-05 02:21:14
+
+Build the wrapper wire-scan path.
+
+## 2026-08-05 02:21:51
+
+Build the wrapper wire-scan path. then flahs, then loopback bringup.
+
+## 2026-08-05 02:33:30
+
+Build the wrapper wire-scan path. then flahs, then loopback bringup.
+
+## 2026-08-05 02:33:40
+
+Build the wrapper wire-scan path. then flahs, then loopback bringup.
+
+## 2026-08-05 02:35:23
+
+What the fuck is wrong with you?
+
+## 2026-08-05 02:42:55
+
+Again what the fuck is wrong with you?
+
+## 2026-08-05 02:44:53
+
+Continue
+
+## 2026-08-05 02:45:05
+
+Build the goddamn thing
+
+## 2026-08-05 02:45:26
+
+Continue
+
+## 2026-08-05 02:46:05
+
+Continue
+
+## 2026-08-05 02:47:00
+
+Build the wrapper wire-scan path.
+
+## 2026-08-05 02:52:23
+
+Continue
+
+## 2026-08-05 02:54:09
+
+Continue
+
+## 2026-08-05 03:02:00
+
+Continue
+
+## 2026-08-05 03:26:19
+
+Commit the work once the tests pass.
+
+## 2026-08-05 03:27:35
+
+Add a notebook entry for the wire-scan path.
+
+## 2026-08-05 03:30:45
+
+How long for hte Vivado run?
+
+## 2026-08-05 03:58:22
+
+Update the specification with the wire-scan path.
+
+## 2026-08-05 17:00:18
+
+Merge this work.
+
+## 2026-08-05 17:52:42
+
+Start the CMAC near-end loopback bring-up.
+
+## 2026-08-05 18:02:43
+
+sudo .venv-pyro/bin/python3 scripts/pyro_cmac_loopback.py
+[sudo] password for gnn:
+build_timestamp=0x07260427  cmac_core_version=0x00000301  rs_fec=True
+before: GT_LOOPBACK=0x0  RX_STATUS=0xc0 (status=0 aligned=0 misaligned=0)  TX_STATUS=0x0  BLOCK_LOCK=0x00000
+loopback: GT_LOOPBACK=0x0  RX_STATUS=0xc0 (status=0 aligned=0 misaligned=0)  TX_STATUS=0x0  BLOCK_LOCK=0x00000
+RESULT: near-end PMA loopback did NOT align
+after restore: GT_LOOPBACK=0x0  RX_STATUS=0xc0 (status=0 aligned=0 misaligned=0)  TX_STATUS=0x0  BLOCK_LOCK=0x00000
+
+## 2026-08-05 18:10:48
+
+sudo .venv-pyro/bin/python3 scripts/pyro_cmac_loopback.pysudo .venv-pyro/bin/python3 scripts/pyro_cmac_loopback.py
+
+## 2026-08-05 18:11:00
+
+sudo .venv-pyro/bin/python3 scripts/pyro_cmac_loopback.py
+build_timestamp=0x07260427  cmac_core_version=0x00000301  rs_fec=True
+before: GT_LOOPBACK=0x0  RX_STATUS=0xc0 (status=0 aligned=0 misaligned=0)  TX_STATUS=0x0  BLOCK_LOCK=0x00000
+before: CONF_TX_1=0x1  CONF_RX_1=0x1  RSFEC_ENABLE=0x3
+loopback: GT_LOOPBACK=0x0  RX_STATUS=0xc0 (status=0 aligned=0 misaligned=0)  TX_STATUS=0x0  BLOCK_LOCK=0x00000
+loopback: CONF_TX_1=0x1  CONF_RX_1=0x1  RSFEC_ENABLE=0x3
+RESULT: near-end PMA loopback did NOT align
+after restore: GT_LOOPBACK=0x0  RX_STATUS=0xc0 (status=0 aligned=0 misaligned=0)  TX_STATUS=0x0  BLOCK_LOCK=0x00000
+after restore: CONF_TX_1=0x1  CONF_RX_1=0x1  RSFEC_ENABLE=0x3
+
+## 2026-08-05 19:24:41
+
+What is the update to sudoers that is needed tu run this without sudo?
+
+## 2026-08-05 19:28:17
+
+Try the script now
+
+## 2026-08-05 19:31:34
+
+Flash the wiretap shell and run the wire path end to end.
+
+## 2026-08-05 20:13:18
+
+Done, onic is unloaded, start the flash
+
+## 2026-08-05 20:14:21
+
+Tell me when both jobs are done and I'll power cycle
+
+## 2026-08-05 22:57:11
+
+Demonstrate the matching and show the timing of how long it takes to match a packet in silicon.  Create whatever scripts are necessary.  Add entries to the notebook and documentation.  Use ultracode
+
+## 2026-08-05 23:30:20
+
+What are the next steps according to the docs?
+
+## 2026-08-05 23:32:04
+
+Merge and then Adopt wire ingest and update both specs.
+
+## 2026-08-05 23:38:49
+
+Review the A1-A4 amendments
+
+## 2026-08-05 23:41:11
+
+Approve all four and execute the adoption edits
+
+## 2026-08-05 23:46:11
+
+Start the S4 work
+
+## 2026-08-05 23:49:08
+
+Start the S4 work
+
+## 2026-08-05 23:50:44
+
+Continue
+
+## 2026-08-06 02:11:19
+
+Load the partial on silicon and replay the differential
+
+## 2026-08-06 02:29:48
+
+Run the SR16 oracle over the shared trie
+
+## 2026-08-06 02:39:33
+
+Continue
+
+## 2026-08-06 12:29:22
+
+Measure the precision delta at cap 16
+
+## 2026-08-06 13:19:30
+
+Put this work aside.  Alongside the SNORT matching, create a second program that is also "bump in the wire" this second program calculcates a MAC over the received packet and JUST reports the MAC up to the host.  The MAC should only cover fields that dont' change with time.  Design this and explain which fields of the packet the MAC will cover before proceeding.  From now on always use ultracode to do all coding.  This program will run along side the SNORT program, they will be used in a rouind robin scheduling setup.
+
+## 2026-08-06 13:32:21
+
+Neer use JTAG to swap programs.  The goal is to user overlays and to switch programs quickly, in silicon.  This is the experiment, can we make use of the FPGA for diverse programs at rn time?
+
+## 2026-08-06 13:40:33
+
+Explain how overlays are used in this design
+
+## 2026-08-06 13:44:34
+
+Add a notebook entry for the overlay scheduling experiment
+
+## 2026-08-06 15:01:02
+
+Show me the results of the implementation workflow
+
+## 2026-08-06 15:01:43
+
+Continue to AC-M2.
+
+## 2026-08-06 15:01:46
+
+Continue to AC-M2.
+
+## 2026-08-06 15:03:40
+
+Commit the MAC work while the build runs.
+
+## 2026-08-06 15:04:40
+
+Show me the AC-M2 results when the build finishes.
+
+## 2026-08-06 15:21:31
+
+Update the notebook entry with the AC-M2 results
+
+## 2026-08-06 15:31:57
+
+Commit the notebook update once AC-M2 lands.
+
+## 2026-08-06 21:22:10
+
+Run AC-M3 on silicon
+
+## 2026-08-06 21:44:46
+
+Run it again with real IP traffic on the wire
+
+## 2026-08-06 21:46:52
+
+Ran  sudo ip link set ens4f0np0 up
+
+## 2026-08-06 21:48:28
+
+Ran sudo ip link set ens4f1np1 up
+
+## 2026-08-07 17:52:52
+
+show me the context switching code.
+
+## 2026-08-07 18:14:42
+
+Add telemetry for the scheduler and add it to the dashboard as well.
+
+## 2026-08-07 18:19:47
+
+Does each packet get seen by both programs?
+
+## 2026-08-07 18:21:45
+
+Add mode 3
+
+## 2026-08-07 18:25:48
+
+Run the mode 3 experiment on silicon when the builds finish
+
+## 2026-08-07 18:28:54
+
+Commit the mode 3 work when it passes
+
+## 2026-08-07 19:31:13
+
+Show me the mode 3 results when the workflow finishes
+
+## 2026-08-07 19:32:48
+
+Show the updated verilog for the context switch
+
+## 2026-08-07 19:45:39
+
+Run the mode 3 experiment on silicon when the build finishes
+
+## 2026-08-07 21:01:26
+
+Update the notebook with the mode 3 results
+
+## 2026-08-10 16:34:00
+
+What is the per packet match time in silicon and how was it measured?  Observed time, not estimted.
+
+## 2026-08-10 16:34:06
+
+login
+
