@@ -17,72 +17,75 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT 11 Aug 2026 11:24:34 pyro_rp Frame-Count Audit:
+1. [EXPERIMENT 11 Aug 2026 11:32:45 URAM-Footprint Sweep: a
+   24,576-State Child Fits a Half-Height Region — 50% Raster Cut
+   for 62% Corpus](#11-aug-2026-113245) :complete:
+2. [EXPERIMENT 11 Aug 2026 11:24:34 pyro_rp Frame-Count Audit:
    7.90 MB Raster, URAM Columns Bind, Right-Sizing Caps at
    ~25%](#11-aug-2026-112434) :complete:
-2. [EXPERIMENT 11 Aug 2026 11:09:05 Why 5 MB from Two .v Files:
+3. [EXPERIMENT 11 Aug 2026 11:09:05 Why 5 MB from Two .v Files:
    Bitstream Size Is Region Raster, Not Logic](#11-aug-2026-110905)
    :complete:
-3. [EXPERIMENT 11 Aug 2026 11:06:12 SNORT Program Source
+4. [EXPERIMENT 11 Aug 2026 11:06:12 SNORT Program Source
    Walkthrough: Rules-to-Table Pipeline and the Program-Agnostic
    Engine](#11-aug-2026-110612) :complete:
-4. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
+5. [EXPERIMENT 11 Aug 2026 11:02:21 Minimum Static Analysis: Can
    All LUTs Be Dynamic? The ~5% Floor and Why](#11-aug-2026-110221)
    :complete:
-5. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
+6. [EXPERIMENT 11 Aug 2026 11:00:34 U250 LUT Census: 1.728M Total,
    Static vs Dynamic Under Both Shells](#11-aug-2026-110034)
    :complete:
-6. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
+7. [EXPERIMENT 11 Aug 2026 10:48:19 Literature Survey: No LLM.int8
    on FPGA — Adjacent Work and Why the Gap
    Exists](#11-aug-2026-104819) :complete:
-7. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
+8. [EXPERIMENT 11 Aug 2026 10:37:32 PR Delivery Paths on the U250:
    ICAP, MCAP, JTAG — What "Over PCIe" Actually
    Means](#11-aug-2026-103732) :complete:
-8. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
+9. [EXPERIMENT 11 Aug 2026 10:32:14 ICAP Load Estimate for pyro_rp:
    ~6 ms Projected vs 13.6-16.2 s JTAG Measured](#11-aug-2026-103214)
    :complete:
-9. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+10. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
    Per-Packet Scan Latency, and a FAIL That Measured the RR
    Share](#11-aug-2026-102845) :complete:
-10. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+11. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
    Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
    :complete:
-11. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+12. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-12. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+13. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-13. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+14. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-14. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+15. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-15. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+16. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-16. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+17. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-17. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+18. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-18. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+19. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-19. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-20. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-21. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-22. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-23. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-24. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-25. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-26. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-27. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-28. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-29. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-30. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-31. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-32. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-33. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-34. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+20. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+21. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+22. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+23. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+24. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+25. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+26. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+27. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+28. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+29. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+30. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+31. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+32. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+33. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+34. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+35. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -5132,3 +5135,88 @@ the lever that matters.
   cut if pattern residency can shrink.
 - Confirm the 372 B/frame arithmetic against the .prm frame
   manifest emitted next to the partials.
+
+---
+
+# EXPERIMENT 11 Aug 2026 11:32:45 URAM-Footprint Sweep: a
+24,576-State Child Fits a Half-Height Region — 50% Raster Cut for
+62% Corpus :complete:
+
+## 1. Hypothesis
+
+The frame-count audit (11:24:34) showed the full child's 50-URAM
+footprint pins the pblock at 6/8 clock regions. If trie residency
+shrinks to 6 URAM banks (`PYRO_OVERLAY_STATES=24576`), does the
+region unlock a smaller legal rectangle, and what does the
+capacity trade cost?
+
+## 2. How
+
+- **Equipment:** OOC synthesis only; no hardware, no repo changes
+  (scratch build).
+- **Software:** Vivado 2025.2. Child RTL generated exactly as
+  `build_overlay_rm.sh` does (`rp_wrapper.generate_rp_child` +
+  `eng.v` concat), then `synth_design -mode out_of_context
+  -verilog_define PYRO_OVERLAY_STATES=24576` — the define already
+  exists in `pyro_circuit_overlay_top.v` (sim knob; drives both
+  MAX_STATES and MAX_DENSE). The repo's >=40-URAM anti-trim guard
+  replaced by a 20-40 expectation band for the 6-bank engine.
+- **Benchmarks:** OOC utilization vs the shipped overlay_wire OOC
+  report; legality arithmetic vs the audit's per-column census.
+
+### Key commands
+
+```bash
+vivado -mode batch -source uram_sweep/_ooc_sweep.tcl
+grep -E 'Block RAM Tile|CLB LUTs|URAM' sweep_24576_ooc_util.rpt
+```
+
+## 3. Observations
+
+| Child             | States | LUT    | BRAM36 | URAM |
+|-------------------|--------|--------|--------|------|
+| shipped (10-bank) | 40,960 | 13,072 | 111.5  | 50   |
+| sweep (6-bank)    | 24,576 | 12,546 | **73.5** | **30** |
+
+URAM lands exactly on the 5-per-bank model (6 x 5 = 30); BRAM
+drops 34% (the base/fail/dense arrays scale with states); LUTs
+barely move (-4%) — logic never was the footprint.
+
+Legality against the audit's per-CR census (X0/X1/X2/X3 = URAM
+0/16/0/16, BRAM36 24/24/36/12, SLICE 1860/1560/2280/1320):
+
+- `X1Y9:X3Y9` (single row, 3 CR): URAM 32 >= 30, BRAM **72 <
+  73.5** — fails by 2 tiles.
+- {X1 pair + X3 pair} (4 CR, two rects): URAM 64, BRAM **72 <
+  73.5** — same 2-tile miss.
+- **`X0Y9:X3Y9` (single row, 4 CR): URAM 32 >= 30, BRAM 96 >=
+  73.5, ~56k LUT — LEGAL.** Half the region.
+
+## 4. Data analysis
+
+The sweep converts the audit's dead end into a real option: a
+single-row `X0Y9:X3Y9` pblock is legal for the 6-bank child —
+**~50% of the raster (~3.9 MB uncompressed, ~2.7-3 MB compressed
+projected) instead of the 25% ceiling** the full child allows.
+The price is capacity: 24,576 of 39,647 states = **62% of the
+full SNORT corpus resident**, meaning more SR-group swapping at
+the measured 12-34 ms per table write. Two tightness caveats:
+URAM sits at 30/32 = 94% of the small region (placement may
+object; only OOC-synthesized here, not linked or routed), and the
+2-tile BRAM miss on the 3-CR variants shows how close the next
+step down is — a ~70-BRAM child (slightly smaller dense/out
+arrays) would unlock 3 CRs (62.5% cut). The levers now rank:
+ICAP (ms-class, needs static rebuild) > half-height floorplan
+(-50% image, needs static rebuild + capacity trade) > compression
+(free, already on). All three await an owner decision on R82b.
+
+## 5. Ideas for future experiments
+
+- Link the 6-bank child against a real X0Y9:X3Y9 static rebuild;
+  the 94% URAM occupancy is the number to watch at placement.
+- Probe the 2-tile miss: shave dense/out_flat to <= 72 BRAM and
+  re-check the 3-CR rectangles.
+- Corpus-residency policy at 62%: measure SR-group swap frequency
+  on live traffic vs the 24,576-state working set.
+- Sweep 8 banks (32,768 states, ~40 URAM): does any 5-CR
+  rectangle become legal, and where does corpus fraction land?
