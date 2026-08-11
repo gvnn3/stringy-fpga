@@ -28,9 +28,18 @@ ours, so the sniffer counts on the fabric doing no dst filtering
 (OpenNIC has none); if captures come up empty while noms climb, the
 counters are still the primary evidence and the report says so.
 
+Timing is reported alongside the pass/fail evidence: phases B and C
+sample the R45a per-scan counters (reset at scan start, latched at
+scan end, so under continuous wire load each PERF read observes one
+completed 64-byte wire-frame scan) and report the per-packet scan
+latency as min/median/max in cycles and nanoseconds (250 MHz fabric:
+4 ns/cycle).  Each phase's wall-clock duration and the total run
+time are printed at the end.
+
 Usage:
     PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \\
-        scripts/pyro_wire_e2e.py [--window 3.0] [--capture 2.0]
+        scripts/pyro_wire_e2e.py [--window 3.0] [--capture 2.0] \\
+        [--perf-n 200] [--perf-sleep 0.002]
 
 Loopback is enabled via `sudo -n scripts/pyro_cmac_loopback.py
 --keep` (NOPASSWD, /etc/sudoers.d/pyro-cmac) and left ON so the
@@ -38,6 +47,7 @@ counters keep moving for inspection; disable with `--off` later.
 """
 import argparse
 import os
+import statistics
 import struct
 import subprocess
 import sys
@@ -51,6 +61,8 @@ from pyro.overlay import table as otable       # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENGINE_ID = 0x0A5E0001
+NS_PER_CYCLE = 4.0                             # 250 MHz fabric clock
+WIRE_FRAME_BYTES = 64                          # TX generator frame size
 
 # The TX generator's constant frame prefix (pyro_wire_tx_gen.sv):
 # dst ff:ff:ff:ff:ff:ff, src 02:00:00:00:00:01, ethertype 0x88B5.
@@ -84,6 +96,47 @@ def sample(c, seconds, label):
           (label, seconds, d.seen, d.scanned, d.drops, d.noms,
            b.seen))
     return b, d
+
+
+def sample_scan_timing(c, n, sleep_s):
+    """N R45a PERF reads; keep cycles where bytes == one wire frame.
+
+    The per-scan counters reset at scan start and hold the last
+    completed scan, so under continuous wire load each read samples
+    one 64-byte wire-frame scan.
+    """
+    cycles, discarded = [], 0
+    for _ in range(n):
+        r = pdev.read_perf_counters(c, slot=1, with_wire=True)
+        if r is None:
+            discarded += 1
+        else:
+            cyc, byt, _wire = r
+            if byt == WIRE_FRAME_BYTES:
+                cycles.append(cyc)
+            else:
+                discarded += 1
+        time.sleep(sleep_s)
+    return cycles, discarded
+
+
+def report_scan_timing(label, cycles, discarded, n):
+    """Per-packet scan latency: min/median/max in cycles and ns."""
+    if not cycles:
+        print("TIMING %s: NO %d-byte samples (%d/%d discarded)"
+              % (label, WIRE_FRAME_BYTES, discarded, n))
+        return None
+    med = statistics.median(cycles)
+    print("TIMING %s: %d per-packet samples, %d discarded "
+          "(bytes != %d or no reply)"
+          % (label, len(cycles), discarded, WIRE_FRAME_BYTES))
+    print("  per-packet cycles  min=%d median=%.1f max=%d"
+          % (min(cycles), med, max(cycles)))
+    print("  per-packet ns      min=%.0f median=%.0f max=%.0f "
+          "(4 ns/cycle)"
+          % (min(cycles) * NS_PER_CYCLE, med * NS_PER_CYCLE,
+             max(cycles) * NS_PER_CYCLE))
+    return med
 
 
 def sniff_wire_replies(c, seconds, limit=50):
@@ -127,9 +180,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", type=float, default=3.0)
     ap.add_argument("--capture", type=float, default=2.0)
+    ap.add_argument("--perf-n", type=int, default=200,
+                    help="per-packet R45a timing samples per phase")
+    ap.add_argument("--perf-sleep", type=float, default=0.002,
+                    help="sleep between PERF reads (s)")
     args = ap.parse_args()
     c = cfg()
     failures = []
+    t_run0 = time.perf_counter()
+    phase_times = []
 
     usable, reason = pdev.probe_device(c)
     print("probe: %s" % reason)
@@ -159,6 +218,7 @@ def main():
         return 1
 
     # ---- A: no table -> drop, counted --------------------------------
+    t0 = time.perf_counter()
     _, d = sample(c, args.window, "A(no-table)")
     if d is None:
         return 1
@@ -166,22 +226,29 @@ def main():
             and d.noms == 0):
         failures.append("A: expected pure counted drops, got %s"
                         % (d,))
+    phase_times.append(("A(no-table)", time.perf_counter() - t0))
 
     # ---- B: clean table -> scanned, silent ---------------------------
+    t0 = time.perf_counter()
     load(c, [CLEAN_ANCHOR], "clean")
     _, d = sample(c, args.window, "B(clean)")
     if d is None:
         return 1
     if not (d.seen > 0 and d.scanned > 0 and d.noms == 0):
         failures.append("B: expected silent scans, got %s" % (d,))
+    cyc, disc = sample_scan_timing(c, args.perf_n, args.perf_sleep)
+    med_clean = report_scan_timing("B(clean scan floor)", cyc, disc,
+                                   args.perf_n)
     replies, seen_frames = sniff_wire_replies(c, args.capture)
     print("B capture: %d wire MATCH_REPLYs in %d PYRO frames"
           % (len(replies), seen_frames))
     if replies:
         failures.append("B: %d wire replies from a clean table"
                         % len(replies))
+    phase_times.append(("B(clean)", time.perf_counter() - t0))
 
     # ---- C: matching table -> nominations + wire replies -------------
+    t0 = time.perf_counter()
     st = load(c, [TXGEN_PREFIX], "matching")
     ref = omodel.OverlayEngineModel(engine_id=ENGINE_ID)
     _, d = sample(c, args.window, "C(matching)")
@@ -190,6 +257,9 @@ def main():
     if not (d.scanned > 0 and d.noms >= d.scanned):
         failures.append("C: expected >=1 nom per scanned frame, "
                         "got %s" % (d,))
+    cyc, disc = sample_scan_timing(c, args.perf_n, args.perf_sleep)
+    med_match = report_scan_timing("C(matching)", cyc, disc,
+                                   args.perf_n)
     replies, seen_frames = sniff_wire_replies(c, args.capture)
     print("C capture: %d wire MATCH_REPLYs in %d PYRO frames"
           % (len(replies), seen_frames))
@@ -216,6 +286,21 @@ def main():
                                         len(replies), st.epoch))
     if bad:
         failures.append("C: %d malformed wire replies" % bad)
+    phase_times.append(("C(matching)", time.perf_counter() - t0))
+
+    # ---- timing summary ----------------------------------------------
+    print()
+    print("TIMING summary:")
+    for name, secs in phase_times:
+        print("  phase %-12s %.2f s" % (name, secs))
+    print("  total run         %.2f s"
+          % (time.perf_counter() - t_run0))
+    if med_clean is not None:
+        print("  per-packet scan   median %.0f ns clean"
+              % (med_clean * NS_PER_CYCLE)
+              + (" / %.0f ns matching" % (med_match * NS_PER_CYCLE)
+                 if med_match is not None else "")
+              + "  (4 ns/cycle)")
 
     print()
     if failures:

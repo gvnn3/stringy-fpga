@@ -17,45 +17,48 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
-1. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
+1. [EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+   Per-Packet Scan Latency, and a FAIL That Measured the RR
+   Share](#11-aug-2026-102845) :complete:
+2. [EXPERIMENT  7 Aug 2026 20:15:46 Broadcast Mode: Every Wire
    Frame to Both Programs, Coverage Without Partition](#7-aug-2026-201546)
    :complete:
-2. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
+3. [EXPERIMENT  6 Aug 2026 13:45:18 Overlay Scheduling: Co-Resident
    SNORT + MAC Programs, RR-Switched in Silicon](#6-aug-2026-134518)
    :complete:
-3. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
+4. [EXPERIMENT  6 Aug 2026 12:33:54 Precision Delta at Cap 16:
    the Prefix Cap Is Half of Everything the Trie Nominates](#6-aug-2026-123354)
    :complete:
-4. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
+5. [EXPERIMENT  6 Aug 2026 02:53:33 SR16 Oracle Over the Shared
    Trie: Zero Raw-Anchor Misses in 3,925 Cases](#6-aug-2026-025333)
    :complete:
-5. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
+6. [EXPERIMENT  6 Aug 2026 00:23:08 S4 ROM-Trie Child: URAM Has No
    Init, Boot Expansion, 21,332 States Baked](#6-aug-2026-002308)
    :complete:
-6. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
+7. [EXPERIMENT  5 Aug 2026 23:22:52 Per-Packet Wire Match Timing: Scan
    Core, Wrapper, Host RTT](#5-aug-2026-232252) :complete:
-7. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
+8. [EXPERIMENT  5 Aug 2026 22:52:33 Wire Traffic End-to-End: G4
    Flash, Loopback, 8.9M Frames](#5-aug-2026-225233) :complete:
-8. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
+9. [EXPERIMENT  5 Aug 2026 03:28:37 Wire-Scan Path: Raw Frames
    Through the Overlay Child](#5-aug-2026-032837) :complete:
-9. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
+10. [EXPERIMENT  4 Aug 2026 19:27:33 Quantify: FPGA vs.
    Userspace Snort](#4-aug-2026-192733) :complete:
-10. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
-11. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
-12. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
-13. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
-14. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
-15. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
-16. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
-17. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
-18. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
-19. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
-20. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
-21. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
-22. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
-23. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
-24. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
-25. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
+11. [EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs, R1 Floor Crossed, AC-3-3 PASSES on Silicon](#20-jul-2026-031504) :complete:
+12. [EXPERIMENT 19 Jul 2026 14:43:10 Jumbo Shell Boots From QSPI — 567 MiB/s Pipelined (4.7× over 1518), Two onic MTU Defects Patched](#19-jul-2026-144310) :complete:
+13. [EXPERIMENT 16 Jul 2026 06:06:50 P2b Lands — 8 B/cyc Engine on Silicon at 1.97 GB/s On-Chip, Timing Closed at 251.9 MHz](#16-jul-2026-060650) :complete:
+14. [EXPERIMENT 16 Jul 2026 04:48:44 R85a Recovery Folded into load_partial, Device-Gated ACs on Silicon, and the Pipelining Measurement That Reframed P2](#16-jul-2026-044844) :complete:
+15. [EXPERIMENT 15 Jul 2026 14:23:02 JTAG Wedge Recovered In-Band — User+QDMA Soft-Reset Sequence, and the First R45a Counter Read on Silicon](#15-jul-2026-142302) :complete:
+16. [EXPERIMENT 15 Jul 2026 03:44:16 Phase-3 Slate v2.5.0 + First Real HW Partial — R73a Gate Bug Caught by Its Own Safety Net, and JTAG PR Wedges the RP](#15-jul-2026-034416) :complete:
+17. [EXPERIMENT 14 Jul 2026 20:26:10 Counter Wedge Fixed — a Circular-Import Corpse, and Why the Workaround Failed](#14-jul-2026-202610) :complete:
+18. [EXPERIMENT 14 Jul 2026 18:35:59 AC-3-1 + AC-3-4 Land — Sabotage-Verified Suites, and a Counter-Wedge Bug Found](#14-jul-2026-183559) :complete:
+19. [EXPERIMENT 14 Jul 2026 16:23:15 Native Routing Hot Path (R3c) — R3b Reachable at ~1.09×, Warmup Defect Found in the Recipe](#14-jul-2026-162315) :complete:
+20. [EXPERIMENT 14 Jul 2026 08:49:52 PR Shell Rebuilt From Source on nf-server06 — New Card, New Flash, device_usable=true](#14-jul-2026-084952) :complete:
+21. [EXPERIMENT  9 Jul 2026 10:59:06 U250 QSPI Flash — PYRO PR Shell User Image](#9-jul-2026-105906) :complete:
+22. [EXPERIMENT  6 Jul 2026 14:05:00 PYRO Phase 2b — PR Shell + First pr_bitstream Partial](#6-jul-2026-140500) :complete:
+23. [EXPERIMENT  6 Jul 2026 02:50:21 PYRO Phase 2 — Real Vivado Flow, Estimator Calibration](#6-jul-2026-025021) :complete:
+24. [EXPERIMENT  5 Jul 2026 12:05:02 PYRO Phase 1 — Per-Pattern Circuits, Synthesis Service, C ABI](#5-jul-2026-120502) :complete:
+25. [EXPERIMENT  5 Jul 2026 02:44:00 PYRO Phase 0 — Software Shim, Classifier, Model](#5-jul-2026-024400) :complete:
+26. [EXPERIMENT  4 Jul 2026 07:33:45 FPGA Platform Discovery](#4-jul-2026-073345) :complete:
 ---
 
 # EXPERIMENT 20 Jul 2026 03:15:04 P2d Lands — 1.62 GiB/s Over QDMA Char-Devs,
@@ -4336,3 +4339,118 @@ runs, but the delivery TOPOLOGY is now programmable data.
   (mode bits as a delivery bitmap) — the natural next step.
 - Quantum sweep at mode 2 (64, 1024) for cache-locality effects on
   the A5 engine's URAM working set.
+
+---
+
+# EXPERIMENT 11 Aug 2026 10:28:45 Wire E2E Gains a Timing Report:
+Per-Packet Scan Latency, and a FAIL That Measured the RR Share :complete:
+
+## 1. Hypothesis
+
+Can the R78.13 wire e2e gate script double as the standing timing
+report — R45a per-scan sampling folded into its table phases plus
+wall-clock accounting — without disturbing its verdicts, and do the
+5 Aug per-packet scan latencies reproduce under it?
+
+## 2. How
+
+- **Equipment:** nf-server06, U250 at 0000:02:00.0, wiretap static
+  resident (build_timestamp 0x08042258, static_shell_id 0x02020000),
+  CMAC-0 near-end PMA loopback, in-fabric TX generator (one 64 B
+  frame per 1024 cycles, 244,140.6 frames/s), `pyro_rp` child at
+  250 MHz (4 ns/cycle).
+- **Software:** `scripts/pyro_wire_e2e.py` extended with a timing
+  report: phases B/C each take `--perf-n` (200) R45a per-scan
+  samples (reset at scan start, latched at scan end; kept only when
+  bytes == 64, i.e. one wire-frame scan), reported as min/median/max
+  in cycles and ns; every phase and the total run are wall-clocked.
+  New flags `--perf-n` / `--perf-sleep` mirror
+  `scripts/pyro_wire_timing.py`. Verdict gates unchanged.
+- **Benchmarks:** two full e2e runs on silicon (10 Aug 2026, ~16:45
+  UTC): first against whatever child was resident, then after a
+  fresh `overlay_wire.bit` load. 200 timing samples per table phase
+  per run; 3.0 s counter windows; 50-reply captures.
+
+### Key commands
+
+```bash
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_wire_e2e.py
+# after run 1 FAILed phase A:
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_hw.py load \
+    hw/dfx/build-wiretap/partials/overlay_wire.bit   # 15.2 s
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 scripts/pyro_wire_e2e.py
+```
+
+## 3. Observations
+
+Run 1 — **FAIL, phase A only**: expected pure counted drops with no
+table, got `seen=367,201 = scanned = noms, drops=0` over 3.0 s
+(~122.4k frames/s). Counters opened at noms=41.77M: the RR-scheduled
+multi-program (SNORT+MAC) child from the scheduling entries was
+still resident with a matching table. Phases B/C behaved to spec and
+the timing report worked: total run 18.32 s.
+
+Reload: `load_partial OK in 15.2s` (overlay_wire.bit).
+
+Run 2 — **PASS, all gates**, fresh child (epoch ledger 1→2):
+
+| Phase | seen (3.0 s) | scanned | drops | noms | wall |
+|-------|--------------|---------|-------|------|------|
+| A no-table  | 734,167 | 0       | 734,167 | 0       | 3.03 s |
+| B clean     | 733,923 | 733,923 | 0       | 0       | 8.54 s |
+| C matching  | 733,922 | 733,922 | 0       | 733,922 | 6.79 s |
+
+Per-packet scan timing (200 samples kept, 0 discarded, both phases,
+both runs; 4 ns/cycle):
+
+| Table (run 2)   | cyc min | cyc med | cyc max | ns min | ns med | ns max |
+|-----------------|---------|---------|---------|--------|--------|--------|
+| clean (23 st)   | 323     | 323.0   | 332     | 1292   | **1292** | 1328 |
+| matching (15 st)| 399     | 399.0   | 408     | 1596   | **1596** | 1632 |
+
+Run 1 timing was identical except the matching median landed on the
+other completion path: 408.0 cyc = 1632 ns (band [399, 408] both
+runs). 50/50 wire MATCH_REPLYs validated exactly (slot 1, epoch 2,
+pid 0, end 14, flags 0). Total run 18.47 s.
+
+- **Frame rate doubled between runs**: 367,201 vs 734,167 per 3.0 s
+  window; run 2 gives 244.7k frames/s, matching the generator.
+
+## 4. Data analysis
+
+The clean-table floor reproduces the 5 Aug measurement exactly —
+323 cycles / 1292 ns median, same 9-cycle spread — so the e2e's
+embedded sampler and the dedicated timing script agree to the
+cycle. The matching medians (399–408 vs 407 on 5 Aug) differ by
+table: this run's single-anchor 15-state TXGEN_PREFIX table emits
+1 nomination/frame against the 5 Aug 23-state 3-anchor table's 3,
+and the min/max band [399, 408] spans both runs' medians — which
+of the two FSM completion paths dominates 200 samples is sampling
+luck, not drift.
+
+The run-1 FAIL is the report earning its keep as a diagnostic:
+phase A saw exactly half the generator rate (367,201 ≈ 244,140.6
+× 3.0 / 2 = 366,211), which identifies the stale resident as the
+RR child with the SNORT slot's measured 0.500 share — the phase-A
+counter window re-derived the scheduler split without being asked.
+The fail-closed gate itself is intact: with no table on a fresh
+child, all 734,167 frames dropped and counted. Phase A's "no
+table" precondition is only meaningful immediately after a child
+load; the script cannot distinguish "resident table" from "broken
+fail-closed gate" on its own.
+
+## 5. Ideas for future experiments
+
+- Phase-A precondition guard: read absolute noms/epoch before
+  starting; on evidence of a resident table, report "stale child —
+  reload overlay_wire.bit" (or auto-reload behind a flag) instead
+  of a bare FAIL.
+- Persist per-run timing samples as JSON beside the run for
+  regression tracking across child builds.
+- Add p90 to the e2e timing report for parity with
+  pyro_wire_timing's distributions.
+- Deliberately run e2e against the multi-program child at RR
+  quantum 64: the phase-A share measurement generalizes into a
+  scheduler-fairness probe.
+- Still open from 5 Aug: ILA on-fabric timestamps to validate the
+  493-cycle wrapper arrival-to-reply latency on silicon.
