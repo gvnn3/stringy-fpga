@@ -20,6 +20,13 @@ ones).  This module owns only the kind-specific payloads:
   * ``MAC_STAT_REQUEST`` 0x13 / ``MAC_STAT_REPLY`` 0x14 — the six
     counters with the zero-slack invariant
     ``seen == digested + skip_nonip + skip_nokey`` EXACTLY.
+  * ``MAC_DIGEST_REQUEST`` 0x15 / ``MAC_DIGEST_REPLY`` 0x16
+    (WIRE-MAC v0.3.0) — one host-fed raw Ethernet frame digested by
+    the SAME byte-serial engine path a wire frame takes; the reply
+    echoes the engine's per-frame DIG_CYCLES/DIG_BYTES latches (R45a
+    semantics) beside the digest.  Host-fed frames count in the
+    zero-slack counters but never enter the MAC_REPORT batcher and
+    never consume ``wire_seq``.
 
 **Masking model.** :func:`mask_packet` / :func:`digest_packet`
 implement the transit-invariant coverage (RFC 4302 mutable-field
@@ -38,6 +45,7 @@ import struct
 import time
 from typing import Iterable, Iterator, NamedTuple, Optional, Tuple
 
+from . import device as _device
 from .device import (
     ETHERTYPE,
     PYRO_HEADER_LEN,
@@ -58,27 +66,50 @@ from .device import (
 )
 from .siphash import siphash24
 
+# WIRE-MAC v0.3.0 host-fed digest kinds.  Their contract home is
+# :mod:`pyro.device` beside the other R78 kinds; until the device
+# module carries them, they are defined AND registered here — the
+# shared frame codec validates kinds against ``device.VALID_KINDS``
+# at call time, so the additive union below makes ``encode_frame``
+# accept them.  Both blocks become no-ops the moment ``pyro.device``
+# gains the constants itself.
+try:
+    from .device import (
+        KIND_MAC_DIGEST_REQUEST,
+        KIND_MAC_DIGEST_REPLY,
+    )
+except ImportError:
+    KIND_MAC_DIGEST_REQUEST = 0x15    # host->device
+    KIND_MAC_DIGEST_REPLY = 0x16      # device->host, echoes seq
+if KIND_MAC_DIGEST_REQUEST not in _device.VALID_KINDS:
+    _device.VALID_KINDS = _device.VALID_KINDS | frozenset(
+        {KIND_MAC_DIGEST_REQUEST, KIND_MAC_DIGEST_REPLY})
+
 __all__ = [
     # constants
     "MAC_KEYCHECK_STRING",
     "MAX_RECORDS_PER_REPORT",
+    "MAX_DIGEST_PACKET",
     "REC_IPV4", "REC_IPV6", "REC_TCP", "REC_UDP", "REC_OTHER_L4",
     "REC_OPTS_ZEROED", "REC_TRUNCATED",
     "REPORT_LOSS", "REPORT_WIRE_ORIGIN",
     "SCHED_P0_ONLY", "SCHED_P1_ONLY", "SCHED_RR", "SCHED_BROADCAST",
+    "DIGEST_DIGESTED", "DIGEST_SKIP_NONIP", "DIGEST_SKIP_NOKEY",
+    "KIND_MAC_DIGEST_REQUEST", "KIND_MAC_DIGEST_REPLY",
     # typed views
     "MacRecord", "MacReport", "MacKeyAck", "SchedAck", "SchedState",
-    "MacStats",
+    "MacStats", "MacDigest",
     # payload codecs
     "encode_mac_report", "decode_mac_report",
     "encode_mac_key_load", "decode_mac_key_ack",
     "encode_sched_set", "decode_sched_ack",
     "decode_mac_stat_reply",
+    "encode_mac_digest_request", "decode_mac_digest_reply",
     # masking / digest golden model
     "mask_packet", "digest_packet", "key_check",
     # transports
     "MacReportListener", "load_key", "set_sched", "read_sched",
-    "read_mac_stats",
+    "read_mac_stats", "digest_request",
 ]
 
 # ---------------------------------------------------------------------------
@@ -120,6 +151,23 @@ SCHED_P0_ONLY = 0
 SCHED_P1_ONLY = 1
 SCHED_RR = 2
 SCHED_BROADCAST = 3     # every wire frame to BOTH programs
+
+#: MAC_DIGEST_REQUEST packet bound (WIRE-MAC v0.3.0): the raw
+#: Ethernet frame a host may feed the engine through kind 0x15.
+MAX_DIGEST_PACKET = 1474
+
+# MAC_DIGEST_REPLY status values — the counter the frame landed in.
+DIGEST_DIGESTED = 0
+DIGEST_SKIP_NONIP = 1
+DIGEST_SKIP_NOKEY = 2
+
+#: status -> the reason strings :func:`digest_packet` returns, so a
+#: reply can be compared 1:1 against the golden model's verdict.
+_DIGEST_REASONS = {
+    DIGEST_DIGESTED: "digested",
+    DIGEST_SKIP_NONIP: "skip_nonip",
+    DIGEST_SKIP_NOKEY: "skip_nokey",
+}
 
 _VLAN_TPIDS = (0x8100, 0x88A8)
 _ETH_IPV4 = 0x0800
@@ -195,6 +243,31 @@ class MacStats(NamedTuple):
         """The contract invariant, EXACTLY:
         ``seen == digested + skip_nonip + skip_nokey``."""
         return self.seen == self.digested + self.skip_nonip + self.skip_nokey
+
+
+class MacDigest(NamedTuple):
+    """``MAC_DIGEST_REPLY`` (0x16): status u16 BE + flags u16 BE +
+    dig_cycles u32 BE + dig_bytes u32 BE + digest u64 BE.
+
+    ``dig_cycles``/``dig_bytes`` are the engine's per-frame 0x00C4/
+    0x00C8 latches (R45a semantics: reset at frame start, latched on
+    the evt — all three outcomes latch).  ``digest`` is meaningful
+    only when ``status == DIGEST_DIGESTED``.
+    """
+    status: int
+    flags: int
+    dig_cycles: int
+    dig_bytes: int
+    digest: int
+
+    @property
+    def reason(self) -> str:
+        """The :func:`digest_packet` reason string for ``status``
+        (``"digested"``/``"skip_nonip"``/``"skip_nokey"``); a value
+        outside the contract maps to ``"status_<n>"``, which can
+        never silently equal any model reason."""
+        return _DIGEST_REASONS.get(self.status,
+                                   "status_%d" % self.status)
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +390,35 @@ def decode_mac_stat_reply(frame: DecodedFrame) -> MacStats:
             "malformed MAC_STAT_REPLY: payload length %d < 24"
             % len(frame.payload))
     return MacStats(*struct.unpack_from(">6I", frame.payload, 0))
+
+
+def encode_mac_digest_request(packet: bytes) -> bytes:
+    """``MAC_DIGEST_REQUEST`` (0x15) payload: resv u16 BE + pkt_len
+    u16 BE + the raw Ethernet frame to digest (1..1474 bytes).
+
+    The device feeds ``packet`` through the SAME byte-serial engine
+    path a wire frame takes (same credit discipline); the frame
+    counts in the engine zero-slack counters but never enters the
+    MAC_REPORT batcher and never consumes ``wire_seq``.
+    """
+    packet = bytes(packet)
+    if not 1 <= len(packet) <= MAX_DIGEST_PACKET:
+        raise PyroFrameError(
+            "digest packet must be 1..%d bytes, got %d"
+            % (MAX_DIGEST_PACKET, len(packet)))
+    return struct.pack(">HH", 0, len(packet)) + packet
+
+
+def decode_mac_digest_reply(frame: DecodedFrame) -> MacDigest:
+    """Parse a decoded ``MAC_DIGEST_REPLY`` frame."""
+    if frame.kind != KIND_MAC_DIGEST_REPLY:
+        raise PyroFrameError(
+            "not a MAC_DIGEST_REPLY: kind 0x%02x" % frame.kind)
+    if len(frame.payload) < 20:
+        raise PyroFrameError(
+            "malformed MAC_DIGEST_REPLY: payload length %d < 20"
+            % len(frame.payload))
+    return MacDigest(*struct.unpack_from(">HHIIQ", frame.payload, 0))
 
 
 # ---------------------------------------------------------------------------
@@ -464,12 +566,14 @@ def digest_packet(key: Optional[bytes],
     at frame byte 0, so with no committed key EVERY wire frame counts
     ``skip_nokey`` — non-IP included (MR15); ``skip_nonip`` exists
     only once a key is live.  ``flags`` is the record flags word
-    (bit0 ipv4 ... bit6 truncated) even when skipped for a key
-    reason, and 0 for non-IP.
+    (bit0 ipv4 ... bit6 truncated), 0 for non-IP, and 0 when keyless:
+    the device decides ``skip_nokey`` at frame byte 0 and parses
+    NOTHING, so a keyless reply carries no parse claim (measured on
+    silicon 2026-08-12 — the model previously over-claimed here).
     """
-    masked, flags, reason = _mask(frame)
     if key is None:
-        return None, flags, "skip_nokey"
+        return None, 0, "skip_nokey"
+    masked, flags, reason = _mask(frame)
     if masked is None:
         return None, flags, reason
     return siphash24(key, bytes(masked)), flags, "digested"
@@ -726,3 +830,26 @@ def read_mac_stats(config: DeviceConfig,
     dec = _mac_request(config, KIND_MAC_STAT_REQUEST, b"",
                        KIND_MAC_STAT_REPLY, slot)
     return None if dec is None else decode_mac_stat_reply(dec)
+
+
+def digest_request(config: DeviceConfig, packet: bytes,
+                   slot: int = 1) -> Optional[MacDigest]:
+    """Digest one host-fed frame via ``MAC_DIGEST_REQUEST`` -> the
+    ``MAC_DIGEST_REPLY``, in the :func:`read_mac_stats` retry/
+    fail-closed shape (R84 attempts, ``None`` on no transport).
+
+    ``None`` = no reply (a child that predates WIRE-MAC v0.3.0 drops
+    the unknown kind, R78.4 — never a device fault by itself).  A
+    request sent while a wire frame is mid-feed simply waits its
+    turn: one engine, lockstep codec.  SCHED state is irrelevant —
+    host frames are never scheduled.
+
+    Callers MUST cross-check the returned ``digest`` against
+    :func:`digest_packet` on the same bytes — a mismatch means the
+    engine did not digest what the host thinks it fed
+    (``scripts/pyro_mac_timing.py`` does this for every reply).
+    """
+    dec = _mac_request(config, KIND_MAC_DIGEST_REQUEST,
+                       encode_mac_digest_request(packet),
+                       KIND_MAC_DIGEST_REPLY, slot)
+    return None if dec is None else decode_mac_digest_reply(dec)

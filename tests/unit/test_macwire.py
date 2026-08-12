@@ -2,7 +2,7 @@
 
 Device-free coverage of :mod:`pyro.macwire`:
 
-  * the new R78 kinds 0x0E-0x14 are registered where the existing
+  * the new R78 kinds 0x0E-0x16 are registered where the existing
     kinds live and round-trip through the R86.2/R86.3 frame codec;
   * MAC_REPORT records are byte-exact little-endian ``<IHHQ``;
   * :func:`mask_packet`/:func:`digest_packet` implement the RFC 4302
@@ -184,6 +184,71 @@ def test_keycheck_definition():
     assert mw.key_check(KEY) == siphash24(KEY, b"PYROMACKEYCHECK1")
 
 
+def test_digest_kind_values_and_registration():
+    """WIRE-MAC v0.3.0 kinds: values per contract, and importing
+    macwire registers them so the shared frame codec accepts them."""
+    assert mw.KIND_MAC_DIGEST_REQUEST == 0x15
+    assert mw.KIND_MAC_DIGEST_REPLY == 0x16
+    assert 0x15 in pdev.VALID_KINDS
+    assert 0x16 in pdev.VALID_KINDS
+
+
+def test_mac_digest_request_layout_and_bounds():
+    pkt = ETH + bytes(range(50))
+    payload = mw.encode_mac_digest_request(pkt)
+    # byte-exact: resv u16 BE (0) + pkt_len u16 BE + packet bytes
+    assert payload == struct.pack(">HH", 0, len(pkt)) + pkt
+    dec = pdev.decode_frame(pdev.encode_frame(
+        mw.KIND_MAC_DIGEST_REQUEST, 1, 7, payload))
+    assert dec.kind == 0x15 and dec.payload == payload
+    assert mw.MAX_DIGEST_PACKET == 1474
+    # the cap itself is legal; empty and cap+1 are not
+    mw.encode_mac_digest_request(b"\x00" * mw.MAX_DIGEST_PACKET)
+    with pytest.raises(pdev.PyroFrameError):
+        mw.encode_mac_digest_request(b"")
+    with pytest.raises(pdev.PyroFrameError):
+        mw.encode_mac_digest_request(
+            b"\x00" * (mw.MAX_DIGEST_PACKET + 1))
+
+
+def test_mac_digest_reply_roundtrip_and_layout():
+    flags = mw.REC_IPV4 | mw.REC_TCP
+    payload = struct.pack(">HHIIQ", mw.DIGEST_DIGESTED, flags,
+                          517, 64, 0x0123456789ABCDEF)
+    # byte-exact big-endian layout per the contract
+    assert payload == bytes(
+        [0x00, 0x00, 0x00, flags,
+         0x00, 0x00, 0x02, 0x05,          # dig_cycles 517
+         0x00, 0x00, 0x00, 0x40,          # dig_bytes 64
+         0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF])
+    frame = pdev.decode_frame(pdev.encode_frame(
+        mw.KIND_MAC_DIGEST_REPLY, 1, 9, payload))
+    rep = mw.decode_mac_digest_reply(frame)
+    assert rep == mw.MacDigest(status=mw.DIGEST_DIGESTED, flags=flags,
+                               dig_cycles=517, dig_bytes=64,
+                               digest=0x0123456789ABCDEF)
+    assert rep.reason == "digested"
+    # wrong kind and short payload both refuse
+    with pytest.raises(pdev.PyroFrameError):
+        mw.decode_mac_digest_reply(pdev.decode_frame(pdev.encode_frame(
+            pdev.KIND_MAC_STAT_REPLY, 1, 9, struct.pack(">6I", 0, 0,
+                                                        0, 0, 0, 0))))
+    with pytest.raises(pdev.PyroFrameError):
+        mw.decode_mac_digest_reply(pdev.decode_frame(pdev.encode_frame(
+            mw.KIND_MAC_DIGEST_REPLY, 1, 9, payload[:19])))
+
+
+def test_mac_digest_status_reasons():
+    """Status maps 1:1 onto digest_packet's reason strings; an
+    out-of-contract status can never equal any model reason."""
+    assert (mw.DIGEST_DIGESTED, mw.DIGEST_SKIP_NONIP,
+            mw.DIGEST_SKIP_NOKEY) == (0, 1, 2)
+    for status, reason in ((0, "digested"), (1, "skip_nonip"),
+                           (2, "skip_nokey")):
+        assert mw.MacDigest(status, 0, 0, 0, 0).reason == reason
+    assert mw.MacDigest(5, 0, 0, 0, 0).reason == "status_5"
+
+
 # ---------------------------------------------------------------------------
 # masking golden model — the six RTL-TB scenarios
 # ---------------------------------------------------------------------------
@@ -343,10 +408,13 @@ def test_mask_empty_l3_is_skip_nonip():
 
 
 def test_digest_skip_nokey():
+    # Keyless replies carry NO parse claim: the device decides
+    # skip_nokey at frame byte 0 and parses nothing, so flags is 0
+    # (silicon-measured 2026-08-12; the model must not over-claim).
     fr = l2(0x0800) + ipv4(tcp(b"x"))
     d, flags, reason = mw.digest_packet(None, fr)
     assert d is None and reason == "skip_nokey"
-    assert flags == (mw.REC_IPV4 | mw.REC_TCP)
+    assert flags == 0
 
 
 def test_digest_skip_nokey_wins_over_nonip():
@@ -542,6 +610,71 @@ def test_read_sched_no_reply_and_fail_closed():
     # fail-closed: no transport configured at all -> None, no raise
     bare = pdev.DeviceConfig(iface=None, chardev=None)
     assert mw.read_sched(bare) is None
+
+
+def _digest_status(reason):
+    return {"digested": mw.DIGEST_DIGESTED,
+            "skip_nonip": mw.DIGEST_SKIP_NONIP,
+            "skip_nokey": mw.DIGEST_SKIP_NOKEY}[reason]
+
+
+def _digest_responder(key, dig_cycles=321):
+    """A model-backed 0x15 -> 0x16 responder that also queues a
+    colliding-seq unsolicited report (kind filters before seq)."""
+    def responder(frame):
+        dec = pdev.decode_frame(frame[14:])
+        assert dec.kind == mw.KIND_MAC_DIGEST_REQUEST
+        resv, plen = struct.unpack(">HH", dec.payload[0:4])
+        assert resv == 0 and plen == len(dec.payload) - 4
+        pkt = dec.payload[4:4 + plen]
+        d, flags, reason = mw.digest_packet(key, pkt)
+        rep = report_frame(dec.seq, [mw.MacRecord(dec.seq, 60, 1, 5)])
+        reply = ETH + pdev.encode_frame(
+            mw.KIND_MAC_DIGEST_REPLY, dec.slot, dec.seq,
+            struct.pack(">HHIIQ", _digest_status(reason), flags,
+                        dig_cycles, plen, d or 0))
+        return [rep, reply]
+    return responder
+
+
+def test_digest_request_roundtrip_matches_model():
+    fr = l2(0x0800) + ipv4(tcp(b"time this frame"))
+    tr = FakeTransport(responder=_digest_responder(KEY))
+    rep = mw.digest_request(_config(tr), fr)
+    want, flags, reason = mw.digest_packet(KEY, fr)
+    assert reason == "digested"
+    assert rep == mw.MacDigest(status=mw.DIGEST_DIGESTED, flags=flags,
+                               dig_cycles=321, dig_bytes=len(fr),
+                               digest=want)
+    assert rep.reason == "digested"
+    assert len(tr.sent) == 1 and tr.closed == 1
+
+
+def test_digest_request_skip_paths_over_transport():
+    arp = l2(0x0806) + b"\x00\x01\x08\x00\x06\x04\x00\x01" + bytes(20)
+    rep = mw.digest_request(
+        _config(FakeTransport(responder=_digest_responder(KEY))), arp)
+    assert rep.reason == "skip_nonip" and rep.flags == 0
+    # keyless device: EVERY frame lands skip_nokey (MR15)
+    rep = mw.digest_request(
+        _config(FakeTransport(responder=_digest_responder(None))), arp)
+    assert rep.reason == "skip_nokey"
+
+
+def test_digest_request_no_reply_and_fail_closed():
+    fr = l2(0x0800) + ipv4(tcp(b"x"))
+    # a pre-v0.3.0 child drops the unknown kind: no reply -> None
+    silent = pdev.DeviceConfig(
+        iface=None, chardev=None, probe_attempts=1,
+        probe_timeout_s=0.01,
+        transport_factory=lambda _cfg: FakeTransport())
+    assert mw.digest_request(silent, fr) is None
+    # fail-closed: no transport configured at all -> None, no raise
+    bare = pdev.DeviceConfig(iface=None, chardev=None)
+    assert mw.digest_request(bare, fr) is None
+    # an oversized packet is refused locally, before any transport
+    with pytest.raises(pdev.PyroFrameError):
+        mw.digest_request(bare, b"\x00" * (mw.MAX_DIGEST_PACKET + 1))
 
 
 def test_status_refusal_yields_none():

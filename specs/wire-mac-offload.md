@@ -1,17 +1,17 @@
 # Specification: Wire-Packet MAC Digest as a Co-Resident Program (WIRE-MAC)
 
 - **Spec ID:** `wire-mac-offload`
-- **Version:** 0.2.0 (draft; adds the broadcast schedule mode 3)
+- **Version:** 0.3.0 (draft; adds the host-fed digest timing path)
 - **Status:** **DRAFT** — not adopted. Per §8 no phase is authorized
   until the owner bumps to 1.0.0 with an adoption note.
 - **Owner:** George Neville-Neil (to adopt); drafted by Spec Writer
   2026-08-06
-- **Date:** 2026-08-07
+- **Date:** 2026-08-12
 - **Depends on:** `specs/python-regex-offload.md` (PYRO) **v3.0.0**
   (shell, R78 frame protocol, R80 boundary, R90 wire-ingest static) and
   `specs/snort-rule-offload.md` (SNORT-PF) **v2.1.0** (the A5 overlay
   engine that becomes program P0, facts SF22/SF23). This spec adds no
-  obligations to either; the seven new frame kinds drafted in §4.4 land,
+  obligations to either; the nine new frame kinds drafted in §4.4 land,
   on adoption, as a PYRO R78 MINOR amendment (marked additive per
   R78.4), never by silent code change.
 
@@ -321,9 +321,9 @@ RFC 4302 transit model. It is deliberately NOT invariant across:
   atomically at a packet boundary, and `key_id` in every report names
   the key that produced every record in that report.
 
-### 4.4 R78 protocol additions (seven kinds, additive per R78.4)
+### 4.4 R78 protocol additions (nine kinds, additive per R78.4)
 
-All seven kinds are ADDITIVE in the R78.4 sense: devices that do not
+All nine kinds are ADDITIVE in the R78.4 sense: devices that do not
 implement them drop the frames silently, and no existing kind changes
 meaning. Header rules are MF2's, unchanged: 14-byte header, flags
 MUST be 0, frames padded to 60 B, multi-byte header fields BE.
@@ -427,11 +427,57 @@ Normative home on adoption: a PYRO R78 MINOR amendment (§8).
 
 - **MR23 (zero-slack counter invariant).** At every quiescent point,
   `seen == digested + skip_nonip + skip_nokey` SHALL hold EXACTLY.
-  Every wire frame P1 receives is accounted to exactly one bucket; a
-  slack of even one frame is a defect (the PYRO R71 discipline —
-  a silently unaccounted frame is a silent pass). `records_lost` sits
-  outside the identity: it counts produced-then-dropped records, a
-  subset of `digested`.
+  Every frame P1's engine receives — wire-dispatched OR host-fed
+  (MR28) — is accounted to exactly one bucket; a slack of even one
+  frame is a defect (the PYRO R71 discipline — a silently unaccounted
+  frame is a silent pass). `records_lost` sits outside the identity:
+  it counts produced-then-dropped records, a subset of `digested`.
+- **MR28 (`0x15 MAC_DIGEST_REQUEST`, host→device; 0.3.0).** Payload:
+
+  ```
+  off  size  field    enc     meaning
+  0    2     resv     u16 BE  MUST be 0
+  2    2     pkt_len  u16 BE  packet bytes that follow (1..1474)
+  4    n     packet   bytes   raw Ethernet frame to digest
+  ```
+
+  Lockstep request/reply like the other host MAC kinds (MF2/MR17
+  asymmetry: this is control plane). The wrapper feeds `packet`
+  through the SAME byte-serial engine feed the wire path uses (same
+  credit discipline); a request that arrives while a wire frame is
+  mid-feed waits its turn — one engine, the lockstep codec already
+  serializes host frames. Rules:
+
+  - a host-fed frame SHALL NOT produce a `MAC_REPORT` record and
+    SHALL NOT enter the report batcher;
+  - it SHALL NOT consume `wire_seq` (`wire_seq` remains "wire frames
+    delivered to P1", MR4a);
+  - it SHALL count in the engine zero-slack counters (MR23) — it
+    really was seen and digested/skipped;
+  - `SCHED` state is irrelevant: host frames are never scheduled
+    (MR3), so the digest path works in every mode.
+
+  A device SHALL clamp `pkt_len` to the bytes actually received so a
+  lying header digests what arrived, never stale buffer contents; a
+  request whose effective packet is empty is answered without
+  touching the engine (skip status, zeroed fields).
+- **MR29 (`0x16 MAC_DIGEST_REPLY`, device→host, echoes seq; 0.3.0).**
+  Payload — all fields BE (control plane, like `keycheck` in MR19):
+
+  ```
+  off  size  field       enc     meaning
+  0    2     status      u16 BE  0 digested / 1 skip_nonip /
+                                 2 skip_nokey — the zero-slack
+                                 bucket the frame landed in
+  2    2     flags       u16 BE  record flags (MR12); 0 on skip
+  4    4     dig_cycles  u32 BE  MR30 latch for this frame
+  8    4     dig_bytes   u32 BE  MR30 latch for this frame
+  12   8     digest      u64 BE  SipHash-2-4 tag; 0 on skip
+  ```
+
+  The digest MUST be cross-checked by callers against the golden
+  model (MR26); the timing pair is measurement, the digest equality
+  is the correctness gate.
 
 ### 4.5 Engine ABI and wrapper split
 
@@ -464,11 +510,25 @@ Normative home on adoption: a PYRO R78 MINOR amendment (§8).
   0x00B8         DIGESTED
   0x00BC         SKIP_NONIP
   0x00C0         SKIP_NOKEY
+  0x00C4         DIG_CYCLES    per-frame timing latch (MR30, 0.3.0)
+  0x00C8         DIG_BYTES     per-frame length latch (MR30, 0.3.0)
   ```
 
   CSR reads SHALL be registered like the overlay engine's (data valid
   at N+2); the wrapper's two-cycle address hold tolerates either
   regime, and matching P0's keeps one timing story per child.
+- **MR30 (DIG_CYCLES / DIG_BYTES per-frame latch; 0.3.0).** The R45a
+  per-scan-counter analog, per FRAME: `DIG_CYCLES` counts clk cycles
+  from the FIRST byte of a frame accepted by the engine to that
+  frame's event pulse; `DIG_BYTES` is the frame's byte length. Both
+  reset at frame start and latch at frame end — on EVERY outcome
+  (digested and both skips; the reader knows the outcome from the
+  MR29 status/flags) — then hold until the next frame's event. They
+  are per-frame values, NOT cumulative counters, and sit outside the
+  MR23 identity. Reads are registered (N+2) like every engine CSR.
+  The latch serves the wire path too, but only the lockstep host
+  path (MR28) can read it race-free between frames; under live wire
+  traffic the pair is a sample, not an aggregate.
 
 ### 4.6 Verification and honesty
 
@@ -591,6 +651,21 @@ Additionally:
 
 ## 9. Changelog
 
+- **0.3.0** (2026-08-12) — Host-fed digest timing path (additive).
+  NEW kinds `0x15 MAC_DIGEST_REQUEST` / `0x16 MAC_DIGEST_REPLY`
+  (MR28/MR29): the host feeds one raw Ethernet frame through the
+  SAME byte-serial engine feed the wire path uses and gets back the
+  outcome, record flags, digest, and the per-frame timing pair —
+  lockstep control plane, no `MAC_REPORT` record, no `wire_seq`
+  consumed, engine zero-slack counters DO count the frame (MR23
+  wording extended to host-fed frames). NEW engine CSRs
+  `0x00C4 DIG_CYCLES` / `0x00C8 DIG_BYTES` (MR30, MR25 map extended):
+  R45a-analog per-frame latch, first-accepted-byte to event pulse,
+  latched on every outcome. Enables the R45a-method silicon
+  measurement of per-packet MAC digest time (per-scan hardware
+  counters, min/med/max over repeated samples). Wire-path behavior,
+  schedule semantics, and kinds `0x0E`–`0x14` are unchanged. Not
+  adopted.
 - **0.2.0** (2026-08-07) — Broadcast schedule mode. `SCHED_SET`
   mode 3 delivers every wire frame to BOTH programs (both are
   passive analyzers; broadcast trades RR isolation for full

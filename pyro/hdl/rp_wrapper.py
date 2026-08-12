@@ -2097,8 +2097,14 @@ _MAC_PROG_TOP = r"""
 // Structure: THREE decoupled processes around a 64-record FIFO.
 //   * frame FSM (lockstep, one frame at a time, like every R78 responder):
 //     feeds scheduled wire frames into the engine byte-serially and
-//     services the three host MAC kinds (KEY_LOAD/SCHED_SET/STAT_REQ),
-//     each answered by a single-beat reply;
+//     services the four host MAC kinds (KEY_LOAD/SCHED_SET/STAT_REQ/
+//     DIGEST_REQ), each answered by a single-beat reply.  A host
+//     DIGEST_REQ feeds its payload packet through the SAME engine feed
+//     the wire path uses (same credit discipline) — a request behind a
+//     wire frame simply waits its turn in M_RX.  Host-fed frames never
+//     enter the MAC_REPORT batcher and never consume wire_seq; they DO
+//     count in the engine zero-slack counters (they really were seen
+//     and digested/skipped);
 //   * record FIFO + flush timer: res_wr capture; on overflow the RECORD
 //     is dropped and counted (records_lost) — digesting continues, the
 //     wire path is NEVER stalled by C2H backpressure (contract);
@@ -2148,6 +2154,8 @@ module pyro_rp_mac_prog #(
   localparam [7:0]  KIND_SCHED_ACK    = 8'h12;
   localparam [7:0]  KIND_MAC_STAT_REQ = 8'h13;
   localparam [7:0]  KIND_MAC_STAT_REP = 8'h14;
+  localparam [7:0]  KIND_MAC_DIG_REQ  = 8'h15;
+  localparam [7:0]  KIND_MAC_DIG_REP  = 8'h16;
   localparam [7:0]  PYRO_MAGIC        = 8'h50;
   localparam [7:0]  PYRO_VER          = 8'h01;
   localparam [7:0]  ETH_HI            = 8'h88;
@@ -2169,6 +2177,8 @@ module pyro_rp_mac_prog #(
   localparam [15:0] CSR_DIGESTED   = 16'h00B8;
   localparam [15:0] CSR_SKIP_NONIP = 16'h00BC;
   localparam [15:0] CSR_SKIP_NOKEY = 16'h00C0;
+  localparam [15:0] CSR_DIG_CYCLES = 16'h00C4;  // per-frame, R45a latch
+  localparam [15:0] CSR_DIG_BYTES  = 16'h00C8;
   localparam [31:0] CTRL_START     = 32'h0000_0001;
   localparam [31:0] CTRL_RESET     = 32'h0000_0002;
 
@@ -2225,7 +2235,9 @@ module pyro_rp_mac_prog #(
                    M_SCHED   = 4'd10,  // validate + apply SCHED_SET
                    M_STAT    = 4'd11,  // read the four engine counters
                    M_REPLY   = 4'd12,  // compose the single-beat reply
-                   M_REPLYW  = 4'd13;  // hold until the reply left
+                   M_REPLYW  = 4'd13,  // hold until the reply left
+                   M_DKEY    = 4'd14,  // digest req: sample MACSTAT
+                   M_DCNT    = 4'd15;  // read DIG_CYCLES/DIG_BYTES
   reg  [3:0]  mstate;
   reg  [3:0]  k_idx;           // M_KEY/M_KEYWAIT/M_KEYCHK sequencer
   reg  [3:0]  st_idx;          // M_STAT sequencer
@@ -2235,10 +2247,22 @@ module pyro_rp_mac_prog #(
   reg  [31:0] chk_lo, chk_hi;  // keycheck halves latched in M_KEYCHK
   reg  [31:0] sc_status;       // SCHED_ACK status (0 ok, 1 refused)
   reg  [31:0] seen_c, dig_c, nonip_c, nokey_c;
-  reg  [1:0]  reply_sel;       // 0 KEY_ACK, 1 SCHED_ACK, 2 STAT_REPLY
+  reg  [1:0]  reply_sel;       // 0 KEY_ACK, 1 SCHED_ACK, 2 STAT_REPLY,
+                               // 3 MAC_DIGEST_REPLY
   reg         reply_v;
   reg [511:0] reply_word;
   reg         key_commit_p;    // 1-cycle: KEYCTRL commit just issued
+  // host-fed digest (MAC_DIGEST_REQUEST, kind 0x15): the engine result
+  // goes to the lockstep reply, NEVER the batcher, and no wire_seq is
+  // consumed; the engine's zero-slack counters DO count the frame.
+  reg         host_dig;        // a digest request owns the engine feed
+  reg         hd_got;          // engine pulsed res_wr for this request
+  reg         hd_keyok;        // MACSTAT bit0 sampled before the feed:
+                               // attributes a skip (nonip vs nokey)
+  reg  [63:0] hd_digest;
+  reg  [15:0] hd_flags;
+  reg  [31:0] hd_cyc, hd_bytes;
+  reg  [15:0] feed_base;       // 0 wire frame, 32 host digest payload
   // blocking scratch (frame FSM only; assigned-before-use each cycle)
   reg [511:0] racc;
   reg  [15:0] cl_t, fa;
@@ -2310,7 +2334,10 @@ module pyro_rp_mac_prog #(
                     ((fifo_cnt >= 7'd64) ||
                      ((flush_tick || key_flush_pend) &&
                       (fifo_cnt != 7'd0)));
-  wire fifo_wr_ok = mac_res_wr && ((fifo_cnt < 7'd64) || fifo_pop);
+  // Host-fed digests NEVER batch: their res_wr goes to the lockstep
+  // reply (hd_* capture in the frame FSM), not the record FIFO.
+  wire res_wire_wr = mac_res_wr && !host_dig;
+  wire fifo_wr_ok  = res_wire_wr && ((fifo_cnt < 7'd64) || fifo_pop);
 
   wire [7:0] h_kind = hdr[8*16 +: 8];
 
@@ -2349,6 +2376,14 @@ module pyro_rp_mac_prog #(
       reply_v       <= 1'b0;
       reply_word    <= 512'b0;
       key_commit_p  <= 1'b0;
+      host_dig      <= 1'b0;
+      hd_got        <= 1'b0;
+      hd_keyok      <= 1'b0;
+      hd_digest     <= 64'd0;
+      hd_flags      <= 16'd0;
+      hd_cyc        <= 32'd0;
+      hd_bytes      <= 32'd0;
+      feed_base     <= 16'd0;
       // contract reset default: round-robin, one frame per turn
       sched_mode    <= 2'd2;
       sched_quantum <= 16'd1;
@@ -2366,6 +2401,16 @@ module pyro_rp_mac_prog #(
       mac_in_valid  <= 1'b0;
       mac_in_last   <= 1'b0;
       key_commit_p  <= 1'b0;
+
+      // Host-fed digest result capture: while a digest request owns
+      // the feed, the engine's res_wr lands here — never the batcher
+      // (the FIFO writer is gated on !host_dig).  Skips pulse nothing,
+      // so hd_got = 0 distinguishes them in the reply.
+      if (host_dig && mac_res_wr) begin
+        hd_got    <= 1'b1;
+        hd_digest <= mac_res_start;
+        hd_flags  <= mac_res_pid[15:0];
+      end
 
       case (mstate)
         // ---- receive + buffer one frame --------------------------------
@@ -2389,12 +2434,14 @@ module pyro_rp_mac_prog #(
           feed_idx <= 16'd0;
           k_idx    <= 4'd0;
           st_idx   <= 4'd0;
+          host_dig <= 1'b0;
           if (wire_fr) begin
             // Feed the WHOLE frame; the engine decides digest vs skip
             // (non-IP / no committed key) and owns those counters.
             // Every P1-scheduled frame consumes one wire_seq.
-            cur_seq  <= wire_seq;
-            wire_seq <= wire_seq + 32'd1;
+            cur_seq   <= wire_seq;
+            wire_seq  <= wire_seq + 32'd1;
+            feed_base <= 16'd0;
             cl_t = rx_len;
             if (cl_t > MAX_FRAME[15:0]) cl_t = MAX_FRAME[15:0];
             corpus_len <= cl_t;
@@ -2405,6 +2452,28 @@ module pyro_rp_mac_prog #(
             mstate <= M_SCHED;
           end else if (h_kind == KIND_MAC_STAT_REQ) begin
             mstate <= M_STAT;
+          end else if (h_kind == KIND_MAC_DIG_REQ) begin
+            // Host-fed digest: payload = resv u16 @28, pkt_len u16 BE
+            // @30, packet bytes @32.  Same engine feed as the wire
+            // path (feed_base 32), NO wire_seq, NO batcher record.
+            // pkt_len is clamped to the bytes actually buffered — a
+            // lying header digests what arrived, never stale store.
+            host_dig  <= 1'b1;
+            hd_got    <= 1'b0;
+            hd_digest <= 64'd0;
+            hd_flags  <= 16'd0;
+            hd_cyc    <= 32'd0;
+            hd_bytes  <= 32'd0;
+            feed_base <= 16'd32;
+            cl_t = {hdr[8*30 +: 8], hdr[8*31 +: 8]};
+            if (rx_len < 16'd32)
+              cl_t = 16'd0;
+            else if (cl_t > (rx_len - 16'd32))
+              cl_t = rx_len - 16'd32;
+            if (cl_t > (MAX_FRAME[15:0] - 16'd32))
+              cl_t = MAX_FRAME[15:0] - 16'd32;
+            corpus_len <= cl_t;
+            mstate <= M_DKEY;
           end else begin
             mstate <= M_RX;      // defensive: the demux sends no more
           end
@@ -2439,7 +2508,7 @@ module pyro_rp_mac_prog #(
         M_FEED: begin
           if (mac_in_ready) begin
             mac_in_valid <= 1'b1;
-            fa = feed_idx;
+            fa = feed_base + feed_idx;
             mac_in_data <=
                 rx_words[fa[13:6]][ {fa[5:0], 3'b000} +: 8 ];
             mac_in_last <= (feed_idx == (corpus_len - 16'd1));
@@ -2449,7 +2518,49 @@ module pyro_rp_mac_prog #(
           end
         end
         M_DRAIN: begin
-          if (mac_csr_rdata[1]) mstate <= M_RX;      // DONE
+          if (mac_csr_rdata[1])                      // DONE
+            mstate <= host_dig ? M_DCNT : M_RX;
+        end
+
+        // ---- MAC_DIGEST: sample MACSTAT.key_valid before the feed --
+        // A skip pulses no res_wr, so the reply attributes it by the
+        // engine's own rule: !key_valid at frame start is skip_nokey,
+        // anything else that skips is skip_nonip.  The codec is
+        // lockstep, so no commit can land mid-frame and the sample
+        // cannot go stale.  Two spacer cycles absorb the registered
+        // read (N+2) before the sample is believed (ST_PERF rule).
+        M_DKEY: begin
+          mac_csr_addr <= CSR_MACSTAT;
+          if (k_idx < 4'd2) begin
+            k_idx <= k_idx + 4'd1;
+          end else begin
+            hd_keyok  <= mac_csr_rdata[0];
+            k_idx     <= 4'd0;
+            reply_sel <= 2'd3;
+            // an empty packet never touches the engine: reply with
+            // zeros and a skip status instead of wedging the feed
+            mstate    <= (corpus_len == 16'd0) ? M_REPLY : M_RESET;
+          end
+        end
+
+        // ---- MAC_DIGEST: latch the per-frame R45a pair -------------
+        // DIG_CYCLES/DIG_BYTES latched on the evt this request just
+        // caused; addresses held two cycles each (N+2 reads).
+        M_DCNT: begin
+          case (st_idx)
+            4'd0: mac_csr_addr <= CSR_DIG_CYCLES;
+            4'd1: mac_csr_addr <= CSR_DIG_CYCLES;
+            4'd2: begin
+              mac_csr_addr <= CSR_DIG_BYTES;
+              hd_cyc       <= mac_csr_rdata;
+            end
+            4'd3: mac_csr_addr <= CSR_DIG_BYTES;
+            default: begin
+              hd_bytes <= mac_csr_rdata;
+              mstate   <= M_REPLY;
+            end
+          endcase
+          st_idx <= st_idx + 4'd1;
         end
 
         // ---- MAC_KEY_LOAD: KEY0..3, KEY_ID, then commit ---------------
@@ -2596,8 +2707,9 @@ module pyro_rp_mac_prog #(
           racc[8*14 +: 8] = PYRO_MAGIC;
           racc[8*15 +: 8] = PYRO_VER;
           racc[8*16 +: 8] = (reply_sel == 2'd0) ? KIND_MAC_KEY_ACK :
-                            (reply_sel == 2'd1) ? KIND_SCHED_ACK
-                                                : KIND_MAC_STAT_REP;
+                            (reply_sel == 2'd1) ? KIND_SCHED_ACK :
+                            (reply_sel == 2'd2) ? KIND_MAC_STAT_REP
+                                                : KIND_MAC_DIG_REP;
           racc[8*17 +: 8] = 8'h00;                   // flags (R78.3)
           racc[8*18 +: 8] = hdr[8*18 +: 8];          // slot echo
           racc[8*19 +: 8] = hdr[8*19 +: 8];
@@ -2633,7 +2745,7 @@ module pyro_rp_mac_prog #(
             racc[8*33 +: 8] = sc_status[23:16];
             racc[8*34 +: 8] = sc_status[15:8];
             racc[8*35 +: 8] = sc_status[7:0];
-          end else begin
+          end else if (reply_sel == 2'd2) begin
             // MAC_STAT_REPLY: 6 x u32 BE — the engine's zero-slack set
             // plus the two wrapper-owned report counters
             racc[8*24 +: 8] = 8'h00; racc[8*25 +: 8] = 8'h18;
@@ -2661,6 +2773,32 @@ module pyro_rp_mac_prog #(
             racc[8*49 +: 8] = records_lost[23:16];
             racc[8*50 +: 8] = records_lost[15:8];
             racc[8*51 +: 8] = records_lost[7:0];
+          end else begin
+            // MAC_DIGEST_REPLY: status u16, flags u16, dig_cycles u32,
+            // dig_bytes u32, digest u64 — all BE (control plane).
+            // status: 0 digested / 1 skip_nonip / 2 skip_nokey.
+            racc[8*24 +: 8] = 8'h00; racc[8*25 +: 8] = 8'h14;
+            racc[8*28 +: 8] = 8'h00;
+            racc[8*29 +: 8] = hd_got ? 8'h00
+                                     : (hd_keyok ? 8'h01 : 8'h02);
+            racc[8*30 +: 8] = hd_flags[15:8];
+            racc[8*31 +: 8] = hd_flags[7:0];
+            racc[8*32 +: 8] = hd_cyc[31:24];
+            racc[8*33 +: 8] = hd_cyc[23:16];
+            racc[8*34 +: 8] = hd_cyc[15:8];
+            racc[8*35 +: 8] = hd_cyc[7:0];
+            racc[8*36 +: 8] = hd_bytes[31:24];
+            racc[8*37 +: 8] = hd_bytes[23:16];
+            racc[8*38 +: 8] = hd_bytes[15:8];
+            racc[8*39 +: 8] = hd_bytes[7:0];
+            racc[8*40 +: 8] = hd_digest[63:56];
+            racc[8*41 +: 8] = hd_digest[55:48];
+            racc[8*42 +: 8] = hd_digest[47:40];
+            racc[8*43 +: 8] = hd_digest[39:32];
+            racc[8*44 +: 8] = hd_digest[31:24];
+            racc[8*45 +: 8] = hd_digest[23:16];
+            racc[8*46 +: 8] = hd_digest[15:8];
+            racc[8*47 +: 8] = hd_digest[7:0];
           end
           reply_word <= racc;
           reply_v    <= 1'b1;
@@ -2714,7 +2852,7 @@ module pyro_rp_mac_prog #(
           rep_src    <= hdr[47:0];
           key_id_rep <= mac_res_flags;
         end
-      end else if (mac_res_wr) begin
+      end else if (res_wire_wr) begin
         // C2H backpressure filled the buffer: drop the RECORD, count it,
         // keep digesting — the wire path is never stalled (contract).
         records_lost <= records_lost + 32'd1;
@@ -2907,7 +3045,7 @@ endmodule : pyro_rp_mac_prog
 //     programs accept it.  Packet-atomic: the locked target and the
 //     broadcast latch hold to tlast, so a switch can never happen
 //     mid-frame.  HOST frames NEVER enter the schedule and are NEVER
-//     broadcast: the three MAC kinds go to P1's codec, everything else
+//     broadcast: the four MAC kinds go to P1's codec, everything else
 //     to P0 (R78 request/reply lockstep preserved per program).
 //   * TX: packet-atomic round-robin between P0 and P1 output.
 // ***************************************************************************
@@ -2939,6 +3077,7 @@ module pyro_rp #(
   localparam [7:0] KIND_MAC_KEY_LOAD = 8'h0F;
   localparam [7:0] KIND_SCHED_SET    = 8'h11;
   localparam [7:0] KIND_MAC_STAT_REQ = 8'h13;
+  localparam [7:0] KIND_MAC_DIG_REQ  = 8'h15;
 
   // ---- slave-side two-stage skid: registered tready, registered beats ----
   reg          si_v0, si_v1;
@@ -3010,7 +3149,7 @@ module pyro_rp #(
       (si_d0[119:112] == 8'h50) && (si_d0[127:120] == 8'h01);
   wire        mac_host = is_pyro &&
       ((rx_kind == KIND_MAC_KEY_LOAD) || (rx_kind == KIND_SCHED_SET) ||
-       (rx_kind == KIND_MAC_STAT_REQ));
+       (rx_kind == KIND_MAC_STAT_REQ) || (rx_kind == KIND_MAC_DIG_REQ));
 
   // Wire frames follow the schedule; host frames NEVER do (contract:
   // src 0x0001 control traffic always reaches its codec).  Mode 3

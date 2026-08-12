@@ -23,6 +23,9 @@ dynamic (partially reconfigurable) region of the attached FPGA.
 
 # Table of Contents
 
+- [EXPERIMENT 36: 12 Aug 2026 13:04:30 Per-Packet MAC Digest
+   Timing: 540 ns for 64 B, Deterministic to the
+   Cycle](#12-aug-2026-130430) :complete:
 - [EXPERIMENT 35: 11 Aug 2026 11:32:45 URAM-Footprint Sweep: a
    24,576-State Child Fits a Half-Height Region — 50% Raster Cut
    for 62% Corpus](#11-aug-2026-113245) :complete:
@@ -5263,3 +5266,92 @@ ICAP (ms-class, needs static rebuild) > half-height floorplan
   on live traffic vs the 24,576-state working set.
 - Sweep 8 banks (32,768 states, ~40 URAM): does any 5-CR
   rectangle become legal, and where does corpus fraction land?
+
+---
+
+# EXPERIMENT 12 Aug 2026 13:04:30 Per-Packet MAC Digest Timing:
+540 ns for 64 B, Deterministic to the Cycle :complete:
+
+## 1. Hypothesis
+
+How long does one MAC digest take on silicon, measured the same way
+as the SNORT scan (R45a-style per-frame hardware counters, 200
+samples, observed not estimated)?  The xsim feed analysis predicts
+DIG_CYCLES = 2*len+7 digested / 2*len-2 skipped (2 cyc/B feed-bound,
+SipHash compressions hidden in the feed gaps); silicon should
+reproduce it exactly.
+
+## 2. How
+
+- **Equipment:** U250 wiretap static, mode-3 multi-program child
+  rebuilt with per-digest counters (relink #4 at WNS +0.020 ns,
+  pr_verify x4), loaded fresh (15.2 s) so the no-key class runs
+  before any commit.  Loopback untouched (OFF).
+- **Software:** WIRE-MAC v0.3.0 — DIG_CYCLES/DIG_BYTES CSRs
+  (0x00C4/C8, R45a semantics: reset at first byte, latch at the
+  per-frame event, all outcomes) + host-fed MAC_DIGEST_REQUEST/
+  REPLY (kinds 0x15/0x16): the wrapper feeds the payload through
+  the SAME byte-serial credit path the wire uses; host digests
+  never enter the report batcher, never consume wire_seq, DO count
+  in zero-slack.  scripts/pyro_mac_timing.py, 200 samples/class,
+  every reply digest cross-checked byte-exact vs digest_packet.
+- **Benchmarks:** 7 frame classes; codec caps host-fed frames at
+  1474 B so the large class is the cap, not a full 1514 B frame.
+
+### Key commands
+
+```bash
+PYRO_DEVICE_IFACE=ens2 .venv-pyro/bin/python3 \
+    scripts/pyro_mac_timing.py --samples 200
+```
+
+## 3. Observations
+
+Silicon, 1,400 samples total, 0 no-reply, 0 digest mismatches; every
+class deterministic to the cycle (min == med == max):
+
+| Class             |    B | cyc | cyc/B | ns  |
+|-------------------|------|-----|-------|-----|
+| ipv4_tcp_64_nokey |   64 | 126 | 1.97  | 504 |
+| ipv4_tcp_64       |   64 | 135 | 2.11  | 540 |
+| ipv4_udp_256      |  256 | 519 | 2.03  | 2076 |
+| ipv6_tcp_86       |   86 | 181 | 2.10  | 724 |
+| vlan_ipv4_68      |   68 | 143 | 2.10  | 572 |
+| arp_60 (skip)     |   60 | 118 | 1.97  | 472 |
+| ipv4_tcp_1474     | 1474 | 2955 | 2.00 | 11820 |
+
+- Every cycle count equals the derived formula exactly: digested
+  2*len+7 (135, 519, 181, 143, 2955), skips 2*len-2 (126, 118).
+- Zero-slack after the sweep: seen 1,400 = digested 1,000 +
+  skip_nonip 200 + skip_nokey 200, exact.
+- First run FAILED honestly: the no-key class exposed a
+  model-vs-silicon divergence — the device decides skip_nokey at
+  frame byte 0 and parses NOTHING (reply flags 0x0000), while
+  digest_packet parsed anyway and claimed 0x0005.  The hardware is
+  right per MR15 fail-closed; the model was corrected to claim no
+  parse when keyless, and the fresh-reset rerun passed 1400/1400.
+
+## 4. Data analysis
+
+The MAC engine digests a 64 B packet in **540 ns** — 2.4x faster
+than the SNORT engine scans the same frame (1,292 ns clean /
+1,628 ns matching), because it is feed-bound at 2 cyc/B while the
+scan FSM pays 5-6.4 cyc/B.  Determinism is total: 200 identical
+cycle counts per class, so the formula is now a silicon-validated
+law, not a fit — latency is 2*len+7 cycles, period.  Scope matches
+the SNORT scan-core numbers: engine core only, host-fed through the
+identical byte path; wire-arrival wrapper overhead is excluded in
+both measurements.  At 2 cyc/B the engine ceiling is 125 MB/s —
+4x the ~30.5 MB/s single-scan wire rate, so in broadcast mode the
+MAC program is never the throughput limiter.  The nokey finding is
+the method working as designed: byte-exact model cross-checks on
+every reply caught a semantic over-claim no unit test had pinned.
+
+## 5. Ideas for future experiments
+
+- Wire-fed digest timing once the QSFP is cabled: same counters,
+  real IP traffic, confirms the host-fed numbers transfer.
+- Pipeline the feed to 1 cyc/B (the SipHash core keeps up) — would
+  halve digest latency to ~len+7 and double the ceiling.
+- Per-class latency histograms under broadcast load: does wire
+  traffic interleaving stretch host-fed digest tails?

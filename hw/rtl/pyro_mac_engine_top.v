@@ -27,6 +27,16 @@
 //   0x00B8 DIGESTED           SEEN == DIGESTED + SKIP_NONIP + SKIP_NOKEY
 //   0x00BC SKIP_NONIP        EXACTLY (every frame lands in one bucket)
 //   0x00C0 SKIP_NOKEY
+//   0x00C4 DIG_CYCLES        per-frame digest timing, R45a semantics
+//   0x00C8 DIG_BYTES           (reset at frame start, latch at frame
+//                            end): DIG_CYCLES = cycles from the FIRST
+//                            byte of the frame accepted by the engine
+//                            to its evt pulse; DIG_BYTES = the frame
+//                            byte length.  Both latch on evt — ALL
+//                            THREE outcomes latch (the reader knows
+//                            the outcome from the reply flags) — and
+//                            hold until the next frame's evt.
+//                            Per-frame, NOT cumulative.
 //
 // A commit is a SEQUENCE, not an edge: the key latches into both SipHash
 // cores, then the 16-byte keycheck string streams through a dedicated
@@ -94,6 +104,8 @@ module pyro_mac_engine_top (
     localparam [15:0] A_DIGESTED     = 16'h00B8;
     localparam [15:0] A_SKIP_NONIP   = 16'h00BC;
     localparam [15:0] A_SKIP_NOKEY   = 16'h00C0;
+    localparam [15:0] A_DIG_CYCLES   = 16'h00C4;
+    localparam [15:0] A_DIG_BYTES    = 16'h00C8;
 
     // Keep in step with pyro_mac_engine.
     localparam [1:0] EV_DIGESTED = 2'd0,
@@ -133,12 +145,18 @@ module pyro_mac_engine_top (
     // Zero-slack counters.
     reg [31:0] seen, digested, skip_nonip, skip_nokey;
 
+    // Per-frame digest timing (R45a analog): cyc_run restarts on the
+    // engine's frame-start pulse and free-runs until the next one; the
+    // evt latch freezes the pair the reader sees.
+    reg [31:0] cyc_run, dig_cycles, dig_bytes;
+
     // ---------------- frame datapath ------------------------------------
     wire        evt_done;
     wire [1:0]  evt_kind;
     wire [63:0] evt_digest;
     wire [15:0] evt_len;
     wire [6:0]  evt_flags;
+    wire        evt_start;
 
     pyro_mac_engine engine (
         .clk(clk), .rst_n(rst_n),
@@ -147,7 +165,7 @@ module pyro_mac_engine_top (
         .in_ready(in_ready),
         .evt_done(evt_done), .evt_kind(evt_kind),
         .evt_digest(evt_digest), .evt_len(evt_len),
-        .evt_flags(evt_flags)
+        .evt_flags(evt_flags), .evt_start(evt_start)
     );
 
     // ---------------- keycheck core -------------------------------------
@@ -181,6 +199,7 @@ module pyro_mac_engine_top (
             out_cap <= 32'd0; out_count <= 32'd0;
             seen <= 32'd0; digested <= 32'd0;
             skip_nonip <= 32'd0; skip_nokey <= 32'd0;
+            cyc_run <= 32'd0; dig_cycles <= 32'd0; dig_bytes <= 32'd0;
             res_wr <= 1'b0; res_start <= 64'd0; res_end <= 64'd0;
             res_pattern_id <= 32'd0; res_flags <= 32'd0;
             csr_rdata <= 32'd0;
@@ -262,11 +281,18 @@ module pyro_mac_engine_top (
             default: ;
             endcase
 
+            // ---- per-frame digest timing ----
+            // cyc_run restarts at 1 on the frame-start pulse; the evt
+            // latch below then reads exactly (evt cycle - start cycle).
+            cyc_run <= evt_start ? 32'd1 : (cyc_run + 32'd1);
+
             // ---- per-frame event ----
             if (evt_done) begin
-                seen   <= seen + 32'd1;
-                done_f <= 1'b1;
-                busy   <= 1'b0;
+                seen       <= seen + 32'd1;
+                done_f     <= 1'b1;
+                busy       <= 1'b0;
+                dig_cycles <= cyc_run;
+                dig_bytes  <= {16'd0, evt_len};
                 case (evt_kind)
                 EV_DIGESTED: begin
                     digested  <= digested + 32'd1;
@@ -297,6 +323,8 @@ module pyro_mac_engine_top (
             A_DIGESTED:    csr_rdata <= digested;
             A_SKIP_NONIP:  csr_rdata <= skip_nonip;
             A_SKIP_NOKEY:  csr_rdata <= skip_nokey;
+            A_DIG_CYCLES:  csr_rdata <= dig_cycles;
+            A_DIG_BYTES:   csr_rdata <= dig_bytes;
             default:       csr_rdata <= 32'd0;   // incl. KEY0-3: no
                                                  // key readback
             endcase

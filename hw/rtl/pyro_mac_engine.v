@@ -69,7 +69,11 @@ module pyro_mac_engine (
     output reg  [1:0]  evt_kind,      // EV_* below
     output reg  [63:0] evt_digest,    // valid when EV_DIGESTED
     output reg  [15:0] evt_len,       // total frame bytes consumed
-    output reg  [6:0]  evt_flags      // record flags per contract
+    output reg  [6:0]  evt_flags,     // record flags per contract
+    // one pulse when the FIRST byte of a frame is accepted (queued);
+    // the top's DIG_CYCLES counter starts here.  Pure observation —
+    // nothing in the digest datapath depends on it.
+    output reg         evt_start
 );
 
     // Event kinds.  The top decodes these; keep in step with
@@ -111,6 +115,8 @@ module pyro_mac_engine (
     reg [4:0]  ck_lo, ck_hi; // L4 checksum byte window
     reg [6:0]  flags;
     reg        frame_nokey;  // latched at frame byte 0: no committed key
+    reg        in_frame;     // a frame is open: first byte queued, no
+                             // event yet (evt_start bookkeeping only)
     reg [15:0] ip_tlen;      // IPv4 total length / IPv6 payload length
     reg        tlen_ok;      // both length-field bytes were captured
     reg [15:0] l3_cnt;       // L3 bytes actually delivered
@@ -199,6 +205,7 @@ module pyro_mac_engine (
         byte_cnt    <= 16'd0;
         flags       <= 7'd0;
         frame_nokey <= 1'b0;
+        in_frame    <= 1'b0;
         ihl         <= 4'd0;
         proto       <= 8'd0;
         tlen_ok     <= 1'b0;
@@ -229,8 +236,10 @@ module pyro_mac_engine (
             sip_start <= 1'b0; sip_end <= 1'b0;
             evt_done <= 1'b0; evt_kind <= 2'd0; evt_digest <= 64'd0;
             evt_len <= 16'd0; evt_flags <= 7'd0;
+            evt_start <= 1'b0; in_frame <= 1'b0;
         end else begin
             evt_done  <= 1'b0;
+            evt_start <= 1'b0;
             sip_start <= 1'b0;
             sip_end   <= 1'b0;
 
@@ -437,6 +446,16 @@ module pyro_mac_engine (
             end
             default: ;
             endcase
+
+            // ---- frame-start observation (evt_start) ----
+            // The first byte of a frame ACCEPTED (queued) opens it;
+            // the event sites close it via frame_reset.  The lockstep
+            // wrapper never pushes a new frame's byte on an event
+            // cycle, so open/close can never collide in practice.
+            if (push && !in_frame) begin
+                in_frame  <= 1'b1;
+                evt_start <= 1'b1;
+            end
         end
     end
 

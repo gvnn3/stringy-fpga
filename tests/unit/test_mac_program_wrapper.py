@@ -26,7 +26,7 @@ OVERLAY_HASH = "0a5e000100000000000000000000a5e1"
 # anchors that exist ONLY in the multi-program emission
 _MAC_ANCHORS = ("pyro_rp_mac_prog", "pyro_mac_engine_top",
                 "sched_mode", "records_lost", "reports_sent",
-                "rx_bcast_q")
+                "rx_bcast_q", "host_dig", "KIND_MAC_DIG_REQ")
 
 
 def test_old_mode_byte_identity_across_default_kwarg():
@@ -75,17 +75,19 @@ def test_mac_mode_emits_two_programs_and_a_top():
 
 def test_mac_mode_contract_surface():
     t = w.generate_rp_child(HASH, mac_program=True)
-    # the seven new frame kinds, 0x0E..0x14
+    # the nine frame kinds, 0x0E..0x16 (0x15/0x16 host-fed digest,
+    # WIRE-MAC v0.3.0)
     for a in ("KIND_MAC_REPORT   = 8'h0E", "KIND_MAC_KEY_LOAD = 8'h0F",
               "KIND_MAC_KEY_ACK  = 8'h10", "KIND_SCHED_SET    = 8'h11",
               "KIND_SCHED_ACK    = 8'h12", "KIND_MAC_STAT_REQ = 8'h13",
-              "KIND_MAC_STAT_REP = 8'h14"):
+              "KIND_MAC_STAT_REP = 8'h14", "KIND_MAC_DIG_REQ  = 8'h15",
+              "KIND_MAC_DIG_REP  = 8'h16"):
         assert a in t, a
-    # the engine CSR block at 0x0090+
+    # the engine CSR block at 0x0090+, incl. the v0.3.0 timing pair
     for a in ("16'h0090", "16'h0094", "16'h0098", "16'h009C",
               "16'h00A0", "16'h00A4", "16'h00A8", "16'h00AC",
               "16'h00B0", "16'h00B4", "16'h00B8", "16'h00BC",
-              "16'h00C0"):
+              "16'h00C0", "16'h00C4", "16'h00C8"):
         assert a in t, a
     # reset default schedule: round-robin, quantum 1 (contract)
     assert "sched_mode    <= 2'd2;" in t
@@ -152,6 +154,40 @@ def test_mode3_rotation_still_gated_on_mode2():
     assert "sched_mode    <= 2'd2;" in t
     # host-frame routing unchanged: mac_host alone picks the codec
     assert ": mac_host;" in t
+
+
+def test_mac_digest_kind_routing():
+    # 0x15 rides the SAME host-frame route as 0x0F/0x11/0x13: mac_host
+    # in the dispatcher top names all four request kinds, and the P1
+    # frame FSM classifies the new kind beside the other three.
+    t = w.generate_rp_child(HASH, mac_program=True)
+    assert "(rx_kind == KIND_MAC_STAT_REQ) || "\
+           "(rx_kind == KIND_MAC_DIG_REQ)" in t
+    assert "h_kind == KIND_MAC_DIG_REQ" in t
+    # lockstep like every R78 responder: the digest flow ends in the
+    # shared single-beat reply composer (reply_sel 3)
+    assert "KIND_MAC_DIG_REP" in t
+    assert "reply_sel <= 2'd3;" in t
+
+
+def test_mac_digest_no_batcher_no_wireseq():
+    t = w.generate_rp_child(HASH, mac_program=True)
+    # host-fed digests NEVER reach the MAC_REPORT batcher: the record
+    # FIFO writer sees res_wr only through the !host_dig gate...
+    assert "res_wire_wr = mac_res_wr && !host_dig" in t
+    assert "fifo_wr_ok  = res_wire_wr" in t
+    # every raw res_wr use is accounted for: declaration, engine port
+    # wiring, the !host_dig gate, and the host-side capture — nothing
+    # else may consume the raw strobe (the batcher sees res_wire_wr)
+    assert t.count("mac_res_wr") == 4
+    assert "host_dig && mac_res_wr" in t
+    # ...and NEVER consume wire_seq: exactly one increment site, in
+    # the wire-frame branch
+    assert t.count("wire_seq <= wire_seq + 32'd1;") == 1
+    # the host feed reuses the SAME engine feed path, offset to the
+    # packet payload (frame byte 32)
+    assert "fa = feed_base + feed_idx;" in t
+    assert "feed_base <= 16'd32;" in t
 
 
 def test_mac_engine_source_list():
